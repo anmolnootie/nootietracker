@@ -1,0 +1,21 @@
+{
+  "name": "po-control-tower",
+  "version": "1.0.0",
+  "description": "PO Flow Control Tower - Full-stack web application",
+  "private": true,
+  "workspaces": [
+    "apps/frontend",
+    "apps/backend",
+    "packages/shared"
+  ],
+  "scripts": {
+    "dev": "turbo run dev --parallel",
+    "build": "turbo run build",
+    "start": "turbo run start",
+    "lint": "turbo run lint",
+    "test": "turbo run test"
+  },
+  "devDependencies": {
+    "turbo": "^2.0.0"
+  }
+}

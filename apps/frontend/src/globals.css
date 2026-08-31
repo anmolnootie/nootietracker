@@ -1,0 +1,19 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  @apply box-border;
+}
+
+body {
+  @apply bg-gray-50 text-gray-900;
+}
+
+input, textarea, select {
+  @apply transition-colors;
+}
+
+input:focus, textarea:focus, select:focus {
+  @apply outline-none ring-2 ring-blue-500;
+}
