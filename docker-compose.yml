@@ -1,0 +1,47 @@
+version: '3.8'
+services:
+  postgres:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: po_control_tower
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: po_control_tower_db
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - '5432:5432'
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    restart: unless-stopped
+    env_file:
+      - ./apps/backend/.env.example
+      - ./.env.local
+    depends_on:
+      - postgres
+    ports:
+      - '3001:3001'
+    environment:
+      DATABASE_HOST: postgres
+      DATABASE_USER: po_control_tower
+      DATABASE_PASSWORD: password
+      DATABASE_NAME: po_control_tower_db
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - '3000:3000'
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:3001
+
+volumes:
+  pgdata:
+    driver: local

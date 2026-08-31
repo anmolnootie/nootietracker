@@ -8,6 +8,7 @@ import * as path from 'path';
 import { AuthModule } from './modules/auth/auth.module';
 import { UserModule } from './modules/user/user.module';
 import { POModule } from './modules/po/po.module';
+import { ScriptsModule } from './modules/scripts/scripts.module';
 import { DatabaseModule } from './database/database.module';
 
 @Module({
@@ -20,6 +21,7 @@ import { DatabaseModule } from './database/database.module';
     AuthModule,
     UserModule,
     POModule,
+    ScriptsModule,
   ],
   controllers: [],
   providers: [],
