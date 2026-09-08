@@ -1,13 +1,15 @@
 import React, { useState } from 'react';
 import { useRouter } from 'next/router';
 import { MainLayout } from '@/components/Layout';
+import { DuplicatePOModal } from '@/components/DuplicatePOModal';
 import { poService } from '@/services/po.service';
-import { CreatePORequest } from '@po-control-tower/shared';
+import { CreatePORequest, POMaster } from '@po-control-tower/shared';
 
 export default function CreatePO() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [duplicate, setDuplicate] = useState<POMaster | null>(null);
   const [formData, setFormData] = useState({
     poNumber: '',
     poDate: '',
@@ -54,6 +56,13 @@ export default function CreatePO() {
     setError('');
 
     try {
+      const dupCheck = await poService.checkDuplicate(formData.poNumber);
+      if (dupCheck.exists && dupCheck.po) {
+        setDuplicate(dupCheck.po);
+        setLoading(false);
+        return;
+      }
+
       const createRequest: CreatePORequest = {
         poNumber: formData.poNumber,
         poDate: new Date(formData.poDate),
@@ -248,7 +257,7 @@ export default function CreatePO() {
             <button
               type="submit"
               disabled={loading}
-              className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 rounded-lg transition-colors disabled:opacity-50"
+              className="flex-1 bg-nootie-orange-dark hover:bg-nootie-orange text-white font-medium py-2 rounded-lg transition-colors disabled:opacity-50"
             >
               {loading ? 'Creating...' : 'Create PO'}
             </button>
@@ -262,6 +271,10 @@ export default function CreatePO() {
           </div>
         </form>
       </div>
+
+      {duplicate && (
+        <DuplicatePOModal poNumber={formData.poNumber} existing={duplicate} onCancel={() => setDuplicate(null)} />
+      )}
     </MainLayout>
   );
 }

@@ -1,10 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { POStatus } from '@po-control-tower/shared';
-import { POMasterEntity } from '../../database/entities/po-master.entity';
-import { AppointmentEntity } from '../../database/entities/appointment.entity';
-import { DispatchEntity } from '../../database/entities/dispatch.entity';
-import { LogisticsTrackerEntity } from '../../database/entities/logistics-tracker.entity';
-import { GRNTrackerEntity } from '../../database/entities/grn-tracker.entity';
+import { POMasterEntity } from '../database/entities/po-master.entity';
+import { AppointmentEntity } from '../database/entities/appointment.entity';
+import { DispatchEntity } from '../database/entities/dispatch.entity';
+import { LogisticsTrackerEntity } from '../database/entities/logistics-tracker.entity';
+import { GRNTrackerEntity } from '../database/entities/grn-tracker.entity';
 
 /**
  * Status Engine

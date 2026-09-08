@@ -1,4 +1,4 @@
-import { Controller, Get, HttpCode, Logger } from '@nestjs/common';
+import { Controller, ForbiddenException, Get, HttpCode, Logger } from '@nestjs/common';
 import { UserService } from '../user/user.service';
 import { POService } from '../po/po.service';
 import { UserRole } from '@po-control-tower/shared';
@@ -8,23 +8,23 @@ export class ScriptsController {
   private readonly logger = new Logger(ScriptsController.name);
   constructor(private userService: UserService, private poService: POService) {}
 
-  // Dev-only: seed demo user and a sample PO
   @Get('seed')
   @HttpCode(200)
   async seed() {
+    if (process.env.NODE_ENV === 'production') {
+      throw new ForbiddenException('Seed endpoint is disabled in production');
+    }
     try {
-      // Create demo user
       const email = 'admin@demo.local';
       const password = 'password';
       const name = 'Demo Admin';
 
-      const existing = await this.userService.findByEmail(email);
-      if (!existing) {
-        await this.userService.create({ email, password, name, roles: [UserRole.ADMIN, UserRole.SCM] });
+      let user = await this.userService.findByEmail(email);
+      if (!user) {
+        user = await this.userService.create({ email, password, name, roles: [UserRole.ADMIN, UserRole.SCM] });
         this.logger.log(`Created demo user: ${email}`);
       }
 
-      // Create a sample PO
       const createReq = {
         poNumber: `PO-${Date.now()}`,
         poDate: new Date().toISOString(),
@@ -39,10 +39,8 @@ export class ScriptsController {
         ],
       } as any;
 
-      const user = await this.userService.findByEmail(email);
       await this.poService.createPO(createReq, user.id);
       this.logger.log('Created sample PO');
-
       return { success: true };
     } catch (err) {
       this.logger.error('Seed failed', err as any);

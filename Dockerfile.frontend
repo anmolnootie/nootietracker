@@ -2,14 +2,18 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 
 COPY package.json package-lock.json ./
+COPY apps/backend/package.json apps/backend/
 COPY apps/frontend/package.json apps/frontend/
+COPY packages/shared/package.json packages/shared/
 RUN apk add --no-cache python3 make g++
-RUN cd apps/frontend && npm install --production=false && cd -
+RUN npm install --production=false --workspace apps/frontend --workspace packages/shared --legacy-peer-deps
 
-COPY . .
+COPY packages/shared packages/shared
+COPY apps/frontend apps/frontend
 
-WORKDIR /app/apps/frontend
-RUN npm run build
+# The shared package must be built first - Next.js imports its types/enums directly from source via the workspace symlink.
+RUN npm run build --workspace packages/shared
+RUN npm run build --workspace apps/frontend
 
 FROM node:20-alpine AS runner
 WORKDIR /app
@@ -18,7 +22,10 @@ ENV NODE_ENV=production
 COPY --from=builder /app/apps/frontend/.next ./.next
 COPY --from=builder /app/apps/frontend/public ./public
 COPY --from=builder /app/apps/frontend/package.json ./package.json
-COPY --from=builder /app/apps/frontend/node_modules ./node_modules
+COPY --from=builder /app/apps/frontend/next.config.js ./next.config.js
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/packages/shared/dist ./node_modules/@po-control-tower/shared/dist
+COPY --from=builder /app/packages/shared/package.json ./node_modules/@po-control-tower/shared/package.json
 
-EXPOSE 3000
-CMD ["npm", "start"]
+EXPOSE 8000
+CMD ["npx", "next", "start", "-p", "8000"]

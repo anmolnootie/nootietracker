@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { RiskStatus } from '@po-control-tower/shared';
-import { POMasterEntity } from '../../database/entities/po-master.entity';
+import { POMasterEntity } from '../database/entities/po-master.entity';
 
 /**
  * Risk Engine
@@ -117,5 +117,9 @@ export class RiskEngine {
 
   isUrgent(riskStatus: RiskStatus): boolean {
     return [RiskStatus.BLACK, RiskStatus.RED].includes(riskStatus);
+  }
+
+  getThresholds() {
+    return { ...this.riskThresholds };
   }
 }

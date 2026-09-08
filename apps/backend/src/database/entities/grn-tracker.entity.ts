@@ -18,13 +18,13 @@ export class GRNTrackerEntity {
   @Column()
   poId: string;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   grnNumber: string;
 
   @Column('decimal', { precision: 15, scale: 2, nullable: true })
   grnValue: number;
 
-  @Column({ nullable: true })
+  @Column({ type: 'timestamp', nullable: true })
   grnDate: Date;
 
   @Column({
@@ -34,16 +34,16 @@ export class GRNTrackerEntity {
   })
   outcome: GRNOutcome;
 
-  @Column({ nullable: true })
+  @Column({ type: 'text', nullable: true })
   discrepancyReason: string;
 
   @Column('decimal', { precision: 15, scale: 2, nullable: true })
   discrepancyAmount: number;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   creditNoteNumber: string;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   debitNoteNumber: string;
 
   @Column({
@@ -52,6 +52,21 @@ export class GRNTrackerEntity {
     default: 'ON_TIME',
   })
   slaStatus: 'ON_TIME' | 'ESCALATED' | 'BREACHED';
+
+  @Column('decimal', { precision: 12, scale: 2, nullable: true })
+  grnQuantity: number | null;
+
+  @Column('decimal', { precision: 12, scale: 2, nullable: true })
+  acceptedQuantity: number | null;
+
+  @Column('decimal', { precision: 12, scale: 2, nullable: true })
+  rejectedQuantity: number | null;
+
+  @Column('decimal', { precision: 12, scale: 2, nullable: true })
+  shortQuantity: number | null;
+
+  @Column({ type: 'text', nullable: true })
+  remarks: string | null;
 
   @CreateDateColumn()
   createdAt: Date;

@@ -17,17 +17,17 @@ export class AppointmentEntity {
   @Column()
   poId: string;
 
-  @Column({ nullable: true })
-  requestedAt: Date;
+  @Column({ type: 'timestamp', nullable: true })
+  requestedAt?: Date | null;
 
-  @Column({ nullable: true })
-  confirmedAt: Date;
+  @Column({ type: 'timestamp', nullable: true })
+  confirmedAt?: Date | null;
 
-  @Column({ nullable: true })
-  appointmentDate: Date;
+  @Column({ type: 'timestamp', nullable: true })
+  appointmentDate?: Date | null;
 
-  @Column({ nullable: true })
-  appointmentWindow: string;
+  @Column({ type: 'varchar', nullable: true })
+  appointmentWindow?: string | null;
 
   @Column({
     type: 'enum',
@@ -42,8 +42,26 @@ export class AppointmentEntity {
   @Column({ default: false })
   extensionGranted: boolean;
 
-  @Column({ nullable: true })
-  newExpiryDate: Date;
+  @Column({ type: 'timestamp', nullable: true })
+  newExpiryDate?: Date | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  appointmentId: string | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  appointmentTime: string | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  appointmentLocation: string | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  extensionRequestedAt: Date | null;
+
+  @Column({ type: 'text', nullable: true })
+  extensionReason: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  remarks: string | null;
 
   @CreateDateColumn()
   createdAt: Date;

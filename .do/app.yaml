@@ -1,0 +1,141 @@
+# DigitalOcean App Platform spec for Nootie Control Tower.
+# Fill in <PLACEHOLDERS> before running: doctl apps create --spec .do/app.yaml
+#
+# Architecture:
+#   backend  (web service)  - HTTP API, cron jobs disabled (see PROCESS_ROLE)
+#   worker   (worker)       - same codebase, PROCESS_ROLE=worker - runs the
+#                              SLA/Risk/AVV-follow-up/stuck-stock cron jobs
+#   frontend (web service)  - Next.js UI
+#   db       (managed DB)   - PostgreSQL
+#
+# Secrets (marked type: SECRET below) must be entered in the DO dashboard or
+# via `doctl apps update` - never commit real values into this file.
+
+name: nootie-control-tower
+region: nyc
+
+services:
+  - name: backend
+    github:
+      repo: <GITHUB_OWNER>/<GITHUB_REPO>
+      branch: main
+      deploy_on_push: true
+    source_dir: /
+    build_command: npm install --legacy-peer-deps && npm run build --workspace packages/shared && npm run build --workspace apps/backend
+    run_command: node apps/backend/dist/main.js
+    environment_slug: node-js
+    instance_size_slug: basic-xs
+    instance_count: 1
+    http_port: 8001
+    health_check:
+      http_path: /
+    routes:
+      - path: /
+    envs:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "8001"
+      - key: PROCESS_ROLE
+        value: web
+      - key: DATABASE_HOST
+        value: ${db.HOSTNAME}
+      - key: DATABASE_PORT
+        value: ${db.PORT}
+      - key: DATABASE_USER
+        value: ${db.USERNAME}
+      - key: DATABASE_PASSWORD
+        value: ${db.PASSWORD}
+        type: SECRET
+      - key: DATABASE_NAME
+        value: ${db.DATABASE}
+      - key: DATABASE_SSL
+        value: "true"
+      - key: JWT_SECRET
+        type: SECRET
+      - key: JWT_EXPIRATION
+        value: 24h
+      - key: FRONTEND_URL
+        value: https://<YOUR_DOMAIN>
+      - key: SPACES_KEY
+        type: SECRET
+      - key: SPACES_SECRET
+        type: SECRET
+      - key: SPACES_ENDPOINT
+        value: https://<region>.digitaloceanspaces.com
+      - key: SPACES_BUCKET
+        value: nootie-control-tower-documents
+      - key: SPACES_REGION
+        value: <region>
+      - key: PARTNERSBIZ_API_KEY
+        type: SECRET
+
+  - name: frontend
+    github:
+      repo: <GITHUB_OWNER>/<GITHUB_REPO>
+      branch: main
+      deploy_on_push: true
+    source_dir: /
+    build_command: npm install --legacy-peer-deps && npm run build --workspace packages/shared && npm run build --workspace apps/frontend
+    run_command: npx next start -p 8000 --dir apps/frontend
+    environment_slug: node-js
+    instance_size_slug: basic-xs
+    instance_count: 1
+    http_port: 8000
+    routes:
+      - path: /
+    envs:
+      - key: NODE_ENV
+        value: production
+      - key: NEXT_PUBLIC_API_URL
+        value: https://<YOUR_API_SUBDOMAIN>
+
+workers:
+  - name: worker
+    github:
+      repo: <GITHUB_OWNER>/<GITHUB_REPO>
+      branch: main
+      deploy_on_push: true
+    source_dir: /
+    build_command: npm install --legacy-peer-deps && npm run build --workspace packages/shared && npm run build --workspace apps/backend
+    run_command: node apps/backend/dist/main.js
+    environment_slug: node-js
+    instance_size_slug: basic-xs
+    instance_count: 1
+    envs:
+      - key: NODE_ENV
+        value: production
+      - key: PROCESS_ROLE
+        value: worker
+      - key: DATABASE_HOST
+        value: ${db.HOSTNAME}
+      - key: DATABASE_PORT
+        value: ${db.PORT}
+      - key: DATABASE_USER
+        value: ${db.USERNAME}
+      - key: DATABASE_PASSWORD
+        value: ${db.PASSWORD}
+        type: SECRET
+      - key: DATABASE_NAME
+        value: ${db.DATABASE}
+      - key: DATABASE_SSL
+        value: "true"
+      - key: JWT_SECRET
+        type: SECRET
+      - key: SPACES_KEY
+        type: SECRET
+      - key: SPACES_SECRET
+        type: SECRET
+      - key: SPACES_ENDPOINT
+        value: https://<region>.digitaloceanspaces.com
+      - key: SPACES_BUCKET
+        value: nootie-control-tower-documents
+      - key: SPACES_REGION
+        value: <region>
+
+databases:
+  - name: db
+    engine: PG
+    version: "15"
+    production: true
+    size: db-s-1vcpu-1gb

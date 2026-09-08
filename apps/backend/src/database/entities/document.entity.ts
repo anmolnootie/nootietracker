@@ -25,6 +25,8 @@ export class DocumentEntity {
       'GRN',
       'CREDIT_NOTE',
       'DEBIT_NOTE',
+      'QR_CODE',
+      'RETURN_DOCUMENT',
     ],
   })
   documentType: string;

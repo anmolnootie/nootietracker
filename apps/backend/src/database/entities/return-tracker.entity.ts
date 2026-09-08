@@ -17,7 +17,7 @@ export class ReturnTrackerEntity {
   @Column()
   poId: string;
 
-  @Column()
+  @Column({ type: 'timestamp' })
   returnDate: Date;
 
   @Column({
@@ -26,14 +26,23 @@ export class ReturnTrackerEntity {
   })
   returnType: 'RECALL_NOT_DELIVERED' | 'REJECTED_GRN' | 'DAMAGE' | 'SHORTAGE';
 
-  @Column({ nullable: true })
+  @Column({ type: 'text', nullable: true })
   rootCause: string;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   creditNoteNumber: string;
 
   @Column('decimal', { precision: 15, scale: 2, nullable: true })
   lossAmount: number;
+
+  @Column({ type: 'varchar', nullable: true })
+  returnStatus: string | null;
+
+  @Column('decimal', { precision: 12, scale: 2, nullable: true })
+  returnQuantity: number | null;
+
+  @Column({ type: 'text', nullable: true })
+  remarks: string | null;
 
   @CreateDateColumn()
   createdAt: Date;

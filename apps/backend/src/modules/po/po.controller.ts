@@ -2,21 +2,29 @@ import {
   Controller,
   Get,
   Post,
+  Patch,
+  Delete,
   Body,
   Param,
   Query,
   UseGuards,
   Request,
+  Res,
   BadRequestException,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
-import { POService } from './po.service';
-import { CreatePORequest, POStatus } from '@po-control-tower/shared';
+import type { Response } from 'express';
+import { POService, SENSITIVE_PO_FIELDS } from './po.service';
+import { POPdfService } from './po-pdf.service';
+import { EditPORequest } from './edit-po.dto';
+import { Roles } from '../../common/decorators/roles.decorator';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import { CreatePORequest, POStatus, UserRole, NonFulfilmentReason } from '@po-control-tower/shared';
 
 @Controller('pos')
 @UseGuards(AuthGuard('jwt'))
 export class POController {
-  constructor(private poService: POService) {}
+  constructor(private poService: POService, private poPdfService: POPdfService) {}
 
   @Post()
   async createPO(
@@ -26,18 +34,30 @@ export class POController {
     return this.poService.createPO(createPODto, req.user.userId);
   }
 
+  @Get('check-duplicate/:poNumber')
+  async checkDuplicate(@Param('poNumber') poNumber: string) {
+    return this.poService.checkDuplicate(poNumber);
+  }
+
+  @Get('edit-meta/sensitive-fields')
+  async getSensitiveFields() {
+    return { fields: SENSITIVE_PO_FIELDS };
+  }
+
   @Get()
   async getAllPOs(
     @Query('channelId') channelId?: string,
     @Query('customerId') customerId?: string,
     @Query('status') status?: POStatus,
     @Query('risk') risk?: string,
+    @Query('view') view?: 'active' | 'at_risk' | 'expiring_soon' | 'low_value' | 'not_fulfilled',
   ) {
     return this.poService.getAllPOs({
       channelId,
       customerId,
       status,
       risk,
+      view,
     });
   }
 
@@ -46,14 +66,142 @@ export class POController {
     return this.poService.getDashboardMetrics();
   }
 
+  @Get('inventory/summary')
+  async getInventoryRollup() {
+    return this.poService.getInventoryRollup();
+  }
+
+  @Get('logistics/list')
+  async listLogisticsTrackers() {
+    return this.poService.listLogisticsTrackers();
+  }
+
+  @Get('dispatch/ready')
+  async listReadyToDispatch() {
+    return this.poService.listReadyToDispatch();
+  }
+
+  @Get('bin')
+  async getBin() {
+    return this.poService.getBin();
+  }
+
+  @Post('bulk-delete')
+  async bulkSoftDeletePO(@Body() body: { poIds: string[] }, @Request() req: any) {
+    if (!body?.poIds || body.poIds.length === 0) {
+      throw new BadRequestException('poIds is required');
+    }
+    return this.poService.bulkSoftDeletePO(body.poIds, req.user.userId);
+  }
+
+  @Post('bulk-restore')
+  async bulkRestorePO(@Body() body: { poIds: string[] }) {
+    if (!body?.poIds || body.poIds.length === 0) {
+      throw new BadRequestException('poIds is required');
+    }
+    return this.poService.bulkRestorePO(body.poIds);
+  }
+
+  @Post('bulk-permanent-delete')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.ADMIN, UserRole.SCM)
+  async bulkPermanentlyDeletePO(@Body() body: { poIds: string[]; reason?: string }, @Request() req: any) {
+    if (!body?.poIds || body.poIds.length === 0) {
+      throw new BadRequestException('poIds is required');
+    }
+    return this.poService.bulkPermanentlyDeletePO(body.poIds, req.user.userId, body.reason);
+  }
+
+  @Get('not-fulfilled/dashboard')
+  async getNotFulfilledDashboard() {
+    return this.poService.getNotFulfilledDashboard();
+  }
+
   @Get(':poId')
   async getPOById(@Param('poId') poId: string) {
     return this.poService.getPOById(poId);
   }
 
+  @Get(':poId/pdf')
+  async downloadPdf(@Param('poId') poId: string, @Res() res: Response) {
+    const po = await this.poService.getPOById(poId);
+    const buffer = await this.poPdfService.generate(poId);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${po.poNumber}.pdf"`);
+    res.send(buffer);
+  }
+
+  @Delete(':poId')
+  async softDeletePO(@Param('poId') poId: string, @Request() req: any) {
+    return this.poService.softDeletePO(poId, req.user.userId);
+  }
+
+  @Post(':poId/restore')
+  async restorePO(@Param('poId') poId: string) {
+    return this.poService.restorePO(poId);
+  }
+
+  @Delete(':poId/permanent')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.ADMIN, UserRole.SCM)
+  async permanentlyDeletePO(
+    @Param('poId') poId: string,
+    @Body() body: { reason?: string },
+    @Request() req: any,
+  ) {
+    await this.poService.permanentlyDeletePO(poId, req.user.userId, body?.reason);
+    return { success: true };
+  }
+
+  @Get(':poId/non-fulfilment-diagnosis')
+  async getNonFulfilmentDiagnosis(@Param('poId') poId: string) {
+    return { diagnosis: await this.poService.getNonFulfilmentDiagnosis(poId) };
+  }
+
+  @Post(':poId/mark-not-fulfilled')
+  async markNotFulfilled(
+    @Param('poId') poId: string,
+    @Body() body: { reason: NonFulfilmentReason; remarks?: string },
+    @Request() req: any,
+  ) {
+    if (!body.reason) {
+      throw new BadRequestException('reason is required');
+    }
+    return this.poService.markNotFulfilled(poId, req.user.userId, body.reason, body.remarks);
+  }
+
+  @Post(':poId/mark-fulfilled')
+  async markFulfilled(@Param('poId') poId: string, @Request() req: any) {
+    return this.poService.markFulfilled(poId, req.user.userId);
+  }
+
+  @Patch(':poId')
+  async editPO(
+    @Param('poId') poId: string,
+    @Body() body: EditPORequest,
+    @Request() req: any,
+  ) {
+    return this.poService.editPO(poId, body, req.user.userId);
+  }
+
   @Get(':poId/line-items')
   async getLineItems(@Param('poId') poId: string) {
     return this.poService.getPOLineItems(poId);
+  }
+
+  @Get(':poId/timeline')
+  async getTimeline(@Param('poId') poId: string) {
+    return this.poService.getPOTimeline(poId);
+  }
+
+  @Get(':poId/change-history')
+  async getChangeHistory(@Param('poId') poId: string) {
+    return this.poService.getChangeHistory(poId);
+  }
+
+  @Get(':poId/source')
+  async getSource(@Param('poId') poId: string) {
+    return this.poService.getSourceTraceability(poId);
   }
 
   @Post(':poId/appointment/request')
@@ -110,7 +258,7 @@ export class POController {
       discrepancyAmount?: number;
     },
   ) {
-    if (!body.grnNumber || !body.grnValue || !body.outcome) {
+    if (!body.grnNumber || body.grnValue === undefined || body.grnValue === null || !body.outcome) {
       throw new BadRequestException('grnNumber, grnValue, and outcome are required');
     }
     return this.poService.recordGRN(poId, body);

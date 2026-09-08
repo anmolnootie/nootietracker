@@ -15,5 +15,5 @@ input, textarea, select {
 }
 
 input:focus, textarea:focus, select:focus {
-  @apply outline-none ring-2 ring-blue-500;
+  @apply outline-none ring-2 ring-nootie-orange;
 }

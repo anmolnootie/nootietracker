@@ -14,10 +14,10 @@ export class NotificationEntity {
   @Column()
   userId: string;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   poId: string;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   taskId: string;
 
   @Column()
@@ -41,6 +41,6 @@ export class NotificationEntity {
   @CreateDateColumn()
   sentAt: Date;
 
-  @Column({ nullable: true })
+  @Column({ type: 'timestamp', nullable: true })
   readAt: Date;
 }

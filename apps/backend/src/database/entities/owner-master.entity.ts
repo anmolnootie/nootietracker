@@ -14,16 +14,16 @@ export class OwnerMasterEntity {
   @Column()
   userId: string;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   channel: string;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   location: string;
 
   @Column()
   responsibility: string;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   backupOwnerId: string;
 
   @CreateDateColumn()

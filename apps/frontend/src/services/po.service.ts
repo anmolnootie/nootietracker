@@ -1,5 +1,20 @@
 import api from '@/lib/api';
-import { CreatePORequest, POMaster, POLineItem } from '@po-control-tower/shared';
+import { CreatePORequest, POMaster, POLineItem, NonFulfilmentReason } from '@po-control-tower/shared';
+
+export type POView = 'active' | 'at_risk' | 'expiring_soon' | 'low_value' | 'not_fulfilled';
+
+export interface InventoryRow {
+  skuCode: string;
+  upc: string | null;
+  name: string;
+  unitsOrdered: number;
+  unitsDispatched: number;
+  unitsAvailable: number;
+  unitsPending: number;
+  totalValue: number;
+  poCount: number;
+  fulfilmentPercent: number;
+}
 
 export const poService = {
   createPO: async (data: CreatePORequest) => {
@@ -7,8 +22,72 @@ export const poService = {
     return response.data;
   },
 
-  getAllPOs: async (filters?: { channelId?: string; customerId?: string; status?: string; risk?: string }) => {
+  checkDuplicate: async (poNumber: string): Promise<{ exists: boolean; po?: POMaster }> => {
+    const response = await api.get(`/pos/check-duplicate/${encodeURIComponent(poNumber)}`);
+    return response.data;
+  },
+
+  getAllPOs: async (filters?: { channelId?: string; customerId?: string; status?: string; risk?: string; view?: POView }) => {
     const response = await api.get('/pos', { params: filters });
+    return response.data;
+  },
+
+  getBin: async (): Promise<POMaster[]> => {
+    const response = await api.get('/pos/bin');
+    return response.data;
+  },
+
+  softDeletePO: async (poId: string): Promise<POMaster> => {
+    const response = await api.delete(`/pos/${poId}`);
+    return response.data;
+  },
+
+  bulkSoftDeletePO: async (poIds: string[]): Promise<{ deleted: string[]; failed: { poId: string; reason: string }[] }> => {
+    const response = await api.post('/pos/bulk-delete', { poIds });
+    return response.data;
+  },
+
+  restorePO: async (poId: string): Promise<POMaster> => {
+    const response = await api.post(`/pos/${poId}/restore`);
+    return response.data;
+  },
+
+  bulkRestorePO: async (poIds: string[]): Promise<{ restored: string[]; failed: { poId: string; reason: string }[] }> => {
+    const response = await api.post('/pos/bulk-restore', { poIds });
+    return response.data;
+  },
+
+  permanentlyDeletePO: async (poId: string, reason?: string): Promise<void> => {
+    await api.delete(`/pos/${poId}/permanent`, { data: { reason } });
+  },
+
+  bulkPermanentlyDeletePO: async (poIds: string[], reason?: string): Promise<{ deleted: string[]; failed: { poId: string; reason: string }[] }> => {
+    const response = await api.post('/pos/bulk-permanent-delete', { poIds, reason });
+    return response.data;
+  },
+
+  markNotFulfilled: async (poId: string, reason: NonFulfilmentReason, remarks?: string): Promise<POMaster> => {
+    const response = await api.post(`/pos/${poId}/mark-not-fulfilled`, { reason, remarks });
+    return response.data;
+  },
+
+  getNonFulfilmentDiagnosis: async (poId: string): Promise<{ diagnosis: string }> => {
+    const response = await api.get(`/pos/${poId}/non-fulfilment-diagnosis`);
+    return response.data;
+  },
+
+  markFulfilled: async (poId: string): Promise<POMaster> => {
+    const response = await api.post(`/pos/${poId}/mark-fulfilled`);
+    return response.data;
+  },
+
+  getNotFulfilledDashboard: async (): Promise<{
+    totalPOs: number;
+    totalValue: number;
+    potentiallyLostValue: number;
+    breakdown: { reason: string; count: number; value: number }[];
+  }> => {
+    const response = await api.get('/pos/not-fulfilled/dashboard');
     return response.data;
   },
 
@@ -17,8 +96,25 @@ export const poService = {
     return response.data;
   },
 
+  downloadPdf: async (poId: string, poNumber: string): Promise<void> => {
+    const response = await api.get(`/pos/${poId}/pdf`, { responseType: 'blob' });
+    const url = window.URL.createObjectURL(new Blob([response.data]));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${poNumber}.pdf`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+  },
+
   getLineItems: async (poId: string): Promise<POLineItem[]> => {
     const response = await api.get(`/pos/${poId}/line-items`);
+    return response.data;
+  },
+
+  getTimeline: async (poId: string): Promise<any> => {
+    const response = await api.get(`/pos/${poId}/timeline`);
     return response.data;
   },
 
@@ -70,4 +166,122 @@ export const poService = {
     const response = await api.get('/pos/dashboard/metrics');
     return response.data;
   },
+
+  getInventoryRollup: async (): Promise<InventoryRow[]> => {
+    const response = await api.get('/pos/inventory/summary');
+    return response.data;
+  },
+
+  listLogisticsTrackers: async (): Promise<any[]> => {
+    const response = await api.get('/pos/logistics/list');
+    return response.data;
+  },
+
+  listReadyToDispatch: async (): Promise<any[]> => {
+    const response = await api.get('/pos/dispatch/ready');
+    return response.data;
+  },
+
+  getChangeHistory: async (poId: string): Promise<any[]> => {
+    const response = await api.get(`/pos/${poId}/change-history`);
+    return response.data;
+  },
+
+  getSource: async (poId: string): Promise<any> => {
+    const response = await api.get(`/pos/${poId}/source`);
+    return response.data;
+  },
+
+  getSensitiveFields: async (): Promise<{ fields: string[] }> => {
+    const response = await api.get('/pos/edit-meta/sensitive-fields');
+    return response.data;
+  },
+
+  editPO: async (poId: string, payload: EditPOPayload): Promise<POMaster> => {
+    const response = await api.patch(`/pos/${poId}`, payload);
+    return response.data;
+  },
 };
+
+export interface EditPOPayload {
+  po?: Partial<{
+    poNumber: string;
+    poDate: string;
+    channelId: string;
+    location: string;
+    customerId: string;
+    poExpiryDate: string;
+    status: string;
+    remarks: string | null;
+  }>;
+  lineItems?: Array<
+    Partial<{
+      skuCode: string;
+      skuName: string;
+      quantity: number;
+      availableQuantity: number | null;
+      dispatchedQuantity: number | null;
+      mrp: number | null;
+      unitPrice: number | null;
+      remarks: string | null;
+    }> & { id: string }
+  >;
+  appointment?: Partial<{
+    requestedAt: string | null;
+    confirmedAt: string | null;
+    appointmentDate: string | null;
+    appointmentWindow: string | null;
+    appointmentId: string | null;
+    appointmentTime: string | null;
+    appointmentLocation: string | null;
+    slaStatus: string;
+    extensionRequested: boolean;
+    extensionGranted: boolean;
+    extensionRequestedAt: string | null;
+    extensionReason: string | null;
+    newExpiryDate: string | null;
+    remarks: string | null;
+  }>;
+  dispatch?: Partial<{
+    plannedDispatchDate: string | null;
+    actualDispatchDate: string | null;
+    dispatchStatus: string | null;
+    invoiceNumber: string | null;
+    ewayBillNumber: string | null;
+    vehicleNumber: string | null;
+    lrNumber: string | null;
+    docketNumber: string | null;
+    transporterId: string | null;
+    remarks: string | null;
+  }>;
+  logistics?: Partial<{
+    transporterId: string | null;
+    vehicleNumber: string | null;
+    docketNumber: string | null;
+    pickupDate: string | null;
+    expectedDeliveryDate: string | null;
+    actualDeliveryDate: string | null;
+    lastTrackedStatus: string | null;
+    delayReason: string | null;
+    remarks: string | null;
+  }>;
+  grn?: Partial<{
+    grnNumber: string | null;
+    grnDate: string | null;
+    grnQuantity: number | null;
+    acceptedQuantity: number | null;
+    rejectedQuantity: number | null;
+    shortQuantity: number | null;
+    grnValue: number | null;
+    outcome: string | null;
+    remarks: string | null;
+  }>;
+  returnRecord?: Partial<{
+    returnStatus: string | null;
+    returnQuantity: number | null;
+    lossAmount: number | null;
+    rootCause: string | null;
+    returnDate: string | null;
+    remarks: string | null;
+  }>;
+}

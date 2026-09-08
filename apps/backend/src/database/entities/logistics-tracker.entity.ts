@@ -23,20 +23,38 @@ export class LogisticsTrackerEntity {
   @Column()
   transporterId: string;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   lastTrackedStatus: string;
 
-  @Column({ nullable: true })
+  @Column({ type: 'timestamp', nullable: true })
   lastUpdateTime: Date;
 
-  @Column({ nullable: true })
+  @Column({ type: 'int', nullable: true })
   hoursWithoutMovement: number;
 
   @Column({ default: false })
   receivedAndActioned: boolean;
 
-  @Column({ nullable: true })
+  @Column({ type: 'timestamp', nullable: true })
   receivedAndActionedAt: Date;
+
+  @Column({ type: 'varchar', nullable: true })
+  vehicleNumber: string | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  pickupDate: Date | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  expectedDeliveryDate: Date | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  actualDeliveryDate: Date | null;
+
+  @Column({ type: 'text', nullable: true })
+  delayReason: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  remarks: string | null;
 
   @CreateDateColumn()
   createdAt: Date;

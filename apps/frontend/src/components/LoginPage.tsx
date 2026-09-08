@@ -30,11 +30,13 @@ export const LoginPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-600 to-blue-800">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-nootie-orange to-nootie-gold-dark">
       <div className="bg-white rounded-lg shadow-xl p-8 w-full max-w-md">
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-gray-800">PO Control Tower</h1>
-          <p className="text-gray-500 mt-2">Flow Management System</p>
+          <h1 className="font-brand text-5xl font-bold text-nootie-gold-dark tracking-tight">
+            n<span className="text-nootie-orange">oo</span>tie
+          </h1>
+          <p className="text-gray-500 mt-2 text-sm uppercase tracking-widest">PO Control Tower</p>
         </div>
 
         {error && (
@@ -50,7 +52,7 @@ export const LoginPage: React.FC = () => {
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-nootie-orange focus:border-transparent"
               required
             />
           </div>
@@ -61,7 +63,7 @@ export const LoginPage: React.FC = () => {
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-nootie-orange focus:border-transparent"
               required
             />
           </div>
@@ -69,15 +71,14 @@ export const LoginPage: React.FC = () => {
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 rounded-lg transition-colors disabled:opacity-50"
+            className="w-full bg-nootie-orange-dark hover:bg-nootie-orange text-white font-medium py-2 rounded-lg transition-colors disabled:opacity-50"
           >
             {loading ? 'Logging in...' : 'Login'}
           </button>
         </form>
 
         <div className="mt-6 text-center text-sm text-gray-600">
-          <p>Demo credentials (to be set up):</p>
-          <p className="text-xs mt-2 text-gray-400">Use any email/password combination to test</p>
+          <p>Demo login: <span className="font-medium">admin@demo.local</span> / <span className="font-medium">password</span></p>
         </div>
       </div>
     </div>

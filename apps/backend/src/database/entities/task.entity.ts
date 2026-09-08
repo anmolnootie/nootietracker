@@ -40,10 +40,10 @@ export class TaskEntity {
   @CreateDateColumn()
   createdAt: Date;
 
-  @Column({ nullable: true })
+  @Column({ type: 'timestamp', nullable: true })
   completedAt: Date;
 
-  @Column({ nullable: true })
+  @Column({ type: 'text', nullable: true })
   notes: string;
 
   @ManyToOne(() => POMasterEntity, { onDelete: 'CASCADE' })

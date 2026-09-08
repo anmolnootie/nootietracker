@@ -57,6 +57,14 @@ export class UserService {
     });
   }
 
+  /** The actor attributed to POs created by an automated integration (e.g. a partner webhook) rather than a logged-in user. */
+  async findSystemUser(): Promise<UserEntity> {
+    const admins = await this.userRepository.find({ where: { isActive: true } });
+    const admin = admins.find((u) => u.roles?.includes(UserRole.ADMIN));
+    if (!admin) throw new NotFoundException('No active ADMIN user found to attribute system-created records to');
+    return admin;
+  }
+
   async updateRoles(userId: string, roles: UserRole[]): Promise<UserEntity> {
     const user = await this.findById(userId);
     user.roles = roles;
