@@ -19,7 +19,7 @@ function App({ Component, pageProps }: AppProps) {
 
   useEffect(() => {
     if (!hydrated) return;
-    const isAuthPage = ['/login', '/register'].includes(router.pathname);
+    const isAuthPage = router.pathname === '/login';
     const isAuthenticated = !!user;
 
     if (!isAuthenticated && !isAuthPage) {

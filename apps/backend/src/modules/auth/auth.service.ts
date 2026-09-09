@@ -39,14 +39,6 @@ export class AuthService {
     };
   }
 
-  async register(email: string, password: string, name: string): Promise<User> {
-    return this.userService.create({
-      email,
-      password,
-      name,
-    });
-  }
-
   validateToken(token: string) {
     try {
       return this.jwtService.verify(token);

@@ -13,12 +13,18 @@ import { UserModule } from '../user/user.module';
     PassportModule,
     JwtModule.registerAsync({
       inject: [ConfigService],
-      useFactory: (configService: ConfigService) => ({
-        secret: configService.get('JWT_SECRET', 'your-secret-key'),
-        signOptions: {
-          expiresIn: configService.get('JWT_EXPIRATION', '24h'),
-        },
-      }),
+      useFactory: (configService: ConfigService) => {
+        const secret = configService.get<string>('JWT_SECRET');
+        if (!secret) {
+          throw new Error('JWT_SECRET is not set - refusing to start with an insecure default');
+        }
+        return {
+          secret,
+          signOptions: {
+            expiresIn: configService.get('JWT_EXPIRATION', '24h'),
+          },
+        };
+      },
     }),
     UserModule,
   ],

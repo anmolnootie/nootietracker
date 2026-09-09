@@ -7,11 +7,6 @@ export const authService = {
     return response.data;
   },
 
-  register: async (email: string, password: string, name: string): Promise<User> => {
-    const response = await api.post('/auth/register', { email, password, name });
-    return response.data;
-  },
-
   logout: () => {
     localStorage.removeItem('accessToken');
     localStorage.removeItem('user');
