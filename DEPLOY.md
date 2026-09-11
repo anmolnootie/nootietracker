@@ -9,10 +9,11 @@
 
 All three Railway services build from this repo using the existing `Dockerfile.backend` / `Dockerfile.frontend` (backend and worker share `Dockerfile.backend`, differing only by the `PROCESS_ROLE` env var).
 
-## 1. Supabase setup
-1. In your Supabase project → **Project Settings → Database → Connection string**, copy the **Session pooler** or **Transaction pooler** URI (port 6543/5432). This becomes `DATABASE_HOST` / `DATABASE_PORT` / `DATABASE_USER` / `DATABASE_PASSWORD` / `DATABASE_NAME` below.
-2. In **Storage**, create a bucket (e.g. `nootie-documents`).
-3. In **Project Settings → Storage → S3 Connection** (Supabase exposes an S3-compatible endpoint), copy the endpoint URL, access key ID, and secret access key.
+## 1. Supabase setup (done)
+- Database: Session pooler, `aws-0-ap-south-1.pooler.supabase.com:5432`, database `postgres` - migrated and verified (29 tables).
+- Storage bucket: `PO Files` (yes, with a space - the S3-compatible client uses path-style addressing so this works, verified with a live put/get/delete round trip).
+- S3 endpoint: `https://xcjrvrnpfvstfpxskfmm.storage.supabase.co/storage/v1/s3`, region `ap-south-1`.
+- Access key ID / secret: generated in Supabase → not written here, set directly in Railway's env var UI (see below).
 
 ## 2. Railway setup (per service)
 Create a new Railway project from the `anmolnootie/nootietracker` GitHub repo, then add 3 services:
@@ -30,20 +31,20 @@ For each, set **Root Directory** to `/` (repo root) since the Dockerfiles expect
 NODE_ENV=production
 PORT=8001
 PROCESS_ROLE=web
-DATABASE_HOST=<supabase pooler host>
-DATABASE_PORT=<supabase pooler port>
-DATABASE_USER=<supabase user>
-DATABASE_PASSWORD=<supabase password>
-DATABASE_NAME=<supabase database>
+DATABASE_HOST=aws-0-ap-south-1.pooler.supabase.com
+DATABASE_PORT=5432
+DATABASE_USER=postgres.xcjrvrnpfvstfpxskfmm
+DATABASE_PASSWORD=<supabase db password - shared in chat, not repeated here>
+DATABASE_NAME=postgres
 DATABASE_SSL=true
 JWT_SECRET=<generate a strong one - see below>
 JWT_EXPIRATION=24h
 FRONTEND_URL=https://<your-frontend-domain>
-SPACES_KEY=<supabase storage access key id>
-SPACES_SECRET=<supabase storage secret access key>
-SPACES_ENDPOINT=<supabase storage s3 endpoint>
-SPACES_BUCKET=nootie-documents
-SPACES_REGION=auto
+SPACES_KEY=<supabase storage access key id - shared in chat, not repeated here>
+SPACES_SECRET=<supabase storage secret access key - shared in chat, not repeated here>
+SPACES_ENDPOINT=https://xcjrvrnpfvstfpxskfmm.storage.supabase.co/storage/v1/s3
+SPACES_BUCKET=PO Files
+SPACES_REGION=ap-south-1
 PARTNERSBIZ_API_KEY=<from Blinkit, once issued>
 ```
 

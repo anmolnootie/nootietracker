@@ -30,7 +30,10 @@ export class FileStorageService {
     const region = this.configService.get<string>('SPACES_REGION') || 'us-east-1';
 
     if (accessKeyId && secretAccessKey && endpoint && bucket) {
-      this.s3 = new S3Client({ endpoint, region, credentials: { accessKeyId, secretAccessKey } });
+      // forcePathStyle: bucket names can contain spaces/mixed case on S3-compatible
+      // gateways like Supabase Storage, which virtual-hosted-style (bucket.endpoint)
+      // addressing can't represent - path-style (endpoint/bucket) always works.
+      this.s3 = new S3Client({ endpoint, region, credentials: { accessKeyId, secretAccessKey }, forcePathStyle: true });
       this.bucket = bucket;
       this.logger.log(`File storage: DigitalOcean Spaces bucket "${bucket}"`);
     } else {
