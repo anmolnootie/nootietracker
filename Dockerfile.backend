@@ -24,6 +24,11 @@ ENV NODE_ENV=production
 COPY --from=builder /app/apps/backend/dist ./dist
 COPY --from=builder /app/apps/backend/package.json ./package.json
 COPY --from=builder /app/node_modules ./node_modules
+# npm workspace hoisting nests some deps under apps/backend/node_modules instead of
+# the root (e.g. when a dep needs a different version of something than the rest of
+# the tree - pdf-parse's debug@^3.1.0 vs a newer debug elsewhere). Those are invisible
+# to the runner unless copied on top of the root node_modules explicitly.
+COPY --from=builder /app/apps/backend/node_modules ./node_modules
 COPY --from=builder /app/packages/shared/dist ./node_modules/@po-control-tower/shared/dist
 COPY --from=builder /app/packages/shared/package.json ./node_modules/@po-control-tower/shared/package.json
 
