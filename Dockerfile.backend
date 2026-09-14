@@ -1,3 +1,4 @@
+# cache-bust 2026-09-14: force Railway to fetch a fresh source snapshot instead of reusing sha256:b9b2ed68
 FROM node:20-alpine AS builder
 WORKDIR /app
 
