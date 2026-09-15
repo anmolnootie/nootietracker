@@ -21,6 +21,7 @@ import { POImportModule } from './modules/po-import/po-import.module';
 import { LocationsModule } from './modules/locations/locations.module';
 import { ExceptionsModule } from './modules/exceptions/exceptions.module';
 import { BulkImportModule } from './modules/bulk-import/bulk-import.module';
+import { InvoiceImportModule } from './modules/invoice-import/invoice-import.module';
 import { CompilationsModule } from './modules/compilations/compilations.module';
 import { DocumentsModule } from './modules/documents/documents.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
@@ -52,6 +53,7 @@ import { DatabaseModule } from './database/database.module';
     LocationsModule,
     ExceptionsModule,
     BulkImportModule,
+    InvoiceImportModule,
     CompilationsModule,
     DocumentsModule,
     InventoryModule,

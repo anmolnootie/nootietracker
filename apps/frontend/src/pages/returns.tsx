@@ -6,7 +6,7 @@ import { format } from 'date-fns';
 export default function Returns() {
   const [records, setRecords] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [forms, setForms] = useState<Record<string, { rootCause: string; creditNoteNumber: string; lossAmount: string }>>({});
+  const [forms, setForms] = useState<Record<string, { rootCause: string; creditNoteNumber: string; lossAmount: string; dncnType: string; dncnValue: string }>>({});
   const [busy, setBusy] = useState<string | null>(null);
 
   const load = async () => {
@@ -22,7 +22,7 @@ export default function Returns() {
     load();
   }, []);
 
-  const form = (id: string) => forms[id] || { rootCause: '', creditNoteNumber: '', lossAmount: '' };
+  const form = (id: string) => forms[id] || { rootCause: '', creditNoteNumber: '', lossAmount: '', dncnType: '', dncnValue: '' };
   const setField = (id: string, field: string, value: string) => setForms((f) => ({ ...f, [id]: { ...form(id), [field]: value } }));
 
   const close = async (id: string) => {
@@ -34,6 +34,8 @@ export default function Returns() {
         rootCause: f.rootCause,
         creditNoteNumber: f.creditNoteNumber || undefined,
         lossAmount: f.lossAmount ? Number(f.lossAmount) : undefined,
+        dncnType: (f.dncnType as 'DEBIT' | 'CREDIT') || undefined,
+        dncnValue: f.dncnValue ? Number(f.dncnValue) : undefined,
       });
       await load();
     } finally {
@@ -76,11 +78,13 @@ export default function Returns() {
                   {closed ? (
                     <div className="text-sm text-gray-700 space-y-1">
                       <p><span className="text-gray-500">Root cause:</span> {r.rootCause}</p>
-                      {r.creditNoteNumber && <p><span className="text-gray-500">Credit note:</span> {r.creditNoteNumber}</p>}
+                      {r.creditNoteNumber && <p><span className="text-gray-500">DNCN number:</span> {r.creditNoteNumber}</p>}
+                      {r.dncnType && <p><span className="text-gray-500">DNCN type:</span> {r.dncnType === 'DEBIT' ? 'Debit Note' : 'Credit Note'}</p>}
+                      {r.dncnValue != null && <p><span className="text-gray-500">DNCN value:</span> ₹{Number(r.dncnValue).toLocaleString()}</p>}
                       {r.lossAmount != null && <p><span className="text-gray-500">Loss:</span> ₹{Number(r.lossAmount).toLocaleString()}</p>}
                     </div>
                   ) : (
-                    <div className="grid grid-cols-4 gap-3 items-start">
+                    <div className="grid grid-cols-6 gap-3 items-start">
                       <input
                         className="border rounded px-2 py-1 text-sm col-span-2"
                         placeholder="Root cause (required)"
@@ -89,9 +93,25 @@ export default function Returns() {
                       />
                       <input
                         className="border rounded px-2 py-1 text-sm"
-                        placeholder="Credit Note #"
+                        placeholder="DNCN Number"
                         value={f.creditNoteNumber}
                         onChange={(e) => setField(r.id, 'creditNoteNumber', e.target.value)}
+                      />
+                      <select
+                        className="border rounded px-2 py-1 text-sm"
+                        value={f.dncnType}
+                        onChange={(e) => setField(r.id, 'dncnType', e.target.value)}
+                      >
+                        <option value="">DNCN Type</option>
+                        <option value="DEBIT">Debit Note</option>
+                        <option value="CREDIT">Credit Note</option>
+                      </select>
+                      <input
+                        className="border rounded px-2 py-1 text-sm"
+                        placeholder="DNCN value"
+                        type="number"
+                        value={f.dncnValue}
+                        onChange={(e) => setField(r.id, 'dncnValue', e.target.value)}
                       />
                       <input
                         className="border rounded px-2 py-1 text-sm"

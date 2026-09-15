@@ -23,7 +23,7 @@ export class ReturnsController {
   @Put(':id/close')
   async close(
     @Param('id') id: string,
-    @Body() body: { rootCause: string; creditNoteNumber?: string; lossAmount?: number },
+    @Body() body: { rootCause: string; creditNoteNumber?: string; lossAmount?: number; dncnType?: 'DEBIT' | 'CREDIT'; dncnValue?: number },
   ) {
     return this.returnsService.close(id, body);
   }

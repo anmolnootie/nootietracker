@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { In, Like, Repository } from 'typeorm';
 
 import { POMasterEntity } from '../../database/entities/po-master.entity';
 import { POLineItemEntity } from '../../database/entities/po-line-item.entity';
@@ -31,6 +31,7 @@ import {
   ExceptionResolutionStatus,
   DispatchPlanStatus,
   LOW_PO_VALUE_THRESHOLD,
+  POMappingStatus,
 } from '@po-control-tower/shared';
 import { StatusEngine } from '../../engines/status.engine';
 import { RiskEngine } from '../../engines/risk.engine';
@@ -399,6 +400,19 @@ export class POService {
       po.fulfilmentStatus = fulfilmentStatus;
       await this.poRepository.save(po);
     }
+
+    await this.recomputeFillRate(poId);
+  }
+
+  /** Invoice-value-based Fill Rate (Invoice Value / PO Value) - distinct from the dispatch-quantity-based fulfilmentPercent above. Public so Invoice Bulk Upload can call it directly after updating DispatchEntity.invoiceValue. */
+  async recomputeFillRate(poId: string): Promise<void> {
+    const po = await this.getPOById(poId);
+    const dispatch = await this.dispatchRepository.findOneBy({ poId });
+    po.fillRatePercent =
+      dispatch?.invoiceValue != null && Number(po.poValue) > 0
+        ? Math.min((Number(dispatch.invoiceValue) / Number(po.poValue)) * 100, 100)
+        : null;
+    await this.poRepository.save(po);
   }
 
   /**
@@ -1066,6 +1080,122 @@ export class POService {
     await this.recomputeStatus(poId);
     await this.recomputeRisk(poId);
     return saved;
+  }
+
+  /**
+   * "Reattempt" (spec: failed delivery -> new PO, linked via Parent PO Number)
+   * is deliberately NOT its own linking mechanism - it clones the undelivered
+   * lines onto a brand-new PO, then routes that link through the existing PO
+   * Mapping feature (same 70%-coverage rule, atomic transaction, and
+   * GRN-triggered recovery hook used for stuck-stock recovery). Since the
+   * clone's quantities exactly equal what's mapped, coverage is always ~100%.
+   * Does not mutate the original PO's status/fulfilmentDecision - it stays
+   * RETURNED, and resolves the same way stuck stock already does elsewhere:
+   * once the new PO's GRN completes (recoverMappingsForNewPo above).
+   */
+  async reattemptDelivery(poId: string, userId: string): Promise<{ newPo: POMasterEntity; mapping: any }> {
+    const originalPo = await this.getPOById(poId);
+
+    const returnRecord = await this.returnRepository.findOneBy({ poId });
+    if (!returnRecord || returnRecord.returnType !== 'RECALL_NOT_DELIVERED') {
+      throw new BadRequestException('A "not delivered" return must be recorded before a reattempt can be created');
+    }
+
+    const existingReattempts = await this.poMappingService.list({ originalPoId: poId, status: POMappingStatus.ACTIVE });
+    if (existingReattempts.some((m) => m.reason === 'REATTEMPT')) {
+      throw new BadRequestException('A reattempt has already been created for this PO');
+    }
+
+    const lineItems = await this.poLineItemRepository.findBy({ poId });
+    const leftoverLines = lineItems
+      .map((li) => ({ li, leftover: Number(li.quantity) - Number(li.dispatchedQuantity ?? 0) }))
+      .filter((x) => x.leftover > 0);
+    if (leftoverLines.length === 0) {
+      throw new BadRequestException('No undelivered quantity remains to reattempt');
+    }
+
+    const suffixCount = await this.poRepository.count({ where: { poNumber: Like(`${originalPo.poNumber}-R%`) } });
+    const newPoNumber = `${originalPo.poNumber}-R${suffixCount + 1}`;
+
+    const customer = await this.customerRepository.findOneBy({ id: originalPo.customerId });
+    const appointmentRequirementInDays = customer?.appointmentRequirementInDays ?? 3;
+    const now = new Date();
+    const poExpiryDate = new Date(now.getTime() + appointmentRequirementInDays * 24 * 60 * 60 * 1000);
+
+    let newPo = new POMasterEntity();
+    newPo.poNumber = newPoNumber;
+    newPo.poDate = now;
+    newPo.poExpiryDate = poExpiryDate;
+    newPo.channelId = originalPo.channelId;
+    newPo.customerId = originalPo.customerId;
+    newPo.location = originalPo.location;
+    newPo.poValue = leftoverLines.reduce((sum, { li, leftover }) => sum + leftover * (Number(li.unitPrice ?? li.mrp) || 0), 0);
+    newPo.overallOwnerId = originalPo.overallOwnerId;
+    newPo.status = POStatus.RECEIVED;
+    newPo.riskStatus = RiskStatus.GREEN;
+    newPo.priorityScore = 0;
+    newPo.sourceType = originalPo.sourceType;
+    newPo.isReattemptPo = true;
+    newPo.lastStatusChangeAt = now;
+    newPo = await this.poRepository.save(newPo);
+
+    for (const { li, leftover } of leftoverLines) {
+      const item = new POLineItemEntity();
+      item.poId = newPo.id;
+      item.skuCode = li.skuCode;
+      item.skuName = li.skuName;
+      item.upc = li.upc;
+      item.mrp = li.mrp;
+      item.unitPrice = li.unitPrice;
+      item.quantity = leftover;
+      item.availability = 'NOT_AVAILABLE';
+      await this.poLineItemRepository.save(item);
+    }
+
+    const appointment = new AppointmentEntity();
+    appointment.poId = newPo.id;
+    appointment.requestedAt = null;
+    appointment.confirmedAt = null;
+    appointment.slaStatus = 'ON_TIME';
+    await this.appointmentRepository.save(appointment);
+
+    const transporter = await this.transporterRepository.findOne({ where: { name: 'DEFAULT' } });
+    const transitTimeDays = transporter?.transitTimeDays || 2;
+    const dispatch = new DispatchEntity();
+    dispatch.poId = newPo.id;
+    dispatch.idealDispatchDate = this.dispatchPlanningEngine.calculateIdealDispatchDate(now, transitTimeDays);
+    dispatch.latestSafeDispatchDate = this.dispatchPlanningEngine.calculateLatestSafeDispatchDate(
+      poExpiryDate,
+      3,
+      transitTimeDays,
+      1,
+    );
+    await this.dispatchRepository.save(dispatch);
+
+    await this.recomputePOAggregates(newPo.id);
+    await this.recomputeRisk(newPo.id);
+    await this.recomputeDispatchPlan(newPo.id);
+
+    const mapping = await this.poMappingService.mapWholePO({
+      originalPoId: poId,
+      newPoId: newPo.id,
+      lines: leftoverLines.map(({ li, leftover }) => ({ skuCode: li.skuCode, quantityMapped: leftover })),
+      reason: 'REATTEMPT',
+      createdByUserId: userId,
+    });
+
+    await this.changeHistoryRepository.save(
+      this.changeHistoryRepository.create({
+        poId,
+        fieldName: 'reattempt',
+        oldValue: null,
+        newValue: newPoNumber,
+        changeType: 'REATTEMPT_CREATED',
+        changedByUserId: userId,
+      }),
+    );
+
+    return { newPo: await this.getPOById(newPo.id), mapping };
   }
 
   async recomputeStatus(poId: string): Promise<void> {

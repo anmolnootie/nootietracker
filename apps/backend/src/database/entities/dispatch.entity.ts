@@ -89,6 +89,15 @@ export class DispatchEntity {
   @Column({ type: 'varchar', nullable: true })
   lrNumber: string | null;
 
+  @Column({ type: 'varchar', nullable: true })
+  awbNumber: string | null;
+
+  @Column('decimal', { precision: 15, scale: 2, nullable: true })
+  invoiceValue: number | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  invoiceDate: Date | null;
+
   @Column({ type: 'text', nullable: true })
   remarks: string | null;
 }

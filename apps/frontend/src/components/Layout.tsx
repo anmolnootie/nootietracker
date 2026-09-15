@@ -56,6 +56,7 @@ export const MainLayout: React.FC<LayoutProps> = ({ children }) => {
     { title: 'Import', items: [
       { label: '⇪ Upload / Bulk Import', href: '/bulk-import' },
       { label: '📊 Compilation Reports', href: '/bulk-import/reports' },
+      { label: '🧾 Invoice Bulk Upload', href: '/invoice-import' },
     ] },
     { title: 'Compilation', items: [
       { label: '➕ Create Compilation', href: '/compilations/new' },
@@ -196,6 +197,7 @@ function getPageTitle(pathname: string): string {
     '/users': 'Users',
     '/bulk-import': 'Bulk Import',
     '/bulk-import/reports': 'Compilation Reports',
+    '/invoice-import': 'Invoice Bulk Upload',
     '/exceptions': 'Exceptions',
     '/locations': 'Location & TAT Master',
     '/compilations': 'Saved Compilations',

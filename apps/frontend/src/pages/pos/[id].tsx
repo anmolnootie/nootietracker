@@ -3,7 +3,7 @@ import { useRouter } from 'next/router';
 import { MainLayout } from '@/components/Layout';
 import { RiskBadge, StatusBadge } from '@/components/Badges';
 import { poService } from '@/services/po.service';
-import { poMappingService, MappedStockForNewPo } from '@/services/po-mapping.service';
+import { poMappingService, MappedStockForNewPo, POMappingRow } from '@/services/po-mapping.service';
 import { documentsService } from '@/services/documents.service';
 import { DocumentPreviewModal } from '@/components/DocumentPreviewModal';
 import {
@@ -25,6 +25,9 @@ export default function PODetail() {
   const [source, setSource] = useState<any>(null);
   const [documents, setDocuments] = useState<DocumentRecord[]>([]);
   const [mappedStock, setMappedStock] = useState<MappedStockForNewPo | null>(null);
+  const [reattemptMapping, setReattemptMapping] = useState<POMappingRow | null>(null);
+  const [reattemptBusy, setReattemptBusy] = useState(false);
+  const [reattemptError, setReattemptError] = useState('');
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('overview');
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
@@ -56,6 +59,10 @@ export default function PODetail() {
       setSource(sourceData);
       setDocuments(documentsData);
       poMappingService.getMappedStockForNewPo(id as string).then(setMappedStock).catch(() => {});
+      poMappingService
+        .list({ originalPoId: id as string, status: 'ACTIVE' })
+        .then((mappings) => setReattemptMapping(mappings.find((m) => m.reason === 'REATTEMPT') || null))
+        .catch(() => {});
     } catch (error) {
       console.error('Failed to fetch PO', error);
     } finally {
@@ -155,6 +162,20 @@ export default function PODetail() {
     }
   };
 
+  const handleReattempt = async () => {
+    if (!po) return;
+    setReattemptBusy(true);
+    setReattemptError('');
+    try {
+      const result = await poService.reattemptDelivery(po.id);
+      router.push(`/pos/${result.newPo.id}`);
+    } catch (err: any) {
+      setReattemptError(err.response?.data?.message || 'Failed to create reattempt delivery');
+    } finally {
+      setReattemptBusy(false);
+    }
+  };
+
   if (loading) {
     return (
       <MainLayout>
@@ -238,6 +259,7 @@ export default function PODetail() {
 
         <div className="grid grid-cols-4 gap-4">
           <InfoBox label="Fulfilment %" value={po.fulfilmentPercent != null ? `${Number(po.fulfilmentPercent).toFixed(1)}%` : '-'} />
+          <InfoBox label="Fill Rate %" value={po.fillRatePercent != null ? `${Number(po.fillRatePercent).toFixed(1)}%` : '-'} />
           <InfoBox label="Available Stock Value" value={po.availableStockValue != null ? `₹${Number(po.availableStockValue).toLocaleString()}` : '-'} />
           <InfoBox label="Dispatch Value" value={po.dispatchValue != null ? `₹${Number(po.dispatchValue).toLocaleString()}` : '-'} />
           <InfoBox
@@ -475,6 +497,9 @@ export default function PODetail() {
                     <InfoBox label="Planned Dispatch Date" value={timeline.dispatch.plannedDispatchDate ? format(new Date(timeline.dispatch.plannedDispatchDate), 'dd MMM yyyy HH:mm') : '-'} />
                     <InfoBox label="Dispatch Status" value={timeline.dispatch.dispatchStatus || '-'} />
                     <InfoBox label="Invoice Number" value={timeline.dispatch.invoiceNumber || '-'} />
+                    <InfoBox label="Invoice Value" value={timeline.dispatch.invoiceValue != null ? `₹${Number(timeline.dispatch.invoiceValue).toLocaleString()}` : '-'} />
+                    <InfoBox label="Invoice Date" value={timeline.dispatch.invoiceDate ? format(new Date(timeline.dispatch.invoiceDate), 'dd MMM yyyy') : '-'} />
+                    <InfoBox label="AWB Number" value={timeline.dispatch.awbNumber || '-'} />
                     <InfoBox label="E-way Bill" value={timeline.dispatch.ewayBillNumber || '-'} />
                     <InfoBox label="Vehicle Number" value={timeline.dispatch.vehicleNumber || '-'} />
                     <InfoBox label="LR Number" value={timeline.dispatch.lrNumber || '-'} />
@@ -571,6 +596,27 @@ export default function PODetail() {
                 <div className="mt-4 p-3 bg-gray-50 rounded border text-sm">
                   <span className="text-xs text-gray-500 uppercase tracking-wide mr-2">Remarks</span>
                   {timeline.returnRecord.remarks}
+                </div>
+              )}
+              {timeline?.returnRecord?.returnType === 'RECALL_NOT_DELIVERED' && (
+                <div className="mt-4">
+                  {reattemptMapping ? (
+                    <a
+                      href={`/pos/${reattemptMapping.newPoId}`}
+                      className="inline-block px-3 py-1.5 bg-nootie-orange-dark hover:bg-nootie-orange text-white text-sm rounded-lg"
+                    >
+                      View Reattempt PO ({reattemptMapping.newPoNumber})
+                    </a>
+                  ) : (
+                    <button
+                      disabled={reattemptBusy}
+                      onClick={handleReattempt}
+                      className="px-3 py-1.5 bg-nootie-orange-dark hover:bg-nootie-orange text-white text-sm rounded-lg disabled:opacity-50"
+                    >
+                      {reattemptBusy ? 'Creating...' : 'Create Reattempt Delivery'}
+                    </button>
+                  )}
+                  {reattemptError && <p className="text-xs text-red-600 mt-2">{reattemptError}</p>}
                 </div>
               )}
               <DocumentList label="Return Document" documents={documents} documentType="RETURN_DOCUMENT" />

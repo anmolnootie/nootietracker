@@ -263,4 +263,9 @@ export class POController {
     }
     return this.poService.recordGRN(poId, body);
   }
+
+  @Post(':poId/reattempt')
+  async reattemptDelivery(@Param('poId') poId: string, @Request() req: any) {
+    return this.poService.reattemptDelivery(poId, req.user.userId);
+  }
 }

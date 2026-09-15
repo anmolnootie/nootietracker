@@ -47,7 +47,8 @@ export default function EditPO() {
     extensionGranted: false, extensionRequestedAt: '', extensionReason: '', remarks: '',
   });
   const [dispatch, setDispatch] = useState({
-    plannedDispatchDate: '', actualDispatchDate: '', dispatchStatus: '', invoiceNumber: '', ewayBillNumber: '',
+    plannedDispatchDate: '', actualDispatchDate: '', dispatchStatus: '', invoiceNumber: '', invoiceValue: '',
+    invoiceDate: '', awbNumber: '', ewayBillNumber: '',
     vehicleNumber: '', lrNumber: '', docketNumber: '', transporterId: '', remarks: '',
   });
   const [logistics, setLogistics] = useState({
@@ -145,6 +146,9 @@ export default function EditPO() {
             actualDispatchDate: toInputDateTime(d.actualDispatchDate),
             dispatchStatus: d.dispatchStatus || '',
             invoiceNumber: d.invoiceNumber || '',
+            invoiceValue: d.invoiceValue != null ? String(d.invoiceValue) : '',
+            invoiceDate: toInputDateTime(d.invoiceDate),
+            awbNumber: d.awbNumber || '',
             ewayBillNumber: d.ewayBillNumber || '',
             vehicleNumber: d.vehicleNumber || '',
             lrNumber: d.lrNumber || '',
@@ -278,6 +282,9 @@ export default function EditPO() {
         actualDispatchDate: emptyToNull(dispatch.actualDispatchDate),
         dispatchStatus: emptyToNull(dispatch.dispatchStatus),
         invoiceNumber: emptyToNull(dispatch.invoiceNumber),
+        invoiceValue: numOrNull(dispatch.invoiceValue),
+        invoiceDate: emptyToNull(dispatch.invoiceDate),
+        awbNumber: emptyToNull(dispatch.awbNumber),
         ewayBillNumber: emptyToNull(dispatch.ewayBillNumber),
         vehicleNumber: emptyToNull(dispatch.vehicleNumber),
         lrNumber: emptyToNull(dispatch.lrNumber),
@@ -535,6 +542,9 @@ export default function EditPO() {
               <DateTimeField label="Actual Dispatch Date" value={dispatch.actualDispatchDate} onChange={(v) => setDispatch({ ...dispatch, actualDispatchDate: v })} />
               <TextField label="Dispatch Status" value={dispatch.dispatchStatus} onChange={(v) => setDispatch({ ...dispatch, dispatchStatus: v })} />
               <TextField label="Invoice Number" value={dispatch.invoiceNumber} onChange={(v) => setDispatch({ ...dispatch, invoiceNumber: v })} />
+              <NumberField label="Invoice Value" value={dispatch.invoiceValue} onChange={(v) => setDispatch({ ...dispatch, invoiceValue: v })} />
+              <DateTimeField label="Invoice Date" value={dispatch.invoiceDate} onChange={(v) => setDispatch({ ...dispatch, invoiceDate: v })} />
+              <TextField label="AWB Number" value={dispatch.awbNumber} onChange={(v) => setDispatch({ ...dispatch, awbNumber: v })} />
               <TextField label="E-way Bill" value={dispatch.ewayBillNumber} onChange={(v) => setDispatch({ ...dispatch, ewayBillNumber: v })} />
               <TextField label="Vehicle Number" value={dispatch.vehicleNumber} onChange={(v) => setDispatch({ ...dispatch, vehicleNumber: v })} />
               <TextField label="LR Number" value={dispatch.lrNumber} onChange={(v) => setDispatch({ ...dispatch, lrNumber: v })} />

@@ -146,4 +146,17 @@ export class POMasterEntity {
 
   @Column({ type: 'uuid', nullable: true })
   nonFulfilmentByUserId: string | null;
+
+  // Invoice-value-based Fill Rate (Invoice Value / PO Value) - distinct from
+  // fulfilmentPercent, which is dispatch-quantity-based. Recomputed whenever
+  // DispatchEntity.invoiceValue changes.
+  @Column('decimal', { precision: 5, scale: 2, nullable: true })
+  fillRatePercent: number | null;
+
+  // True for a PO created by the Reattempt flow (failed delivery -> new PO,
+  // linked to the original via a po_mappings row with reason 'REATTEMPT').
+  // Excludes this PO from autoMapWholePO's candidate scan so it's never
+  // offered as an auto-map target for an unrelated stuck PO.
+  @Column({ default: false })
+  isReattemptPo: boolean;
 }

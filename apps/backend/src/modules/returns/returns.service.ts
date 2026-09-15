@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ReturnTrackerEntity } from '../../database/entities/return-tracker.entity';
 import { POMasterEntity } from '../../database/entities/po-master.entity';
+import { POLineItemEntity } from '../../database/entities/po-line-item.entity';
 import { POStatus } from '@po-control-tower/shared';
 
 @Injectable()
@@ -12,6 +13,8 @@ export class ReturnsService {
     private readonly returnRepository: Repository<ReturnTrackerEntity>,
     @InjectRepository(POMasterEntity)
     private readonly poRepository: Repository<POMasterEntity>,
+    @InjectRepository(POLineItemEntity)
+    private readonly lineItemRepository: Repository<POLineItemEntity>,
   ) {}
 
   async list(): Promise<ReturnTrackerEntity[]> {
@@ -44,12 +47,23 @@ export class ReturnsService {
       await this.poRepository.save(po);
     }
 
+    // A RECALL_NOT_DELIVERED return means the whole dispatched shipment is
+    // physically back, not with the customer - reset dispatchedQuantity so
+    // this stock reads as available again (stuck-stock detection and PO
+    // Mapping's availability math both key off quantity - dispatchedQuantity,
+    // which would otherwise stay 0 forever for an already-dispatched PO).
+    // The other return types (REJECTED_GRN/DAMAGE/SHORTAGE) happen post-GRN,
+    // a different accounting situation - left untouched.
+    if (data.returnType === 'RECALL_NOT_DELIVERED') {
+      await this.lineItemRepository.update({ poId }, { dispatchedQuantity: 0 });
+    }
+
     return saved;
   }
 
   async close(
     id: string,
-    data: { rootCause: string; creditNoteNumber?: string; lossAmount?: number },
+    data: { rootCause: string; creditNoteNumber?: string; lossAmount?: number; dncnType?: 'DEBIT' | 'CREDIT'; dncnValue?: number },
   ): Promise<ReturnTrackerEntity> {
     if (!data.rootCause) {
       throw new BadRequestException('Root cause is required to close a return');
@@ -60,6 +74,8 @@ export class ReturnsService {
     record.rootCause = data.rootCause;
     if (data.creditNoteNumber) record.creditNoteNumber = data.creditNoteNumber;
     if (data.lossAmount !== undefined) record.lossAmount = data.lossAmount;
+    if (data.dncnType !== undefined) record.dncnType = data.dncnType;
+    if (data.dncnValue !== undefined) record.dncnValue = data.dncnValue;
     return this.returnRepository.save(record);
   }
 }

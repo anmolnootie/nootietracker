@@ -201,6 +201,11 @@ export const poService = {
     const response = await api.patch(`/pos/${poId}`, payload);
     return response.data;
   },
+
+  reattemptDelivery: async (poId: string): Promise<{ newPo: POMaster; mapping: any }> => {
+    const response = await api.post(`/pos/${poId}/reattempt`);
+    return response.data;
+  },
 };
 
 export interface EditPOPayload {
@@ -247,6 +252,9 @@ export interface EditPOPayload {
     actualDispatchDate: string | null;
     dispatchStatus: string | null;
     invoiceNumber: string | null;
+    invoiceValue: number | null;
+    invoiceDate: string | null;
+    awbNumber: string | null;
     ewayBillNumber: string | null;
     vehicleNumber: string | null;
     lrNumber: string | null;

@@ -365,6 +365,8 @@ export interface POMaster {
   nonFulfilmentSystemRemarks?: string | null;
   nonFulfilmentAt?: Date | null;
   nonFulfilmentByUserId?: string | null;
+  fillRatePercent?: number | null;
+  isReattemptPo?: boolean;
 }
 
 export interface POLineItem {
@@ -438,6 +440,9 @@ export interface Dispatch {
   ewayBillNumber?: string | null;
   vehicleNumber?: string | null;
   lrNumber?: string | null;
+  awbNumber?: string | null;
+  invoiceValue?: number | null;
+  invoiceDate?: Date | null;
   remarks?: string | null;
 }
 
@@ -489,6 +494,8 @@ export interface ReturnTracker {
   returnType: 'RECALL_NOT_DELIVERED' | 'REJECTED_GRN' | 'DAMAGE' | 'SHORTAGE';
   rootCause?: string;
   creditNoteNumber?: string;
+  dncnType?: 'DEBIT' | 'CREDIT' | null;
+  dncnValue?: number | null;
   lossAmount?: number;
   createdAt: Date;
   updatedAt: Date;

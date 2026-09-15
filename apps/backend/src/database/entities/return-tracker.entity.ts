@@ -32,6 +32,15 @@ export class ReturnTrackerEntity {
   @Column({ type: 'varchar', nullable: true })
   creditNoteNumber: string;
 
+  // DNCN = Debit Note / Credit Note, raised against the AWB when a PO is
+  // returned rather than reattempted. creditNoteNumber above doubles as the
+  // DNCN number field regardless of type - these two just add the type/value.
+  @Column({ type: 'enum', enum: ['DEBIT', 'CREDIT'], nullable: true })
+  dncnType: 'DEBIT' | 'CREDIT' | null;
+
+  @Column('decimal', { precision: 15, scale: 2, nullable: true })
+  dncnValue: number | null;
+
   @Column('decimal', { precision: 15, scale: 2, nullable: true })
   lossAmount: number;
 

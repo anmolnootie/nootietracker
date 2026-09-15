@@ -65,6 +65,6 @@ import { ExceptionsModule } from '../exceptions/exceptions.module';
     FulfilmentStatusEngine,
   ],
   controllers: [BulkImportController],
-  exports: [BulkImportService, POReportsService],
+  exports: [BulkImportService, POReportsService, FileReaderService],
 })
 export class BulkImportModule {}

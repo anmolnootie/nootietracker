@@ -43,6 +43,9 @@ export interface EditDispatchFields {
   actualDispatchDate?: string;
   dispatchStatus?: string;
   invoiceNumber?: string;
+  invoiceValue?: number;
+  invoiceDate?: string;
+  awbNumber?: string;
   ewayBillNumber?: string;
   vehicleNumber?: string;
   lrNumber?: string;
