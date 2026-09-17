@@ -22,6 +22,8 @@ import { LocationsModule } from './modules/locations/locations.module';
 import { ExceptionsModule } from './modules/exceptions/exceptions.module';
 import { BulkImportModule } from './modules/bulk-import/bulk-import.module';
 import { InvoiceImportModule } from './modules/invoice-import/invoice-import.module';
+import { GrnImportModule } from './modules/grn-import/grn-import.module';
+import { DispatchReportImportModule } from './modules/dispatch-report-import/dispatch-report-import.module';
 import { CompilationsModule } from './modules/compilations/compilations.module';
 import { DocumentsModule } from './modules/documents/documents.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
@@ -54,6 +56,8 @@ import { DatabaseModule } from './database/database.module';
     ExceptionsModule,
     BulkImportModule,
     InvoiceImportModule,
+    GrnImportModule,
+    DispatchReportImportModule,
     CompilationsModule,
     DocumentsModule,
     InventoryModule,

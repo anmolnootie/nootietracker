@@ -32,6 +32,10 @@ import { POMappingEntity } from './entities/po-mapping.entity';
 import { PendingLocationEntity } from './entities/pending-location.entity';
 import { InvoiceUploadBatchEntity } from './entities/invoice-upload-batch.entity';
 import { InvoiceImportRowEntity } from './entities/invoice-import-row.entity';
+import { GrnUploadBatchEntity } from './entities/grn-upload-batch.entity';
+import { GrnImportRowEntity } from './entities/grn-import-row.entity';
+import { DispatchReportUploadBatchEntity } from './entities/dispatch-report-upload-batch.entity';
+import { DispatchReportRowEntity } from './entities/dispatch-report-row.entity';
 
 const ENTITIES = [
   UserEntity,
@@ -64,6 +68,10 @@ const ENTITIES = [
   PendingLocationEntity,
   InvoiceUploadBatchEntity,
   InvoiceImportRowEntity,
+  GrnUploadBatchEntity,
+  GrnImportRowEntity,
+  DispatchReportUploadBatchEntity,
+  DispatchReportRowEntity,
 ];
 
 @Module({
