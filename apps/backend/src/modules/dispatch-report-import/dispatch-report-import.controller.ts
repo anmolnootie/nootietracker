@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Param, UseGuards, UseInterceptors, UploadedFile, Body, BadRequestException, Request } from '@nestjs/common';
+import { Controller, Post, Get, Param, UseGuards, UseInterceptors, UploadedFile, BadRequestException, Request } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { AuthGuard } from '@nestjs/passport';
 import { DispatchReportImportService } from './dispatch-report-import.service';
@@ -10,11 +10,11 @@ export class DispatchReportImportController {
 
   @Post('upload')
   @UseInterceptors(FileInterceptor('file'))
-  async upload(@UploadedFile() file: Express.Multer.File, @Body('platform') platform: string, @Request() req: any) {
+  async upload(@UploadedFile() file: Express.Multer.File, @Request() req: any) {
     if (!file) {
       throw new BadRequestException('A file is required');
     }
-    return this.dispatchReportImportService.processFile(file.buffer, file.originalname, platform || null, req.user.userId);
+    return this.dispatchReportImportService.processFile(file.buffer, file.originalname, req.user.userId);
   }
 
   @Get('batches')

@@ -18,19 +18,22 @@ export interface DispatchReportRow {
   id: string;
   batchId: string;
   rowIndex: number;
+  partyName: string | null;
+  location: string | null;
   poNumber: string | null;
+  poValue: number | null;
   invoiceNumber: string | null;
   invoiceValue: number | null;
+  reportedFillRatePercent: number | null;
   matchStatus: 'RECONCILED' | 'MISMATCH' | 'INVALID';
   matchedPoId: string | null;
   errorMessage: string | null;
 }
 
 export const dispatchReportImportService = {
-  upload: async (file: File, platform: string): Promise<DispatchReportUploadBatch> => {
+  upload: async (file: File): Promise<DispatchReportUploadBatch> => {
     const form = new FormData();
     form.append('file', file);
-    form.append('platform', platform);
     // Leave Content-Type unset - see bulk-import.service.ts for why an explicit
     // multipart override here would break the multipart boundary.
     const response = await api.post('/dispatch-report-import/upload', form, {

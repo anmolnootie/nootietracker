@@ -3,8 +3,6 @@ import { MainLayout } from '@/components/Layout';
 import { dispatchReportImportService, DispatchReportUploadBatch } from '@/services/dispatch-report-import.service';
 import { format } from 'date-fns';
 
-const PLATFORMS = ['Blinkit', 'Zepto', 'Instamart', 'BigBasket', 'Flipkart', 'Other'];
-
 const STATUS_STYLES: Record<string, string> = {
   PROCESSING: 'bg-blue-100 text-blue-700',
   COMPLETED: 'bg-green-100 text-green-700',
@@ -13,7 +11,6 @@ const STATUS_STYLES: Record<string, string> = {
 
 export default function DispatchReportImport() {
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [platform, setPlatform] = useState('Blinkit');
   const [file, setFile] = useState<File | null>(null);
   const [dragging, setDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -42,7 +39,7 @@ export default function DispatchReportImport() {
     setUploading(true);
     setError('');
     try {
-      const res = await dispatchReportImportService.upload(file, platform);
+      const res = await dispatchReportImportService.upload(file);
       setResult(res);
       setFile(null);
       await loadBatches();
@@ -58,21 +55,11 @@ export default function DispatchReportImport() {
       <div className="bg-white rounded-lg shadow p-8 mb-6">
         <h2 className="text-2xl font-bold mb-2 text-gray-800">Daily Dispatch Report Upload</h2>
         <p className="text-gray-500 text-sm mb-6">
-          Upload the channel's own daily dispatch/fill-rate report (PO Number, Invoice Number, Invoice Value). This is
-          a reconciliation check only - it never writes to any PO. Any invoice number the report lists that this
-          system has no record of is flagged as a Mismatch.
+          Upload the multi-channel dispatch report as-is (party name, location, voucher no, invoice value, PO number,
+          PO value, fill rate - one file can cover every channel at once). This is a reconciliation check only - it
+          never writes to any PO. Any voucher/invoice number the report lists that this system has no record of is
+          flagged as a Mismatch.
         </p>
-
-        <div className="mb-4">
-          <label className="block text-sm font-medium text-gray-700 mb-2">Channel</label>
-          <select value={platform} onChange={(e) => setPlatform(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg">
-            {PLATFORMS.map((p) => (
-              <option key={p} value={p}>
-                {p}
-              </option>
-            ))}
-          </select>
-        </div>
 
         <div
           onDragOver={(e) => {
@@ -143,7 +130,6 @@ export default function DispatchReportImport() {
             <thead className="bg-gray-50 border-b">
               <tr>
                 <th className="px-4 py-3 text-left">Batch</th>
-                <th className="px-4 py-3 text-left">Channel</th>
                 <th className="px-4 py-3 text-left">Uploaded</th>
                 <th className="px-4 py-3 text-left">Rows</th>
                 <th className="px-4 py-3 text-left">Reconciled</th>
@@ -160,7 +146,6 @@ export default function DispatchReportImport() {
                     </a>
                     <p className="text-xs text-gray-400">{b.fileName}</p>
                   </td>
-                  <td className="px-4 py-3">{b.platform || '-'}</td>
                   <td className="px-4 py-3 text-xs text-gray-500">{format(new Date(b.uploadedAt), 'dd MMM yyyy HH:mm')}</td>
                   <td className="px-4 py-3">{b.totalRows}</td>
                   <td className="px-4 py-3 text-green-700">{b.reconciledCount}</td>

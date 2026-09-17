@@ -51,9 +51,7 @@ export default function DispatchReportBatchDetail() {
         <div className="flex items-center justify-between mb-2">
           <div>
             <h2 className="text-xl font-bold text-gray-800">{batch.batchCode}</h2>
-            <p className="text-sm text-gray-500">
-              {batch.fileName} {batch.platform ? `· ${batch.platform}` : ''}
-            </p>
+            <p className="text-sm text-gray-500">{batch.fileName}</p>
           </div>
           <span className={`px-2 py-1 rounded text-xs font-medium ${STATUS_STYLES[batch.status]}`}>{batch.status}</span>
         </div>
@@ -81,9 +79,13 @@ export default function DispatchReportBatchDetail() {
             <thead className="bg-gray-50 border-b">
               <tr>
                 <th className="px-4 py-3 text-left">#</th>
+                <th className="px-4 py-3 text-left">Party</th>
+                <th className="px-4 py-3 text-left">Location</th>
                 <th className="px-4 py-3 text-left">PO Number</th>
-                <th className="px-4 py-3 text-left">Invoice Number</th>
+                <th className="px-4 py-3 text-left">PO Value</th>
+                <th className="px-4 py-3 text-left">Voucher / Invoice No.</th>
                 <th className="px-4 py-3 text-left">Invoice Value</th>
+                <th className="px-4 py-3 text-left">Reported Fill Rate</th>
                 <th className="px-4 py-3 text-left">Result</th>
                 <th className="px-4 py-3 text-left">Note</th>
               </tr>
@@ -92,6 +94,8 @@ export default function DispatchReportBatchDetail() {
               {visibleRows.map((r) => (
                 <tr key={r.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3 text-gray-400">{r.rowIndex + 1}</td>
+                  <td className="px-4 py-3">{r.partyName || '-'}</td>
+                  <td className="px-4 py-3">{r.location || '-'}</td>
                   <td className="px-4 py-3 font-medium">
                     {r.matchedPoId ? (
                       <a href={`/pos/${r.matchedPoId}`} className="text-nootie-orange-dark hover:underline">
@@ -101,8 +105,10 @@ export default function DispatchReportBatchDetail() {
                       r.poNumber || '-'
                     )}
                   </td>
+                  <td className="px-4 py-3">{r.poValue != null ? `₹${Number(r.poValue).toLocaleString()}` : '-'}</td>
                   <td className="px-4 py-3">{r.invoiceNumber || '-'}</td>
                   <td className="px-4 py-3">{r.invoiceValue != null ? `₹${Number(r.invoiceValue).toLocaleString()}` : '-'}</td>
+                  <td className="px-4 py-3">{r.reportedFillRatePercent != null ? `${Number(r.reportedFillRatePercent).toFixed(0)}%` : '-'}</td>
                   <td className="px-4 py-3">
                     <span className={`px-2 py-1 rounded text-xs font-medium ${MATCH_STYLES[r.matchStatus]}`}>{r.matchStatus}</span>
                   </td>
@@ -111,7 +117,7 @@ export default function DispatchReportBatchDetail() {
               ))}
               {visibleRows.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
+                  <td colSpan={10} className="px-4 py-8 text-center text-gray-500">
                     No mismatches - every invoice in this report was found in the system.
                   </td>
                 </tr>
