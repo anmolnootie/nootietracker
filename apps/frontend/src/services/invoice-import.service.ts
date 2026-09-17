@@ -44,4 +44,8 @@ export const invoiceImportService = {
   getBatch: async (id: string): Promise<InvoiceUploadBatch> => (await api.get(`/invoice-import/batches/${id}`)).data,
 
   getRows: async (id: string): Promise<InvoiceImportRow[]> => (await api.get(`/invoice-import/batches/${id}/rows`)).data,
+
+  deleteBatch: async (id: string): Promise<void> => {
+    await api.delete(`/invoice-import/batches/${id}`);
+  },
 };

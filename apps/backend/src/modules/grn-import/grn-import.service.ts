@@ -246,4 +246,15 @@ export class GrnImportService {
   async getRows(batchId: string): Promise<GrnImportRowEntity[]> {
     return this.rowRepository.find({ where: { batchId }, order: { rowIndex: 'ASC' } });
   }
+
+  /**
+   * Removes this batch's upload history only (rows cascade via the FK) -
+   * never touches the GRNTrackerEntity rows or any side effect (stuck-stock
+   * recovery, task completion, auto-created returns) each matched row's
+   * recordGRN() call already triggered. Those are real, already-happened
+   * warehouse events, not tied to the audit trail's lifetime.
+   */
+  async deleteBatch(id: string): Promise<void> {
+    await this.batchRepository.delete(id);
+  }
 }

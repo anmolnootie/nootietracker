@@ -242,4 +242,9 @@ export class DispatchReportImportService {
   async getRows(batchId: string): Promise<DispatchReportRowEntity[]> {
     return this.rowRepository.find({ where: { batchId }, order: { rowIndex: 'ASC' } });
   }
+
+  /** Purely a reconciliation record - never wrote anything, so deleting it is a plain removal (rows cascade via the FK). */
+  async deleteBatch(id: string): Promise<void> {
+    await this.batchRepository.delete(id);
+  }
 }

@@ -221,4 +221,15 @@ export class InvoiceImportService {
   async getRows(batchId: string): Promise<InvoiceImportRowEntity[]> {
     return this.rowRepository.find({ where: { batchId }, order: { rowIndex: 'ASC' } });
   }
+
+  /**
+   * Removes this batch's upload history only (rows cascade via the FK) -
+   * never touches the DispatchEntity/POMasterEntity fields it already wrote.
+   * Those are real data, not tied to the audit trail's lifetime; undoing
+   * them here would be indistinguishable from a fresh, unrelated edit and
+   * could clobber a newer invoice upload that happened to touch the same PO.
+   */
+  async deleteBatch(id: string): Promise<void> {
+    await this.batchRepository.delete(id);
+  }
 }

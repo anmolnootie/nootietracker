@@ -17,8 +17,20 @@ export default function GrnImport() {
   const [result, setResult] = useState<GrnUploadBatch | null>(null);
   const [error, setError] = useState('');
   const [batches, setBatches] = useState<GrnUploadBatch[]>([]);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const loadBatches = async () => setBatches(await grnImportService.listBatches());
+
+  const handleDelete = async (batch: GrnUploadBatch) => {
+    if (!window.confirm(`Delete upload history for ${batch.batchCode}? This only removes the upload record - it does not undo any GRN already recorded from it.`)) return;
+    setDeletingId(batch.id);
+    try {
+      await grnImportService.deleteBatch(batch.id);
+      await loadBatches();
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   useEffect(() => {
     loadBatches();
@@ -134,6 +146,7 @@ export default function GrnImport() {
                 <th className="px-4 py-3 text-left">Recorded</th>
                 <th className="px-4 py-3 text-left">Failed / Unmatched</th>
                 <th className="px-4 py-3 text-left">Status</th>
+                <th className="px-4 py-3 text-left"></th>
               </tr>
             </thead>
             <tbody className="divide-y">
@@ -151,6 +164,11 @@ export default function GrnImport() {
                   <td className="px-4 py-3 text-nootie-orange-dark">{b.unmatchedCount}</td>
                   <td className="px-4 py-3">
                     <span className={`px-2 py-1 rounded text-xs font-medium ${STATUS_STYLES[b.status]}`}>{b.status}</span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <button disabled={deletingId === b.id} onClick={() => handleDelete(b)} className="text-xs text-red-600 hover:underline disabled:opacity-50">
+                      {deletingId === b.id ? 'Deleting...' : 'Delete'}
+                    </button>
                   </td>
                 </tr>
               ))}

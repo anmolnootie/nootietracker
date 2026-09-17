@@ -46,4 +46,8 @@ export const grnImportService = {
   getBatch: async (id: string): Promise<GrnUploadBatch> => (await api.get(`/grn-import/batches/${id}`)).data,
 
   getRows: async (id: string): Promise<GrnImportRow[]> => (await api.get(`/grn-import/batches/${id}/rows`)).data,
+
+  deleteBatch: async (id: string): Promise<void> => {
+    await api.delete(`/grn-import/batches/${id}`);
+  },
 };

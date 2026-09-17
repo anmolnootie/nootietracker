@@ -47,4 +47,8 @@ export const dispatchReportImportService = {
   getBatch: async (id: string): Promise<DispatchReportUploadBatch> => (await api.get(`/dispatch-report-import/batches/${id}`)).data,
 
   getRows: async (id: string): Promise<DispatchReportRow[]> => (await api.get(`/dispatch-report-import/batches/${id}/rows`)).data,
+
+  deleteBatch: async (id: string): Promise<void> => {
+    await api.delete(`/dispatch-report-import/batches/${id}`);
+  },
 };

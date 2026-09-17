@@ -17,8 +17,20 @@ export default function InvoiceImport() {
   const [result, setResult] = useState<InvoiceUploadBatch | null>(null);
   const [error, setError] = useState('');
   const [batches, setBatches] = useState<InvoiceUploadBatch[]>([]);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const loadBatches = async () => setBatches(await invoiceImportService.listBatches());
+
+  const handleDelete = async (batch: InvoiceUploadBatch) => {
+    if (!window.confirm(`Delete upload history for ${batch.batchCode}? This only removes the upload record - it does not undo any invoice data already written to POs.`)) return;
+    setDeletingId(batch.id);
+    try {
+      await invoiceImportService.deleteBatch(batch.id);
+      await loadBatches();
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   useEffect(() => {
     loadBatches();
@@ -133,6 +145,7 @@ export default function InvoiceImport() {
                 <th className="px-4 py-3 text-left">Matched</th>
                 <th className="px-4 py-3 text-left">Unmatched</th>
                 <th className="px-4 py-3 text-left">Status</th>
+                <th className="px-4 py-3 text-left"></th>
               </tr>
             </thead>
             <tbody className="divide-y">
@@ -150,6 +163,11 @@ export default function InvoiceImport() {
                   <td className="px-4 py-3 text-nootie-orange-dark">{b.unmatchedCount}</td>
                   <td className="px-4 py-3">
                     <span className={`px-2 py-1 rounded text-xs font-medium ${STATUS_STYLES[b.status]}`}>{b.status}</span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <button disabled={deletingId === b.id} onClick={() => handleDelete(b)} className="text-xs text-red-600 hover:underline disabled:opacity-50">
+                      {deletingId === b.id ? 'Deleting...' : 'Delete'}
+                    </button>
                   </td>
                 </tr>
               ))}

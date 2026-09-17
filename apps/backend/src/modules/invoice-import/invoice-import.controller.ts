@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Param, UseGuards, UseInterceptors, UploadedFile, BadRequestException, Request } from '@nestjs/common';
+import { Controller, Post, Get, Delete, Param, UseGuards, UseInterceptors, UploadedFile, BadRequestException, Request } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { AuthGuard } from '@nestjs/passport';
 import { InvoiceImportService } from './invoice-import.service';
@@ -30,5 +30,10 @@ export class InvoiceImportController {
   @Get('batches/:id/rows')
   getRows(@Param('id') id: string) {
     return this.invoiceImportService.getRows(id);
+  }
+
+  @Delete('batches/:id')
+  deleteBatch(@Param('id') id: string) {
+    return this.invoiceImportService.deleteBatch(id);
   }
 }
