@@ -30,6 +30,8 @@ import { SkuMasterEntity } from './entities/sku-master.entity';
 import { StuckStockEntity } from './entities/stuck-stock.entity';
 import { POMappingEntity } from './entities/po-mapping.entity';
 import { PendingLocationEntity } from './entities/pending-location.entity';
+import { InvoiceUploadBatchEntity } from './entities/invoice-upload-batch.entity';
+import { InvoiceImportRowEntity } from './entities/invoice-import-row.entity';
 
 const ENTITIES = [
   UserEntity,
@@ -60,6 +62,8 @@ const ENTITIES = [
   StuckStockEntity,
   POMappingEntity,
   PendingLocationEntity,
+  InvoiceUploadBatchEntity,
+  InvoiceImportRowEntity,
 ];
 
 @Module({
