@@ -17,15 +17,22 @@ import { FileReaderService } from '../bulk-import/file-reader.service';
 type DispatchReportField = 'partyName' | 'location' | 'invoiceNumber' | 'invoiceValue' | 'poNumber' | 'poValue' | 'fillRatePercent';
 
 const FIELD_ALIASES: Record<DispatchReportField, string[]> = {
-  partyName: ['party name', 'channel', 'customer', 'platform'],
+  partyName: ['party name', 'sales channel', 'channel', 'customer', 'platform'],
   location: ['location', 'warehouse', 'city', 'facility'],
   // "voucher no" is the wording seen in real channel exports for what this
   // system calls Invoice Number - listed first so it's tried before the
   // more generic aliases.
   invoiceNumber: ['voucher no', 'voucher number', 'invoice number', 'invoice no', 'invoice id', 'invoice#'],
-  invoiceValue: ['invoice value', 'invoice amount', 'total invoice value', 'net amount'],
+  // "gross total" is another real-export wording for the same figure -
+  // some channel reports call it Invoice Value, others Gross Total; both
+  // feed the same Invoice Value / PO Value fill-rate calculation.
+  invoiceValue: ['gross total', 'invoice value', 'invoice amount', 'total invoice value', 'net amount'],
   poNumber: ['po number', 'po no', 'purchase order', 'purchase order number', 'po id', 'po#'],
   poValue: ['po value', 'order value', 'total po value'],
+  // "Overall Fillrate"/"Overall Fill Rate" is a per-channel-block rollup
+  // (like "PO Count" above), not per-row data - the exact-match pass below
+  // locks "Fill Rate %" in first, so the rollup column is never mistaken
+  // for it even though "fillrate" is a substring of both once normalized.
   fillRatePercent: ['fill rate %', 'fill rate', 'fillrate'],
 };
 
@@ -119,10 +126,13 @@ export class DispatchReportImportService {
         const invoiceValue = parseNumber(get('invoiceValue'));
         const reportedFillRatePercent = parsePercent(get('fillRatePercent'));
 
-        // A blank row (e.g. a subtotal/spacer line with no party name and no
-        // voucher no - common right after a merged "PO Count" block) isn't a
-        // real dispatch line - skip it silently rather than flag it INVALID.
-        if (!partyName && !invoiceNumber && !poNumber) continue;
+        // A row with neither an invoice number nor a PO number can never be
+        // reconciled against anything - this is the real report's own
+        // trailing "Total" line (party name reads as the literal text
+        // "Total" from that row's merge, everything else numeric subtotals)
+        // as much as a blank spacer row. Skip both silently rather than
+        // surface a manufactured INVALID row on every single upload.
+        if (!invoiceNumber && !poNumber) continue;
 
         const result = await this.reconcile(invoiceNumber, poNumber);
 
@@ -147,7 +157,11 @@ export class DispatchReportImportService {
         else mismatchCount++;
       }
 
-      batch.totalRows = rows.length;
+      // Counts only rows actually processed (skipped totals/spacer rows
+      // excluded) so this always equals reconciledCount + mismatchCount -
+      // rows.length here would silently disagree with that sum by however
+      // many trailing "Total" rows the file happened to carry.
+      batch.totalRows = reconciledCount + mismatchCount;
       batch.reconciledCount = reconciledCount;
       batch.mismatchCount = mismatchCount;
       batch.status = 'COMPLETED';
