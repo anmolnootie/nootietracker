@@ -92,7 +92,7 @@ export const MainLayout: React.FC<LayoutProps> = ({ children }) => {
   return (
     <div className="flex min-h-screen bg-gray-50">
       {/* Sidebar */}
-      <aside className="w-64 bg-white shadow-lg">
+      <aside className="w-64 shrink-0 bg-white shadow-lg sticky top-0 h-screen overflow-y-auto">
         <div className="p-6 border-b">
           <h1 className="font-brand text-2xl font-bold text-nootie-gold-dark tracking-tight">
             n<span className="text-nootie-orange">oo</span>tie
