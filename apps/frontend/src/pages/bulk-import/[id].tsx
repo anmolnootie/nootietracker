@@ -19,6 +19,7 @@ export default function BatchDetail() {
   const [rows, setRows] = useState<any[]>([]);
   const [tab, setTab] = useState<'processed' | 'exceptions'>('processed');
   const [exceptions, setExceptions] = useState<any[]>([]);
+  const [showResolved, setShowResolved] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const load = async (showSpinner = true) => {
@@ -53,6 +54,8 @@ export default function BatchDetail() {
   }
 
   const { batch, reconciliation } = data;
+  const openExceptions = exceptions.filter((e) => e.resolutionStatus !== 'RESOLVED' && e.resolutionStatus !== 'IGNORED');
+  const visibleExceptions = showResolved ? exceptions : openExceptions;
 
   return (
     <MainLayout>
@@ -95,15 +98,23 @@ export default function BatchDetail() {
               Processed Rows ({rows.length})
             </button>
             <button onClick={() => setTab('exceptions')} className={`px-3 py-1.5 rounded text-sm ${tab === 'exceptions' ? 'bg-nootie-orange-dark text-white' : 'bg-gray-100 text-gray-600'}`}>
-              Exceptions ({exceptions.length})
+              Exceptions ({openExceptions.length})
             </button>
           </div>
-          <button
-            onClick={() => load(false)}
-            className="text-sm px-3 py-1.5 rounded border border-gray-300 text-gray-600 hover:bg-gray-50 whitespace-nowrap"
-          >
-            🔄 Refresh
-          </button>
+          <div className="flex items-center gap-3">
+            {tab === 'exceptions' && (
+              <label className="flex items-center gap-2 text-sm text-gray-600">
+                <input type="checkbox" checked={showResolved} onChange={(e) => setShowResolved(e.target.checked)} />
+                Show resolved/ignored
+              </label>
+            )}
+            <button
+              onClick={() => load(false)}
+              className="text-sm px-3 py-1.5 rounded border border-gray-300 text-gray-600 hover:bg-gray-50 whitespace-nowrap"
+            >
+              🔄 Refresh
+            </button>
+          </div>
         </div>
 
         {tab === 'processed' && (
@@ -170,7 +181,7 @@ export default function BatchDetail() {
               </tr>
             </thead>
             <tbody className="divide-y">
-              {exceptions.map((e) => (
+              {visibleExceptions.map((e) => (
                 <tr key={e.id}>
                   <td className="px-4 py-2 font-medium">{e.exceptionType.replace(/_/g, ' ')}</td>
                   <td className="px-4 py-2">
@@ -188,6 +199,13 @@ export default function BatchDetail() {
                   <td className="px-4 py-2 text-xs">{e.resolutionStatus}</td>
                 </tr>
               ))}
+              {visibleExceptions.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
+                    {showResolved ? 'No exceptions on this batch.' : 'No open exceptions - everything here has been resolved or ignored.'}
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         )}
