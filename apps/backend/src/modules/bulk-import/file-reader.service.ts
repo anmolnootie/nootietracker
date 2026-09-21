@@ -31,7 +31,12 @@ export class FileReaderService {
     // non-empty cells versus a real header row's many. Take the first row in
     // the top of the sheet that is nearly as wide as the widest one there -
     // row 1 for an ordinary file, the real header row under any banner rows.
-    return this.fromGrid(XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true, defval: '' }));
+    const grid: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true, defval: '' });
+    // Google Sheets' Excel export leaves every date ~10 seconds short of its
+    // real instant, so a date-only cell for 7 Apr parses as 6 Apr 23:59:50 -
+    // a full day early once the time is dropped. No real date here carries
+    // seconds precision, so snap Date cells to the nearest minute.
+    return this.fromGrid(grid.map((row) => row.map((v) => (v instanceof Date ? new Date(Math.round(v.getTime() / 60000) * 60000) : v))));
   }
 
   /**

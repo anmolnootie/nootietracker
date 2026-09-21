@@ -250,7 +250,7 @@ export default function GoogleSheetsUpload() {
 const APPS_SCRIPT = `// Nootie Control Tower - sends this sheet's tracker rows to the app.
 const ENDPOINT = '__ENDPOINT__';
 const SYNC_KEY = 'PASTE_YOUR_SYNC_KEY_HERE';
-const TAB_NAME = 'Master Tracker'; // the tab that holds the tracker
+const TAB_NAME = 'DISPATCH + GRN'; // the tab that holds the tracker
 
 function syncTracker() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();

@@ -36,7 +36,8 @@ const ALIASES: Record<Field, string[]> = {
   deliveryPartner: ['delivery partner', 'transporter'],
   deliveryStatus: ['status', 'delivery status'],
   comment: ['comment', 'comments', 'remarks'],
-  expiryDate: ['expiry date', 'po expiry date'],
+  // "Expriy Date" is how the real sheet spells it
+  expiryDate: ['expiry date', 'expriy date', 'po expiry date'],
   appointmentDate: ['appointment date'],
   grnStatus: ['grn status'],
   shortageQty: ['shortage qty'],
