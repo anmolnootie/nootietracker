@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Like, Not, Repository } from 'typeorm';
 import { format } from 'date-fns';
@@ -49,9 +49,26 @@ const FIELD_TO_STANDARD: Record<string, StandardBulkField> = {
   expiryDate: 'expiry_date',
 };
 
+// An import that is queued or running but hasn't saved progress for this long
+// died with its server (restart/redeploy) rather than being merely slow.
+const STALL_MINUTES = 5;
+const ACTIVE_STATUSES = [
+  UploadBatchStatus.UPLOADING,
+  UploadBatchStatus.READING,
+  UploadBatchStatus.PROCESSING,
+  UploadBatchStatus.VALIDATING,
+  UploadBatchStatus.COMPILING,
+];
+
 @Injectable()
 export class BulkImportService {
   private readonly logger = new Logger(BulkImportService.name);
+
+  // Imports run one at a time, in upload order: two running side by side over
+  // the same POs would each create the PO the other is about to look up.
+  private queue: Promise<unknown> = Promise.resolve();
+  // Batches queued or running in THIS process - never mistaken for stalled.
+  private readonly inFlight = new Set<string>();
 
   constructor(
     @InjectRepository(UploadBatchEntity) private readonly batchRepository: Repository<UploadBatchEntity>,
@@ -71,17 +88,48 @@ export class BulkImportService {
     private readonly locationsService: LocationsService,
   ) {}
 
-  async processFile(buffer: Buffer, fileName: string, platform: string, uploadedByUserId: string): Promise<UploadBatchEntity> {
+  /**
+   * Registers the upload and returns right away; the import itself runs in the
+   * background. A real export is thousands of rows at dozens of database round
+   * trips each, which against a remote database is minutes to hours - far longer
+   * than a browser or proxy keeps a request open. Progress and the outcome show
+   * on the batch (status, processedRows/totalRows, counts), like any upload.
+   */
+  async startFile(buffer: Buffer, fileName: string, platform: string, uploadedByUserId: string): Promise<UploadBatchEntity> {
     const batchCode = await this.generateBatchCode(platform);
-    let batch = await this.batchRepository.save(
-      this.batchRepository.create({ batchCode, fileName, platform, uploadedByUserId, status: UploadBatchStatus.READING }),
+    const batch = await this.batchRepository.save(
+      this.batchRepository.create({ batchCode, fileName, platform, uploadedByUserId, status: UploadBatchStatus.UPLOADING }),
     );
 
+    this.inFlight.add(batch.id);
+    this.queue = this.queue
+      .then(() => this.runBatch(batch, buffer, fileName, platform, uploadedByUserId))
+      .catch((err) => this.logger.error(`Background import ${batch.batchCode} crashed`, err as any))
+      .finally(() => this.inFlight.delete(batch.id));
+
+    return batch;
+  }
+
+  // update() rather than save(): one statement instead of four, and it can never
+  // re-insert a batch that was deleted while it was running.
+  private async updateBatch(batch: UploadBatchEntity, patch: Partial<UploadBatchEntity>): Promise<UploadBatchEntity> {
+    await this.batchRepository.update(batch.id, patch as any);
+    return Object.assign(batch, patch);
+  }
+
+  private async runBatch(
+    created: UploadBatchEntity,
+    buffer: Buffer,
+    fileName: string,
+    platform: string,
+    uploadedByUserId: string,
+  ): Promise<UploadBatchEntity> {
+    let batch = created;
+
     try {
+      batch = await this.updateBatch(batch, { status: UploadBatchStatus.READING });
       const { headers, rows } = this.fileReader.read(buffer, fileName);
-      batch.totalRows = rows.length;
-      batch.status = UploadBatchStatus.PROCESSING;
-      await this.batchRepository.save(batch);
+      batch = await this.updateBatch(batch, { totalRows: rows.length, status: UploadBatchStatus.PROCESSING });
 
       const mapping = await this.columnMapping.buildMapping(headers, platform);
 
@@ -96,7 +144,24 @@ export class BulkImportService {
       let dupCount = 0;
       let failedCount = 0;
 
+      // Saving progress bumps updatedAt, which is how a stalled import (server
+      // restarted mid-run) is told apart from a merely slow one - so it must
+      // happen at least every few seconds even when rows are slow.
+      let lastFlush = Date.now();
+      const flushProgress = async (processed: number) => {
+        batch = await this.updateBatch(batch, {
+          processedRows: processed,
+          newRecords: newCount,
+          updatedRecords: updatedCount,
+          duplicateRecords: dupCount,
+          failedRecords: failedCount,
+        });
+        lastFlush = Date.now();
+      };
+
       for (let i = 0; i < rows.length; i++) {
+        if (i > 0 && (i % 25 === 0 || Date.now() - lastFlush > 5000)) await flushProgress(i);
+
         const rawRow = await this.rawRepository.save(this.rawRepository.create({ batchId: batch.id, rowIndex: i, rawData: rows[i] }));
 
         const cleaning = this.dataCleaning.clean(rows[i], mapping, platform);
@@ -206,33 +271,55 @@ export class BulkImportService {
       // exceptions raised later (unknown warehouse, reconciliation mismatches).
       const totalExceptions = await this.exceptionsService.countByBatch(batch.id);
 
-      batch.poCount = poNumbers.size;
-      batch.skuCount = skuCodes.size;
-      batch.dateRangeStart = minDate;
-      batch.dateRangeEnd = maxDate;
-      batch.newRecords = newCount;
-      batch.updatedRecords = updatedCount;
-      batch.duplicateRecords = dupCount;
-      batch.exceptionRecords = totalExceptions;
-      batch.failedRecords = failedCount;
-      batch.status =
-        totalExceptions > 0 || failedCount > 0 ? UploadBatchStatus.COMPLETED_WITH_EXCEPTIONS : UploadBatchStatus.COMPLETED;
-      batch = await this.batchRepository.save(batch);
+      batch = await this.updateBatch(batch, {
+        processedRows: rows.length,
+        poCount: poNumbers.size,
+        skuCount: skuCodes.size,
+        dateRangeStart: minDate,
+        dateRangeEnd: maxDate,
+        newRecords: newCount,
+        updatedRecords: updatedCount,
+        duplicateRecords: dupCount,
+        exceptionRecords: totalExceptions,
+        failedRecords: failedCount,
+        status: totalExceptions > 0 || failedCount > 0 ? UploadBatchStatus.COMPLETED_WITH_EXCEPTIONS : UploadBatchStatus.COMPLETED,
+      });
     } catch (err) {
       this.logger.error(`Bulk import failed for batch ${batch.batchCode}`, err as any);
-      batch.status = UploadBatchStatus.FAILED;
-      batch.errorMessage = (err as Error).message;
-      batch = await this.batchRepository.save(batch);
+      batch = await this.updateBatch(batch, { status: UploadBatchStatus.FAILED, errorMessage: (err as Error).message });
     }
 
     return batch;
   }
 
-  listBatches(): Promise<UploadBatchEntity[]> {
+  /**
+   * An import whose server died mid-run stays PROCESSING forever and never
+   * updates again - mark it failed so it doesn't look like it's still going.
+   * Re-uploading the same file finishes the job: rows already imported are
+   * recognised as duplicates and skipped.
+   */
+  private async failStalledBatches(): Promise<void> {
+    const query = this.batchRepository
+      .createQueryBuilder()
+      .update()
+      .set({
+        status: UploadBatchStatus.FAILED,
+        errorMessage:
+          'Interrupted - the server restarted or lost its connection mid-import. Upload the file again to finish: rows already imported are recognised as duplicates and skipped.',
+      })
+      .where('status IN (:...active)', { active: ACTIVE_STATUSES })
+      .andWhere(`"updatedAt" < now() - interval '${STALL_MINUTES} minutes'`);
+    if (this.inFlight.size > 0) query.andWhere('id NOT IN (:...running)', { running: [...this.inFlight] });
+    await query.execute();
+  }
+
+  async listBatches(): Promise<UploadBatchEntity[]> {
+    await this.failStalledBatches();
     return this.batchRepository.find({ order: { uploadedAt: 'DESC' } });
   }
 
   async getBatch(id: string): Promise<UploadBatchEntity | null> {
+    await this.failStalledBatches();
     return this.batchRepository.findOneBy({ id });
   }
 
@@ -278,6 +365,7 @@ export class BulkImportService {
   async deleteBatch(batchId: string): Promise<{ deletedPoCount: number; preservedPoCount: number }> {
     const batch = await this.batchRepository.findOneBy({ id: batchId });
     if (!batch) throw new NotFoundException('Upload batch not found');
+    if (this.inFlight.has(batchId)) throw new BadRequestException('This import is still running - wait for it to finish before deleting it.');
 
     const { exclusivePoIds, preservedPoIds } = await this.getDeletePreview(batchId);
 

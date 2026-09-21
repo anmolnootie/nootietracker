@@ -268,6 +268,7 @@ export interface UploadBatch {
   uploadedAt: Date;
   status: UploadBatchStatus;
   totalRows: number;
+  processedRows: number;
   poCount: number;
   skuCount: number;
   dateRangeStart?: Date;

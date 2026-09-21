@@ -43,10 +43,11 @@ export class BulkImportController {
       throw new BadRequestException('platform is required');
     }
 
+    // Answers as soon as every file is registered - the imports themselves run
+    // in the background, in order. Poll GET /bulk-import/batches for progress.
     const batches = [];
     for (const file of files) {
-      const batch = await this.bulkImportService.processFile(file.buffer, file.originalname, platform, req.user.userId);
-      batches.push(batch);
+      batches.push(await this.bulkImportService.startFile(file.buffer, file.originalname, platform, req.user.userId));
     }
     return batches;
   }

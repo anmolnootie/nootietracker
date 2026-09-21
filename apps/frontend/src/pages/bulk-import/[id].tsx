@@ -41,6 +41,18 @@ export default function BatchDetail() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
+  // An import that's still running fills this page in as it goes - refresh
+  // until it finishes.
+  const stillRunning = ['UPLOADING', 'READING', 'PROCESSING', 'VALIDATING', 'COMPILING'].includes(data?.batch?.status);
+  useEffect(() => {
+    if (!stillRunning) return;
+    const timer = setInterval(() => {
+      load(false).catch(() => {}); // a dropped poll is retried on the next tick
+    }, 5000);
+    return () => clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stillRunning, id]);
+
   useEffect(() => {
     if (router.query.tab === 'exceptions') setTab('exceptions');
   }, [router.query.tab]);
@@ -69,6 +81,15 @@ export default function BatchDetail() {
             {batch.status.replace(/_/g, ' ')}
           </span>
         </div>
+
+        {stillRunning && (
+          <p className="text-sm text-gray-600 mb-4">
+            Still importing - {batch.processedRows ?? 0} of {batch.totalRows} rows done. This page refreshes on its own.
+          </p>
+        )}
+        {batch.status === 'FAILED' && batch.errorMessage && (
+          <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded text-sm">{batch.errorMessage}</div>
+        )}
 
         <div className="grid grid-cols-3 md:grid-cols-6 gap-4 text-center border-t pt-4">
           <Stat label="Total Rows" value={batch.totalRows} />

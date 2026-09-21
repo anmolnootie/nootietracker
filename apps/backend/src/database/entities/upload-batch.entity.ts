@@ -27,6 +27,10 @@ export class UploadBatchEntity {
   @Column({ type: 'int', default: 0 })
   totalRows: number;
 
+  // Rows worked through so far - lets a running import show "n of totalRows".
+  @Column({ type: 'int', default: 0 })
+  processedRows: number;
+
   @Column({ type: 'int', default: 0 })
   poCount: number;
 

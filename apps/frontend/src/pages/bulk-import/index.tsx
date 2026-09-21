@@ -16,6 +16,17 @@ const STATUS_STYLES: Record<string, string> = {
   FAILED: 'bg-red-100 text-red-700',
 };
 
+// Imports run in the background after the upload returns - these are the
+// statuses in which one is still queued or working.
+const ACTIVE_STATUSES = ['UPLOADING', 'READING', 'PROCESSING', 'VALIDATING', 'COMPILING'];
+const isActive = (batch: any) => ACTIVE_STATUSES.includes(batch.status);
+
+const progressLabel = (batch: any) => {
+  if (batch.status === 'UPLOADING') return 'Queued - waiting for the previous file to finish';
+  if (batch.status === 'READING') return 'Reading the file...';
+  return `Processing ${batch.processedRows ?? 0} of ${batch.totalRows} rows`;
+};
+
 export default function BulkImport() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [platform, setPlatform] = useState('Blinkit');
@@ -33,6 +44,21 @@ export default function BulkImport() {
   useEffect(() => {
     loadBatches();
   }, []);
+
+  // Keep refreshing while any import is still running (including one started
+  // before this page was opened); stops by itself once they've all finished.
+  const anyActive = batches.some(isActive);
+  useEffect(() => {
+    if (!anyActive) return;
+    const timer = setInterval(() => {
+      loadBatches().catch(() => {}); // a dropped poll is retried on the next tick
+    }, 3000);
+    return () => clearInterval(timer);
+  }, [anyActive]);
+
+  // The upload response is a snapshot from the moment of upload - show each
+  // batch as it stands now.
+  const liveResults = results?.map((r) => batches.find((b) => b.id === r.id) ?? r) ?? null;
 
   const handleFiles = (fileList: FileList | null) => {
     if (!fileList) return;
@@ -139,12 +165,12 @@ export default function BulkImport() {
           onClick={upload}
           className="mt-6 bg-nootie-orange-dark hover:bg-nootie-orange text-white font-medium py-2 px-6 rounded-lg transition-colors disabled:opacity-50"
         >
-          {uploading ? 'Processing...' : 'Import Bulk PO Data'}
+          {uploading ? 'Uploading...' : 'Import Bulk PO Data'}
         </button>
 
-        {results && (
+        {liveResults && (
           <div className="mt-8 space-y-4">
-            {results.map((batch) => (
+            {liveResults.map((batch) => (
               <div key={batch.id} className="border rounded-lg p-5 bg-nootie-cream">
                 <div className="flex items-center justify-between mb-3">
                   <div>
@@ -155,6 +181,21 @@ export default function BulkImport() {
                     {batch.status.replace(/_/g, ' ')}
                   </span>
                 </div>
+                {isActive(batch) && (
+                  <div className="mb-4">
+                    <p className="text-sm text-gray-600 mb-1">{progressLabel(batch)}</p>
+                    <div className="h-2 bg-gray-200 rounded overflow-hidden">
+                      <div
+                        className="h-2 bg-nootie-orange transition-all"
+                        style={{ width: `${batch.totalRows ? Math.min(100, ((batch.processedRows ?? 0) / batch.totalRows) * 100) : 0}%` }}
+                      />
+                    </div>
+                    <p className="text-xs text-gray-400 mt-1">This keeps running in the background - you can leave this page and check Upload History later.</p>
+                  </div>
+                )}
+                {batch.status === 'FAILED' && batch.errorMessage && (
+                  <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded text-sm">{batch.errorMessage}</div>
+                )}
                 <div className="grid grid-cols-3 md:grid-cols-6 gap-4 text-center">
                   <Stat label="Rows" value={batch.totalRows} />
                   <Stat label="POs" value={batch.poCount} />
@@ -208,7 +249,7 @@ export default function BulkImport() {
                   </td>
                   <td className="px-4 py-3">{b.platform}</td>
                   <td className="px-4 py-3 text-xs text-gray-500">{format(new Date(b.uploadedAt), 'dd MMM yyyy HH:mm')}</td>
-                  <td className="px-4 py-3">{b.totalRows}</td>
+                  <td className="px-4 py-3">{isActive(b) ? `${b.processedRows ?? 0} / ${b.totalRows}` : b.totalRows}</td>
                   <td className="px-4 py-3">
                     {b.newRecords} / {b.updatedRecords} / {b.duplicateRecords}
                   </td>
@@ -223,11 +264,14 @@ export default function BulkImport() {
                   </td>
                   <td className="px-4 py-3">
                     <span className={`px-2 py-1 rounded text-xs font-medium ${STATUS_STYLES[b.status]}`}>{b.status.replace(/_/g, ' ')}</span>
+                    {b.status === 'FAILED' && b.errorMessage && <p className="text-xs text-red-600 mt-1 max-w-xs">{b.errorMessage}</p>}
                   </td>
                   <td className="px-4 py-3">
-                    <button onClick={() => openDeletePreview(b)} className="text-xs text-red-600 hover:underline">
-                      Delete Import
-                    </button>
+                    {!isActive(b) && (
+                      <button onClick={() => openDeletePreview(b)} className="text-xs text-red-600 hover:underline">
+                        Delete Import
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}
