@@ -75,6 +75,7 @@ export default function InvoiceImportBatchDetail() {
                 <th className="px-4 py-3 text-left">#</th>
                 <th className="px-4 py-3 text-left">PO Number</th>
                 <th className="px-4 py-3 text-left">Invoice Number</th>
+                <th className="px-4 py-3 text-left">Customer</th>
                 <th className="px-4 py-3 text-left">Invoice Value</th>
                 <th className="px-4 py-3 text-left">Invoice Date</th>
                 <th className="px-4 py-3 text-left">AWB</th>
@@ -96,6 +97,7 @@ export default function InvoiceImportBatchDetail() {
                     )}
                   </td>
                   <td className="px-4 py-3">{r.invoiceNumber || '-'}</td>
+                  <td className="px-4 py-3">{r.customerName || '-'}</td>
                   <td className="px-4 py-3">{r.invoiceValue != null ? `₹${Number(r.invoiceValue).toLocaleString()}` : '-'}</td>
                   <td className="px-4 py-3">{r.invoiceDate ? format(new Date(r.invoiceDate), 'dd MMM yyyy') : '-'}</td>
                   <td className="px-4 py-3">{r.awbNumber || '-'}</td>

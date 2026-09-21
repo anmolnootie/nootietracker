@@ -22,6 +22,7 @@ export interface InvoiceImportRow {
   invoiceValue: number | null;
   invoiceDate: string | null;
   awbNumber: string | null;
+  customerName: string | null;
   matchStatus: 'MATCHED' | 'PO_NOT_FOUND' | 'NO_DISPATCH_RECORD' | 'INVALID';
   matchedPoId: string | null;
   errorMessage: string | null;

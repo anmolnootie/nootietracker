@@ -27,6 +27,9 @@ export class InvoiceImportRowEntity {
   @Column({ type: 'varchar', nullable: true })
   awbNumber: string | null;
 
+  @Column({ type: 'varchar', nullable: true })
+  customerName: string | null;
+
   @Column({ type: 'enum', enum: ['MATCHED', 'PO_NOT_FOUND', 'NO_DISPATCH_RECORD', 'INVALID'] })
   matchStatus: 'MATCHED' | 'PO_NOT_FOUND' | 'NO_DISPATCH_RECORD' | 'INVALID';
 

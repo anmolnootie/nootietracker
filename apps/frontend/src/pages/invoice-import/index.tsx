@@ -67,8 +67,10 @@ export default function InvoiceImport() {
       <div className="bg-white rounded-lg shadow p-8 mb-6">
         <h2 className="text-2xl font-bold mb-2 text-gray-800">Invoice Bulk Upload</h2>
         <p className="text-gray-500 text-sm mb-6">
-          Upload an invoice sheet (PO Number, Invoice Number, Invoice Value, Invoice Date, AWB Number) - each row is
-          matched to its PO, the dispatch record is updated, and Fill Rate % is recomputed automatically.
+          Upload the invoice sheet as exported (Invoice No., Invoice Date, Customer Name, Net Amount). The sheet
+          carries no PO Number, so each invoice is linked to its PO through the Daily Dispatch Report - upload
+          that first. Linked invoices update the PO's dispatch record and recompute Fill Rate automatically;
+          any that can't be linked are listed so you can re-upload once the report is in.
         </p>
 
         <div

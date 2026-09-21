@@ -7,6 +7,7 @@ import { InvoiceUploadBatchEntity } from '../../database/entities/invoice-upload
 import { InvoiceImportRowEntity } from '../../database/entities/invoice-import-row.entity';
 import { POMasterEntity } from '../../database/entities/po-master.entity';
 import { DispatchEntity } from '../../database/entities/dispatch.entity';
+import { DispatchReportRowEntity } from '../../database/entities/dispatch-report-row.entity';
 import { FileReaderService } from '../bulk-import/file-reader.service';
 import { POService } from '../po/po.service';
 
@@ -14,7 +15,7 @@ import { POService } from '../po/po.service';
 // po-import.service.ts's GENERIC_EXCEL_ALIASES: kept independent of the
 // bulk PO pipeline's ColumnMappingService/per-platform overrides, since an
 // invoice sheet's handful of columns don't need that machinery.
-type InvoiceField = 'poNumber' | 'invoiceNumber' | 'invoiceValue' | 'invoiceDate' | 'awbNumber';
+type InvoiceField = 'poNumber' | 'invoiceNumber' | 'invoiceValue' | 'invoiceDate' | 'awbNumber' | 'customerName';
 
 const INVOICE_FIELD_ALIASES: Record<InvoiceField, string[]> = {
   poNumber: ['po number', 'po no', 'purchase order', 'purchase order number', 'po id', 'po#'],
@@ -22,6 +23,7 @@ const INVOICE_FIELD_ALIASES: Record<InvoiceField, string[]> = {
   invoiceValue: ['invoice value', 'invoice amount', 'total invoice value', 'net amount'],
   invoiceDate: ['invoice date', 'date of invoice'],
   awbNumber: ['awb number', 'awb no', 'awb', 'airway bill number'],
+  customerName: ['customer name', 'customer', 'party name'],
 };
 
 function parseNumber(v: any): number | null {
@@ -71,6 +73,8 @@ export class InvoiceImportService {
     private readonly poRepository: Repository<POMasterEntity>,
     @InjectRepository(DispatchEntity)
     private readonly dispatchRepository: Repository<DispatchEntity>,
+    @InjectRepository(DispatchReportRowEntity)
+    private readonly dispatchReportRowRepository: Repository<DispatchReportRowEntity>,
     private readonly fileReaderService: FileReaderService,
     private readonly poService: POService,
   ) {}
@@ -97,18 +101,28 @@ export class InvoiceImportService {
         const invoiceValue = parseNumber(get('invoiceValue'));
         const invoiceDate = parseFlexibleDate(get('invoiceDate'));
         const awbNumber = get('awbNumber') ? String(get('awbNumber')).trim() : null;
+        const customerName = get('customerName') ? String(get('customerName')).trim() : null;
+
+        // A row with no invoice number and no PO number is a blank/spacer/total
+        // line - nothing to link or apply, so skip it rather than flag INVALID.
+        if (!invoiceNumber && !poNumber) continue;
 
         const result = await this.matchAndApply(poNumber, { invoiceNumber, invoiceValue, invoiceDate, awbNumber });
+
+        // Show the PO this row resolved to even though the sheet itself has no PO column.
+        const linkedPoNumber =
+          poNumber ?? (result.matchedPoId ? (await this.poRepository.findOne({ where: { id: result.matchedPoId } }))?.poNumber ?? null : null);
 
         await this.rowRepository.save(
           this.rowRepository.create({
             batchId: batch.id,
             rowIndex: i,
-            poNumber,
+            poNumber: linkedPoNumber,
             invoiceNumber,
             invoiceValue,
             invoiceDate,
             awbNumber,
+            customerName,
             matchStatus: result.matchStatus,
             matchedPoId: result.matchedPoId,
             errorMessage: result.errorMessage,
@@ -119,7 +133,7 @@ export class InvoiceImportService {
         else unmatchedCount++;
       }
 
-      batch.totalRows = rows.length;
+      batch.totalRows = matchedCount + unmatchedCount;
       batch.matchedCount = matchedCount;
       batch.unmatchedCount = unmatchedCount;
       batch.status = 'COMPLETED';
@@ -138,19 +152,22 @@ export class InvoiceImportService {
     poNumber: string | null,
     data: { invoiceNumber: string | null; invoiceValue: number | null; invoiceDate: Date | null; awbNumber: string | null },
   ): Promise<{ matchStatus: InvoiceImportRowEntity['matchStatus']; matchedPoId: string | null; errorMessage: string | null }> {
-    if (!poNumber) {
-      return { matchStatus: 'INVALID', matchedPoId: null, errorMessage: 'PO Number missing on this row' };
-    }
-
-    // poNumber is globally unique (po-master.entity.ts) - no channel disambiguation needed.
-    const po = await this.poRepository.findOne({ where: { poNumber } });
+    const po = await this.resolvePo(poNumber, data.invoiceNumber);
     if (!po) {
-      return { matchStatus: 'PO_NOT_FOUND', matchedPoId: null, errorMessage: `No PO found with number ${poNumber}` };
+      const what = poNumber ? `PO ${poNumber}` : data.invoiceNumber ? `invoice ${data.invoiceNumber}` : 'this row';
+      return {
+        matchStatus: 'PO_NOT_FOUND',
+        matchedPoId: null,
+        errorMessage: poNumber
+          ? `No PO found with number ${poNumber}`
+          : `Couldn't link ${what} to a PO - this sheet has no PO Number, and the voucher isn't in any uploaded Daily Dispatch Report yet. Upload that report first, then re-upload this sheet.`,
+      };
     }
+    const resolvedPoNumber = po.poNumber;
 
     const dispatch = await this.dispatchRepository.findOneBy({ poId: po.id });
     if (!dispatch) {
-      return { matchStatus: 'NO_DISPATCH_RECORD', matchedPoId: po.id, errorMessage: `PO ${poNumber} has no dispatch record` };
+      return { matchStatus: 'NO_DISPATCH_RECORD', matchedPoId: po.id, errorMessage: `PO ${resolvedPoNumber} has no dispatch record` };
     }
 
     if (data.invoiceNumber !== undefined && data.invoiceNumber !== null) dispatch.invoiceNumber = data.invoiceNumber;
@@ -164,6 +181,32 @@ export class InvoiceImportService {
     await this.poService.recomputeFillRate(po.id);
 
     return { matchStatus: 'MATCHED', matchedPoId: po.id, errorMessage: null };
+  }
+
+  /**
+   * The real invoice sheet carries no PO Number - only the voucher/invoice
+   * number. PO is resolved, in order, from: an explicit PO Number column if
+   * the sheet has one; a dispatch record already carrying this invoice
+   * number (re-uploads/corrections); or the Daily Dispatch Report, which is
+   * the one document that pairs each voucher number with its PO number.
+   */
+  private async resolvePo(poNumber: string | null, invoiceNumber: string | null): Promise<POMasterEntity | null> {
+    if (poNumber) return this.poRepository.findOne({ where: { poNumber } });
+    if (!invoiceNumber) return null;
+
+    const existing = await this.dispatchRepository.findOne({ where: { invoiceNumber } });
+    if (existing) return this.poRepository.findOne({ where: { id: existing.poId } });
+
+    const reportRows = await this.dispatchReportRowRepository.find({
+      where: { invoiceNumber },
+      order: { createdAt: 'DESC' },
+    });
+    for (const r of reportRows) {
+      if (!r.poNumber) continue;
+      const po = await this.poRepository.findOne({ where: { poNumber: r.poNumber } });
+      if (po) return po;
+    }
+    return null;
   }
 
   private mapHeaders(headers: string[]): Partial<Record<InvoiceField, string>> {
