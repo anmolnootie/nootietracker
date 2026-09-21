@@ -12,6 +12,8 @@ const STATUS_TABS: ExceptionResolutionStatus[] = [
   ExceptionResolutionStatus.IGNORED,
 ];
 
+const SEVERITIES = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'];
+
 const SEVERITY_STYLES: Record<string, string> = {
   CRITICAL: 'bg-red-100 text-red-700',
   HIGH: 'bg-red-100 text-red-700',
@@ -24,6 +26,9 @@ export default function Exceptions() {
   const [tab, setTab] = useState<ExceptionResolutionStatus>(ExceptionResolutionStatus.OPEN);
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [typeFilter, setTypeFilter] = useState('');
+  const [severityFilter, setSeverityFilter] = useState('');
+  const [search, setSearch] = useState('');
 
   const load = async () => {
     setLoading(true);
@@ -38,7 +43,24 @@ export default function Exceptions() {
     load();
   }, []);
 
-  const filtered = all.filter((e) => e.resolutionStatus === tab);
+  // Only offer the types that actually occur, so no option ever returns nothing.
+  const typeOptions = Array.from(new Set(all.map((e) => e.exceptionType as string))).sort();
+  const query = search.trim().toLowerCase();
+  const filtersActive = !!(typeFilter || severityFilter || query);
+  const visible = all.filter(
+    (e) =>
+      (!typeFilter || e.exceptionType === typeFilter) &&
+      (!severityFilter || e.severity === severityFilter) &&
+      (!query || [e.poNumber, e.skuCode, e.warehouse].some((v) => v && String(v).toLowerCase().includes(query))),
+  );
+  const filtered = visible.filter((e) => e.resolutionStatus === tab);
+
+  const clearFilters = () => {
+    setTypeFilter('');
+    setSeverityFilter('');
+    setSearch('');
+    setExpandedId(null);
+  };
 
   return (
     <MainLayout>
@@ -59,7 +81,7 @@ export default function Exceptions() {
                   }}
                   className={`px-3 py-1.5 rounded text-sm ${tab === s ? 'bg-nootie-orange-dark text-white' : 'bg-gray-100 text-gray-600'}`}
                 >
-                  {s} ({all.filter((e) => e.resolutionStatus === s).length})
+                  {s} ({visible.filter((e) => e.resolutionStatus === s).length})
                 </button>
               ))}
             </div>
@@ -73,10 +95,64 @@ export default function Exceptions() {
           </div>
         </div>
 
+        <div className="px-6 py-3 border-b bg-gray-50 flex flex-wrap items-center gap-3">
+          <select
+            value={typeFilter}
+            onChange={(e) => {
+              setTypeFilter(e.target.value);
+              setExpandedId(null);
+            }}
+            className="px-3 py-1.5 border border-gray-300 rounded text-sm bg-white"
+            aria-label="Filter by type"
+          >
+            <option value="">All types</option>
+            {typeOptions.map((t) => (
+              <option key={t} value={t}>
+                {t.replace(/_/g, ' ')}
+              </option>
+            ))}
+          </select>
+          <select
+            value={severityFilter}
+            onChange={(e) => {
+              setSeverityFilter(e.target.value);
+              setExpandedId(null);
+            }}
+            className="px-3 py-1.5 border border-gray-300 rounded text-sm bg-white"
+            aria-label="Filter by severity"
+          >
+            <option value="">All severities</option>
+            {SEVERITIES.map((sev) => (
+              <option key={sev} value={sev}>
+                {sev}
+              </option>
+            ))}
+          </select>
+          <input
+            type="search"
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setExpandedId(null);
+            }}
+            placeholder="Search PO, SKU or warehouse"
+            className="px-3 py-1.5 border border-gray-300 rounded text-sm w-64"
+            aria-label="Search exceptions"
+          />
+          {filtersActive && (
+            <>
+              <button onClick={clearFilters} className="text-sm text-nootie-orange-dark hover:underline">
+                Clear filters
+              </button>
+              <span className="text-xs text-gray-500">{visible.length} of {all.length} exceptions match</span>
+            </>
+          )}
+        </div>
+
         {loading ? (
           <p className="p-6 text-gray-500">Loading...</p>
         ) : filtered.length === 0 ? (
-          <p className="p-6 text-gray-500">Nothing here.</p>
+          <p className="p-6 text-gray-500">{filtersActive ? 'No exceptions in this tab match the filters.' : 'Nothing here.'}</p>
         ) : (
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b">
