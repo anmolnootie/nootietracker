@@ -15,7 +15,9 @@ export default function Appointments() {
   const load = async () => {
     setLoading(true);
     try {
-      const all = await tasksService.list({ status: 'OPEN' });
+      // ESCALATED = past its SLA but still unresolved; it must stay in the queue
+      // (the row is already styled red for it), not drop off.
+      const all = await tasksService.list({ status: 'OPEN,IN_PROGRESS,ESCALATED' });
       setTasks(all.filter((t: any) => t.taskType === TaskType.APPOINTMENT));
     } finally {
       setLoading(false);
@@ -61,12 +63,21 @@ export default function Appointments() {
   return (
     <MainLayout>
       <div className="bg-white rounded-lg shadow">
-        <div className="p-6 border-b">
-          <h2 className="text-lg font-semibold text-gray-800">Appointment Queue</h2>
-          <p className="text-sm text-gray-500 mt-1">
-            Appointment should land 3-4 days before PO expiry. Extension requests are auto-flagged when no slot is
-            booked as expiry approaches.
-          </p>
+        <div className="p-6 border-b flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-800">Appointment Queue</h2>
+            <p className="text-sm text-gray-500 mt-1">
+              Appointment should land 3-4 days before PO expiry. Extension requests are auto-flagged when no slot is
+              booked as expiry approaches.
+            </p>
+          </div>
+          <button
+            onClick={load}
+            disabled={loading}
+            className="text-sm px-3 py-1.5 rounded border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-50 whitespace-nowrap"
+          >
+            {loading ? 'Refreshing...' : '🔄 Refresh'}
+          </button>
         </div>
 
         {loading ? (
@@ -121,13 +132,17 @@ export default function Appointments() {
                       >
                         Confirm
                       </button>
-                      <button
-                        disabled={busy === task.id}
-                        onClick={() => escalate(task.id)}
-                        className="px-2 py-1 bg-red-50 text-red-700 rounded text-xs hover:bg-red-100 disabled:opacity-50"
-                      >
-                        Escalate
-                      </button>
+                      {task.status === 'ESCALATED' ? (
+                        <span className="px-2 py-1 text-xs font-medium text-red-700">Escalated</span>
+                      ) : (
+                        <button
+                          disabled={busy === task.id}
+                          onClick={() => escalate(task.id)}
+                          className="px-2 py-1 bg-red-50 text-red-700 rounded text-xs hover:bg-red-100 disabled:opacity-50"
+                        >
+                          Escalate
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>

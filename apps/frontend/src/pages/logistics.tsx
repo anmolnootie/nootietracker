@@ -49,12 +49,21 @@ export default function Logistics() {
   return (
     <MainLayout>
       <div className="bg-white rounded-lg shadow">
-        <div className="p-6 border-b">
-          <h2 className="text-lg font-semibold text-gray-800">Logistics Tracking</h2>
-          <p className="text-sm text-gray-500 mt-1">
-            AVV/docket follow-up nags every 2 days from Dispatch Date + 3 days until "Received &amp; Actioned" is
-            ticked. Shipments stale &gt;24h are flagged.
-          </p>
+        <div className="p-6 border-b flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-800">Logistics Tracking</h2>
+            <p className="text-sm text-gray-500 mt-1">
+              AVV/docket follow-up nags every 2 days from Dispatch Date + 3 days until "Received &amp; Actioned" is
+              ticked. Shipments stale &gt;24h are flagged.
+            </p>
+          </div>
+          <button
+            onClick={load}
+            disabled={loading}
+            className="text-sm px-3 py-1.5 rounded border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-50 whitespace-nowrap"
+          >
+            {loading ? 'Refreshing...' : '🔄 Refresh'}
+          </button>
         </div>
 
         {loading ? (
@@ -82,7 +91,18 @@ export default function Logistics() {
                     </a>
                   </td>
                   <td className="px-4 py-3">{t.docketNumber}</td>
-                  <td className="px-4 py-3">{t.lastTrackedStatus}</td>
+                  <td className="px-4 py-3">
+                    {t.lastTrackedStatus}
+                    {/* Delivered stays listed until the AVV is actioned, so say where the GRN stands. */}
+                    {t.lastTrackedStatus === 'DELIVERED' &&
+                      (t.grnRecorded ? (
+                        <span className="ml-2 px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-700">GRN done</span>
+                      ) : (
+                        <a href="/grn" className="ml-2 px-2 py-0.5 rounded text-xs font-medium bg-nootie-orange-light text-nootie-orange-dark hover:underline">
+                          GRN pending
+                        </a>
+                      ))}
+                  </td>
                   <td className="px-4 py-3 text-xs text-gray-500">
                     {t.lastUpdateTime && formatDistanceToNow(new Date(t.lastUpdateTime), { addSuffix: true })}
                     {isStale(t) && <span className="ml-2 text-yellow-700 font-medium">STALE</span>}

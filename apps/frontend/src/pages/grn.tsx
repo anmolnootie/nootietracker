@@ -33,7 +33,9 @@ export default function GRN() {
   const load = async () => {
     setLoading(true);
     try {
-      const all = await tasksService.list({ status: 'OPEN' });
+      // ESCALATED is a GRN that has sat past its SLA - still awaiting GRN, so it
+      // must stay in the queue (and stand out), not drop off it.
+      const all = await tasksService.list({ status: 'OPEN,IN_PROGRESS,ESCALATED' });
       setTasks(all.filter((t: any) => t.taskType === TaskType.GRN));
     } finally {
       setLoading(false);
@@ -106,8 +108,11 @@ export default function GRN() {
                         {task.po?.poNumber}
                       </a>
                       {task.po && <span className="ml-3"><RiskBadge risk={task.po.riskStatus} size="sm" /></span>}
+                      {task.status === 'ESCALATED' && (
+                        <span className="ml-3 px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-700">Overdue - escalated</span>
+                      )}
                       <span className="ml-3 text-xs text-gray-500">
-                        delivered {formatDistanceToNow(new Date(task.createdAt), { addSuffix: true })}
+                        in queue {formatDistanceToNow(new Date(task.createdAt))}
                       </span>
                     </div>
                   </div>

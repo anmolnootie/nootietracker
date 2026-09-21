@@ -18,6 +18,12 @@ import { NotificationsService } from '../notifications/notifications.service';
 
 const TERMINAL_STATUSES = [POStatus.CLOSED, POStatus.CANCELLED, POStatus.RETURNED, POStatus.RECONCILED];
 
+/** Maps the free-text status the master tracker sheet uses onto the tracker's own status values. */
+function trackedStatusFromSheet(raw: string | null): string {
+  const s = (raw ?? '').toUpperCase().replace(/[^A-Z]/g, '');
+  return s === 'DELIVERED' ? 'DELIVERED' : s === 'INTRANSIT' ? 'IN_TRANSIT' : 'DISPATCHED';
+}
+
 @Injectable()
 export class AutomationService {
   private readonly logger = new Logger(AutomationService.name);
@@ -57,6 +63,87 @@ export class AutomationService {
       await this.tasksService.escalate(task.id);
       this.logger.log(`Escalated overdue task ${task.id} (${task.taskType}) for PO ${task.poId}`);
     }
+  }
+
+  /**
+   * An appointment task escalates once its SLA passes, and that used to be the last
+   * step - nothing closed it when the reason went away. Close any that are moot: the
+   * PO is no longer open, a slot has been booked (the queue would otherwise show POs
+   * that already have an appointment), or the PO has already shipped.
+   */
+  @Cron(CronExpression.EVERY_5_MINUTES)
+  async closeMootAppointmentTasks() {
+    const tasks = await this.tasksService.findUnresolvedByType(TaskType.APPOINTMENT);
+    for (const task of tasks) {
+      const [po, appointment, dispatch] = await Promise.all([
+        this.poRepository.findOneBy({ id: task.poId }),
+        this.appointmentRepository.findOneBy({ poId: task.poId }),
+        this.dispatchRepository.findOneBy({ poId: task.poId }),
+      ]);
+      let reason: string | null = null;
+      if (!po || po.isDeleted || TERMINAL_STATUSES.includes(po.status)) reason = 'the PO is no longer open';
+      else if (appointment?.confirmedAt || appointment?.appointmentDate) reason = 'an appointment is booked';
+      else if (dispatch?.actualDispatchDate) reason = 'the PO has already been dispatched';
+      if (reason) await this.tasksService.complete(task.id, `Closed automatically - ${reason}.`);
+    }
+  }
+
+  /**
+   * Dispatched-shipment Rule: a logistics tracking row is only created by a manual
+   * dispatch on the PO screen (or a bulk-import delivery), so a PO the master tracker
+   * sheet dispatches was missing from Logistics Tracking - and from the AVV follow-up
+   * below, which runs off these rows. Any dispatched PO whose GRN isn't recorded yet
+   * (in transit, or delivered and awaiting GRN) gets one; shipments with a GRN or in a
+   * terminal status need no tracking. A shipment the sheet has since marked Delivered
+   * is moved on to DELIVERED so the page doesn't keep showing it in transit.
+   */
+  @Cron(CronExpression.EVERY_5_MINUTES)
+  async dispatchedShipmentsTrackingCheck() {
+    const untracked = await this.dispatchRepository
+      .createQueryBuilder('dsp')
+      .innerJoinAndSelect('dsp.po', 'po')
+      .leftJoin(LogisticsTrackerEntity, 'l', 'l.poId = dsp.poId')
+      .leftJoin(GRNTrackerEntity, 'g', 'g.poId = dsp.poId')
+      .where('po.isDeleted = false')
+      .andWhere('po.status NOT IN (:...terminal)', { terminal: TERMINAL_STATUSES })
+      .andWhere('dsp.actualDispatchDate IS NOT NULL')
+      .andWhere('l.id IS NULL')
+      .andWhere('g.grnDate IS NULL')
+      .getMany();
+
+    let created = 0;
+    for (const dsp of untracked) {
+      // The tracker is keyed on the docket; a dispatch with none can't be tracked yet.
+      const docketNumber = (dsp.awbNumber || dsp.docketNumber || '').trim();
+      if (!docketNumber) continue;
+      await this.logisticsRepository.save(
+        this.logisticsRepository.create({
+          poId: dsp.poId,
+          docketNumber,
+          transporterId: dsp.transporterId || 'UNKNOWN',
+          lastTrackedStatus: trackedStatusFromSheet(dsp.dispatchStatus),
+          // When we last heard about this shipment - not "now", or an old
+          // shipment would look freshly updated and dodge the STALE flag.
+          lastUpdateTime: dsp.updatedAt,
+          receivedAndActioned: false,
+        }),
+      );
+      created++;
+    }
+    if (created) this.logger.log(`Added ${created} dispatched shipment(s) to Logistics Tracking`);
+
+    const nowDelivered = await this.logisticsRepository
+      .createQueryBuilder('l')
+      .innerJoin(DispatchEntity, 'dsp', 'dsp.poId = l.poId')
+      .where(`UPPER(TRIM(dsp.dispatchStatus)) = 'DELIVERED'`)
+      .andWhere(`l.lastTrackedStatus IS DISTINCT FROM 'DELIVERED'`)
+      .getMany();
+    for (const tracker of nowDelivered) {
+      tracker.lastTrackedStatus = 'DELIVERED';
+      tracker.lastUpdateTime = new Date();
+      await this.logisticsRepository.save(tracker);
+    }
+    if (nowDelivered.length) this.logger.log(`Marked ${nowDelivered.length} shipment(s) delivered per the master tracker`);
   }
 
   /**
@@ -106,13 +193,22 @@ export class AutomationService {
    */
   @Cron(CronExpression.EVERY_5_MINUTES)
   async appointmentExtensionCheck() {
-    const appointments = await this.appointmentRepository.find({ where: { confirmedAt: IsNull(), extensionRequested: false } });
+    // "No slot booked" = no appointment date. The bulk import and the master tracker
+    // sheet both record a booked slot as an appointment date, and the sheet doesn't
+    // stamp confirmedAt, so checking confirmedAt alone flags POs that do have a slot.
+    const appointments = await this.appointmentRepository.find({
+      where: { confirmedAt: IsNull(), appointmentDate: IsNull(), extensionRequested: false },
+    });
     for (const appointment of appointments) {
       const po = await this.poRepository.findOneBy({ id: appointment.poId });
       if (!po || TERMINAL_STATUSES.includes(po.status)) continue;
 
       const daysToExpiry = Math.ceil((po.poExpiryDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
       if (daysToExpiry > 4 || daysToExpiry < 0) continue;
+
+      // Already shipped - the appointment is behind it, an extension can't matter.
+      const dispatch = await this.dispatchRepository.findOneBy({ poId: po.id });
+      if (dispatch?.actualDispatchDate) continue;
 
       appointment.extensionRequested = true;
       await this.appointmentRepository.save(appointment);
@@ -129,6 +225,61 @@ export class AutomationService {
   }
 
   /**
+   * Delivered-awaiting-GRN Rule: only logistics tracking creates a GRN record and
+   * task when a PO is delivered. A PO the master tracker sheet marks Delivered never
+   * goes through that, so it had neither and never reached the GRN Queue. Whatever
+   * the source, a delivered PO with no GRN recorded gets a tracker and an open task.
+   * Tasks are created quietly and each owner gets one summary notification, so a
+   * first run over a large backlog doesn't send hundreds.
+   */
+  @Cron(CronExpression.EVERY_5_MINUTES)
+  async deliveredAwaitingGrnCheck() {
+    const pending = await this.poRepository
+      .createQueryBuilder('po')
+      .leftJoin(DispatchEntity, 'dsp', 'dsp.poId = po.id')
+      .leftJoin(GRNTrackerEntity, 'g', 'g.poId = po.id')
+      .where('po.isDeleted = false')
+      .andWhere('po.status NOT IN (:...terminal)', { terminal: TERMINAL_STATUSES })
+      .andWhere(`(UPPER(TRIM(dsp.dispatchStatus)) = 'DELIVERED' OR po.status IN (:...delivered))`, {
+        delivered: [POStatus.DELIVERED, POStatus.GRN_PENDING],
+      })
+      .andWhere('g.grnDate IS NULL')
+      .andWhere(`NOT EXISTS (SELECT 1 FROM tasks t WHERE t."poId" = po.id AND t."taskType" = :grn AND t.status <> 'COMPLETED')`, { grn: TaskType.GRN })
+      .getMany();
+    if (pending.length === 0) return;
+
+    const perOwner = new Map<string, number>();
+    for (const po of pending) {
+      if (!(await this.grnRepository.findOneBy({ poId: po.id }))) {
+        await this.grnRepository.save(this.grnRepository.create({ poId: po.id, slaStatus: 'ON_TIME' }));
+      }
+      const ownerId = po.grnOwnerId || po.overallOwnerId;
+      await this.tasksService.create(
+        {
+          poId: po.id,
+          taskType: TaskType.GRN,
+          ownerId,
+          status: 'OPEN',
+          slaDueAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+          notes: 'PO delivered - record GRN outcome.',
+        },
+        false,
+      );
+      if (ownerId) perOwner.set(ownerId, (perOwner.get(ownerId) ?? 0) + 1);
+    }
+
+    for (const [userId, count] of perOwner) {
+      await this.notificationsService.notify({
+        userId,
+        type: 'TASK_CREATED',
+        title: 'POs awaiting GRN',
+        message: `${count} delivered PO${count === 1 ? '' : 's'} ${count === 1 ? 'is' : 'are'} awaiting GRN - see the GRN Queue`,
+      });
+    }
+    this.logger.log(`Queued ${pending.length} delivered PO(s) for GRN`);
+  }
+
+  /**
    * GRN Ageing Rule: once a PO is delivered, someone must be tracking GRN to close.
    * Flag ageing at 24h if still no outcome recorded.
    */
@@ -142,7 +293,7 @@ export class AutomationService {
       const ageHours = (Date.now() - grn.createdAt.getTime()) / (1000 * 60 * 60);
       if (ageHours < 24) continue;
 
-      const openTask = await this.tasksService.findOpenByPoAndType(grn.poId, TaskType.GRN);
+      const openTask = await this.tasksService.findUnresolvedByPoAndType(grn.poId, TaskType.GRN);
       if (!openTask) {
         await this.tasksService.create({
           poId: grn.poId,

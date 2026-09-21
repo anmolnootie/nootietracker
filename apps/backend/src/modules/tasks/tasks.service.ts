@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Not, Repository } from 'typeorm';
 import { TaskEntity } from '../../database/entities/task.entity';
 import { UserEntity } from '../../database/entities/user.entity';
 import { UserRole } from '@po-control-tower/shared';
@@ -19,7 +19,8 @@ export class TasksService {
   async list(filters: { ownerId?: string; status?: string }): Promise<TaskEntity[]> {
     const where: any = {};
     if (filters.ownerId) where.ownerId = filters.ownerId;
-    if (filters.status) where.status = filters.status;
+    // One status, or several comma-separated (e.g. "OPEN,ESCALATED").
+    if (filters.status) where.status = filters.status.includes(',') ? In(filters.status.split(',')) : filters.status;
     return this.taskRepository.find({
       where,
       relations: ['po'],
@@ -129,10 +130,27 @@ export class TasksService {
     });
   }
 
-  async create(data: Partial<TaskEntity>): Promise<TaskEntity> {
+  /**
+   * A task that still needs doing: OPEN, but also ESCALATED - escalating an
+   * overdue task changes its status without anyone having done the work, so
+   * "is there an open task for this PO" must not stop being true when the SLA
+   * is breached.
+   */
+  async findUnresolvedByPoAndType(poId: string, taskType: string): Promise<TaskEntity | null> {
+    return this.taskRepository.findOne({
+      where: { poId, taskType: taskType as any, status: Not('COMPLETED') },
+    });
+  }
+
+  async findUnresolvedByType(taskType: string): Promise<TaskEntity[]> {
+    return this.taskRepository.find({ where: { taskType: taskType as any, status: Not('COMPLETED') } });
+  }
+
+  // notify: false for callers that create many at once and send their own summary.
+  async create(data: Partial<TaskEntity>, notify = true): Promise<TaskEntity> {
     const task = this.taskRepository.create(data);
     const saved = await this.taskRepository.save(task);
-    if (saved.ownerId) {
+    if (notify && saved.ownerId) {
       await this.notificationsService.notify({
         userId: saved.ownerId,
         type: 'TASK_CREATED',

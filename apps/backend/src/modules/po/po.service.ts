@@ -966,8 +966,12 @@ export class POService {
     return this.poLineItemRepository.findBy({ poId });
   }
 
-  async listLogisticsTrackers(): Promise<LogisticsTrackerEntity[]> {
-    return this.logisticsRepository.find({ relations: ['po'], order: { lastUpdateTime: 'DESC' } });
+  /** Each tracker also says whether its PO's GRN is recorded, so a delivered shipment can show "GRN pending". */
+  async listLogisticsTrackers(): Promise<(LogisticsTrackerEntity & { grnRecorded: boolean })[]> {
+    const trackers = await this.logisticsRepository.find({ relations: ['po'], order: { lastUpdateTime: 'DESC' } });
+    const grns = trackers.length ? await this.grnRepository.find({ where: { poId: In(trackers.map((t) => t.poId)) } }) : [];
+    const recorded = new Set(grns.filter((g) => g.grnDate).map((g) => g.poId));
+    return trackers.map((t) => Object.assign(t, { grnRecorded: recorded.has(t.poId) }));
   }
 
   /**
@@ -1017,7 +1021,8 @@ export class POService {
     appointment.appointmentDate = new Date(appointmentDate);
     const saved = await this.appointmentRepository.save(appointment);
 
-    const openTask = await this.tasksService.findOpenByPoAndType(poId, TaskType.APPOINTMENT);
+    // Unresolved, not just OPEN: an overdue task has been escalated and must still close.
+    const openTask = await this.tasksService.findUnresolvedByPoAndType(poId, TaskType.APPOINTMENT);
     if (openTask) await this.tasksService.complete(openTask.id, 'Appointment confirmed');
 
     await this.recomputeStatus(poId);
@@ -1133,7 +1138,9 @@ export class POService {
     // not the mapping itself. See POMappingService.recoverMappingsForNewPo.
     await this.poMappingService.recoverMappingsForNewPo(poId, grnData.outcome);
 
-    const openGrnTask = await this.tasksService.findOpenByPoAndType(poId, TaskType.GRN);
+    // Unresolved, not just OPEN: a GRN task past its SLA has been escalated and
+    // must still close when the GRN is recorded.
+    const openGrnTask = await this.tasksService.findUnresolvedByPoAndType(poId, TaskType.GRN);
     if (openGrnTask) await this.tasksService.complete(openGrnTask.id, `GRN recorded: ${grnData.outcome}`);
 
     if (grnData.outcome === GRNOutcome.NO_GRN) {
