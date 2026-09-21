@@ -113,11 +113,15 @@ export class CompilationsService {
 
   private async generateCode(): Promise<string> {
     const datePart = format(new Date(), 'yyyyMMdd');
-    const countToday = await this.compilationRepository
+    // Numbered from the highest existing code, not a count: deleting a
+    // compilation would otherwise make the next code collide with a survivor.
+    const latest = await this.compilationRepository
       .createQueryBuilder('c')
       .where('c.compilationCode LIKE :pattern', { pattern: `COMP-${datePart}-%` })
-      .getCount();
-    const seq = String(countToday + 1).padStart(3, '0');
+      .orderBy('c.compilationCode', 'DESC')
+      .getOne();
+    const next = parseInt((latest?.compilationCode ?? '').split('-').pop() || '0', 10) + 1;
+    const seq = String(next).padStart(3, '0');
     return `COMP-${datePart}-${seq}`;
   }
 }

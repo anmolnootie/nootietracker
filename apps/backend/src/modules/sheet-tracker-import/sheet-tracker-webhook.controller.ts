@@ -30,12 +30,7 @@ export class SheetTrackerWebhookController {
 
     const result = await this.service.syncFromGrid(body.rows);
     if ('unchanged' in result) return { status: 'UNCHANGED', message: 'Sheet is identical to the last sync - nothing applied' };
-    return {
-      status: result.status,
-      batchCode: result.batchCode,
-      rows: result.totalRows,
-      applied: result.appliedCount,
-      skipped: result.skippedCount,
-    };
+    if ('busy' in result) return { status: 'BUSY', message: `Sync ${result.batchCode} is still running - skipped this one` };
+    return { status: 'STARTED', batchCode: result.batchCode, message: 'Received - applying in the background. Results appear on the Google Sheets Upload page.' };
   }
 }

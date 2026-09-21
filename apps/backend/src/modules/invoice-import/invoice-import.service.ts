@@ -271,8 +271,11 @@ export class InvoiceImportService {
 
   private async generateBatchCode(): Promise<string> {
     const datePart = format(new Date(), 'yyyyMMdd');
-    const countToday = await this.batchRepository.count({ where: { batchCode: Like(`INV-${datePart}-%`) } });
-    const seq = String(countToday + 1).padStart(3, '0');
+    // Numbered from the highest existing code, not a count: deleting a batch
+    // from history would otherwise make the next code collide with a survivor.
+    const latest = await this.batchRepository.findOne({ where: { batchCode: Like(`INV-${datePart}-%`) }, order: { batchCode: 'DESC' } });
+    const next = parseInt((latest?.batchCode ?? '').split('-').pop() || '0', 10) + 1;
+    const seq = String(next).padStart(3, '0');
     return `INV-${datePart}-${seq}`;
   }
 

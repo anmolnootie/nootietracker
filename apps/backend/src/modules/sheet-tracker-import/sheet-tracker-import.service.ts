@@ -127,7 +127,7 @@ export class SheetTrackerImportService {
    * a sheet whose headers don't look like the tracker rather than guessing,
    * and does nothing if the rows are identical to the last sync's.
    */
-  async syncFromGrid(grid: any[][]): Promise<{ unchanged: true } | SheetTrackerUploadBatchEntity> {
+  async syncFromGrid(grid: any[][]): Promise<{ unchanged: true } | { busy: true; batchCode: string } | SheetTrackerUploadBatchEntity> {
     if (!Array.isArray(grid) || grid.length === 0) throw new BadRequestException('No rows received');
 
     const parsed = this.fileReaderService.fromGrid(grid);
@@ -143,7 +143,16 @@ export class SheetTrackerImportService {
     const last = await this.batchRepository.findOne({ where: { status: 'COMPLETED' }, order: { uploadedAt: 'DESC' } });
     if (last?.payloadHash === hash) return { unchanged: true };
 
-    return this.processParsed(parsed, 'Google Sheet sync', null, hash);
+    // Applying ~2,000 rows takes minutes against a remote database - longer
+    // than Google's script will wait for a reply. So: refuse to overlap a run
+    // that's still going, then answer right away and finish in the background
+    // (the outcome shows on the batch, like any upload).
+    const running = await this.batchRepository.findOne({ where: { status: 'PROCESSING' }, order: { uploadedAt: 'DESC' } });
+    if (running && Date.now() - running.uploadedAt.getTime() < 30 * 60 * 1000) return { busy: true, batchCode: running.batchCode };
+
+    const batch = await this.createBatch('Google Sheet sync', null, hash);
+    void this.runBatch(batch, parsed).catch((err) => this.logger.error(`Background sync ${batch.batchCode} crashed`, err as any));
+    return batch;
   }
 
   private async processParsed(
@@ -152,11 +161,18 @@ export class SheetTrackerImportService {
     uploadedByUserId: string | null,
     payloadHash: string | null,
   ): Promise<SheetTrackerUploadBatchEntity> {
+    return this.runBatch(await this.createBatch(fileName, uploadedByUserId, payloadHash), parsed);
+  }
+
+  private async createBatch(fileName: string, uploadedByUserId: string | null, payloadHash: string | null) {
     const batchCode = await this.generateBatchCode();
-    let batch = await this.batchRepository.save(
+    return this.batchRepository.save(
       this.batchRepository.create({ batchCode, fileName, uploadedByUserId, payloadHash, status: 'PROCESSING' }),
     );
+  }
 
+  private async runBatch(created: SheetTrackerUploadBatchEntity, parsed: ParsedFile): Promise<SheetTrackerUploadBatchEntity> {
+    let batch = created;
     try {
       const { headers, rows } = parsed;
       const mapping = this.mapHeaders(headers);
@@ -406,8 +422,11 @@ export class SheetTrackerImportService {
 
   private async generateBatchCode(): Promise<string> {
     const datePart = format(new Date(), 'yyyyMMdd');
-    const countToday = await this.batchRepository.count({ where: { batchCode: Like(`SHT-${datePart}-%`) } });
-    return `SHT-${datePart}-${String(countToday + 1).padStart(3, '0')}`;
+    // Numbered from the highest existing code, not a count: deleting a batch
+    // from history would otherwise make the next code collide with a survivor.
+    const latest = await this.batchRepository.findOne({ where: { batchCode: Like(`SHT-${datePart}-%`) }, order: { batchCode: 'DESC' } });
+    const next = parseInt((latest?.batchCode ?? '').split('-').pop() || '0', 10) + 1;
+    return `SHT-${datePart}-${String(next).padStart(3, '0')}`;
   }
 
   async listBatches() {

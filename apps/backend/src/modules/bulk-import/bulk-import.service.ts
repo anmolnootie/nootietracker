@@ -425,8 +425,11 @@ export class BulkImportService {
   private async generateBatchCode(platform: string): Promise<string> {
     const prefix = (platform.replace(/[^A-Za-z]/g, '').slice(0, 3) || 'GEN').toUpperCase();
     const datePart = format(new Date(), 'yyyyMMdd');
-    const countToday = await this.batchRepository.count({ where: { batchCode: Like(`${prefix}-${datePart}-%`) } });
-    const seq = String(countToday + 1).padStart(3, '0');
+    // Numbered from the highest existing code, not a count: deleting a batch
+    // from history would otherwise make the next code collide with a survivor.
+    const latest = await this.batchRepository.findOne({ where: { batchCode: Like(`${prefix}-${datePart}-%`) }, order: { batchCode: 'DESC' } });
+    const next = parseInt((latest?.batchCode ?? '').split('-').pop() || '0', 10) + 1;
+    const seq = String(next).padStart(3, '0');
     return `${prefix}-${datePart}-${seq}`;
   }
 }
