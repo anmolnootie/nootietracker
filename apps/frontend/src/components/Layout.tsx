@@ -45,7 +45,10 @@ export const MainLayout: React.FC<LayoutProps> = ({ children }) => {
   const isAdmin = user?.roles?.includes('ADMIN' as any) || user?.roles?.includes('SCM' as any);
 
   const navGroups: { title?: string; items: { label: string; href: string }[] }[] = [
-    { items: [{ label: '🏠 Dashboard', href: '/dashboard' }] },
+    { items: [
+      { label: '🏠 Dashboard', href: '/dashboard' },
+      { label: '📈 Power BI Dashboard', href: '/powerbi' },
+    ] },
     { title: 'Purchase Orders', items: [
       { label: '📦 All POs', href: '/pos' },
       { label: '🔴 Not Fulfilled', href: '/pos/not-fulfilled' },
@@ -77,10 +80,7 @@ export const MainLayout: React.FC<LayoutProps> = ({ children }) => {
       { label: '🧊 Stuck Stock', href: '/stuck-stock' },
       { label: '🔗 PO Mapping', href: '/po-mapping' },
     ] },
-    { title: 'Reports', items: [
-      { label: '📊 Reports', href: '/reports' },
-      { label: '📈 Power BI Dashboard', href: '/powerbi' },
-    ] },
+    { title: 'Reports', items: [{ label: '📊 Reports', href: '/reports' }] },
     { title: 'Settings', items: [
       { label: '⚙ Settings', href: '/settings' },
       ...(isAdmin
