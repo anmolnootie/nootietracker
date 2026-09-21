@@ -36,6 +36,8 @@ import { GrnUploadBatchEntity } from './entities/grn-upload-batch.entity';
 import { GrnImportRowEntity } from './entities/grn-import-row.entity';
 import { DispatchReportUploadBatchEntity } from './entities/dispatch-report-upload-batch.entity';
 import { DispatchReportRowEntity } from './entities/dispatch-report-row.entity';
+import { SheetTrackerUploadBatchEntity } from './entities/sheet-tracker-upload-batch.entity';
+import { SheetTrackerRowEntity } from './entities/sheet-tracker-row.entity';
 
 const ENTITIES = [
   UserEntity,
@@ -72,6 +74,8 @@ const ENTITIES = [
   GrnImportRowEntity,
   DispatchReportUploadBatchEntity,
   DispatchReportRowEntity,
+  SheetTrackerUploadBatchEntity,
+  SheetTrackerRowEntity,
 ];
 
 @Module({
