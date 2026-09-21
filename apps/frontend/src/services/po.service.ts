@@ -45,6 +45,31 @@ export interface DispatchDashboardParams {
   aging?: string;
 }
 
+export type DispatchKpi = 'all' | 'delivered' | 'inTransit' | 'grnDone' | 'grnPending' | 'invoiceValue';
+
+export interface DispatchDashboardListRow {
+  id: string;
+  poNumber: string;
+  location: string;
+  channel: string;
+  dispatchDate: string;
+  invoiceNumber: string | null;
+  invoiceValue: number;
+  partner: string;
+  awb: string | null;
+  status: string;
+  grn: string;
+}
+
+export interface DispatchDashboardList {
+  fyLabel: string;
+  kpi: DispatchKpi;
+  total: number;
+  invoiceValue: number;
+  truncated: boolean;
+  rows: DispatchDashboardListRow[];
+}
+
 export interface DispatchDashboardData {
   fy: number;
   fyLabel: string;
@@ -95,6 +120,13 @@ export const poService = {
   getDispatchDashboard: async (params: DispatchDashboardParams): Promise<DispatchDashboardData> => {
     const clean = Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined && v !== ''));
     const response = await api.get('/pos/dispatch-dashboard', { params: clean });
+    return response.data;
+  },
+
+  /** Every PO behind one dashboard tile (respecting the active filters), for the list that opens on click. */
+  getDispatchDashboardList: async (kpi: DispatchKpi, params: DispatchDashboardParams): Promise<DispatchDashboardList> => {
+    const clean = Object.fromEntries(Object.entries({ ...params, kpi }).filter(([, v]) => v !== undefined && v !== ''));
+    const response = await api.get('/pos/dispatch-dashboard/list', { params: clean });
     return response.data;
   },
 

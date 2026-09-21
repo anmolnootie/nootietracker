@@ -71,6 +71,56 @@ function fyStartYear(d: Date): number {
   return d.getMonth() >= 3 ? d.getFullYear() : d.getFullYear() - 1;
 }
 
+type Dim = 'channel' | 'month' | 'status' | 'partner' | 'aging';
+
+const pick = (r: Row): Record<Dim, string> => ({ channel: r.channel, month: r.monthKey, status: r.status, partner: r.partner, aging: r.aging });
+
+const activeFiltersOf = (filters: DispatchDashboardFilters): Record<Dim, string | undefined> => ({
+  channel: filters.channel || undefined,
+  month: filters.month || undefined,
+  status: filters.status || undefined,
+  partner: filters.partner || undefined,
+  aging: filters.aging || undefined,
+});
+
+/** Rows passing every active filter except (optionally) one dimension - see the cross-filtering note in getDashboard. */
+const rowsMatching = (rows: Row[], active: Record<Dim, string | undefined>, except?: Dim): Row[] =>
+  rows.filter((r) => {
+    const v = pick(r);
+    return (Object.keys(active) as Dim[]).every((d) => d === except || !active[d] || v[d] === active[d]);
+  });
+
+/** The headline tiles, each of which opens the list of POs behind its number. */
+export type DispatchKpi = 'all' | 'delivered' | 'inTransit' | 'grnDone' | 'grnPending' | 'invoiceValue';
+export const DISPATCH_KPIS: DispatchKpi[] = ['all', 'delivered', 'inTransit', 'grnDone', 'grnPending', 'invoiceValue'];
+
+const KPI_PREDICATES: Record<DispatchKpi, (r: Row) => boolean> = {
+  all: () => true,
+  delivered: (r) => r.status === 'Delivered',
+  inTransit: (r) => r.status === 'In Transit',
+  grnDone: (r) => r.grnDone,
+  grnPending: (r) => r.status === 'Delivered' && !r.grnDone,
+  invoiceValue: () => true,
+};
+
+// The list is for reading down and searching, so it isn't capped at the 300 the
+// dashboard table shows - but a ceiling keeps one request bounded.
+const KPI_LIST_LIMIT = 5000;
+
+const toTableRow = (r: Row) => ({
+  id: r.id,
+  poNumber: r.poNumber,
+  location: r.location,
+  channel: r.channel,
+  dispatchDate: r.dispatchDate,
+  invoiceNumber: r.invoiceNumber,
+  invoiceValue: r.invoiceValue,
+  partner: r.partner,
+  awb: r.awb,
+  status: r.status,
+  grn: r.grnDone ? (r.grnOutcome ?? 'Done') : r.status === 'Delivered' ? 'Pending' : '-',
+});
+
 @Injectable()
 export class DispatchDashboardService {
   constructor(
@@ -78,9 +128,12 @@ export class DispatchDashboardService {
     private readonly poRepository: Repository<POMasterEntity>,
   ) {}
 
-  async getDashboard(filters: DispatchDashboardFilters) {
-    const now = new Date();
-    const fy = filters.fy && !Number.isNaN(filters.fy) ? Number(filters.fy) : fyStartYear(now);
+  private resolveFy(filters: DispatchDashboardFilters, now: Date): number {
+    return filters.fy && !Number.isNaN(filters.fy) ? Number(filters.fy) : fyStartYear(now);
+  }
+
+  /** Every dispatched, non-deleted PO in the financial year, normalised (status/partner spellings merged). */
+  private async loadRows(fy: number, now: Date): Promise<Row[]> {
     const start = new Date(fy, 3, 1); // 1 Apr
     const end = new Date(fy + 1, 3, 1); // 1 Apr next year
 
@@ -105,17 +158,6 @@ export class DispatchDashboardService {
       .andWhere('dsp.actualDispatchDate IS NOT NULL')
       .andWhere('dsp.actualDispatchDate >= :start AND dsp.actualDispatchDate < :end', { start, end })
       .getRawMany();
-
-    // FY options: from the earliest dispatch year to the current FY.
-    const earliest = await this.poRepository
-      .createQueryBuilder('po')
-      .innerJoin(DispatchEntity, 'dsp', 'dsp.poId = po.id')
-      .select('MIN(dsp.actualDispatchDate)', 'min')
-      .where('po.isDeleted = false')
-      .getRawOne();
-    const firstFy = earliest?.min ? fyStartYear(new Date(earliest.min)) : fyStartYear(now);
-    const fyOptions: number[] = [];
-    for (let y = fyStartYear(now); y >= Math.min(firstFy, fyStartYear(now)); y--) fyOptions.push(y);
 
     const rows: Row[] = raw.map((r) => {
       // Dates read from Google-exported sheets can sit 10s before midnight;
@@ -161,23 +203,30 @@ export class DispatchDashboardService {
       r.partner = best;
     });
 
+    return rows;
+  }
+
+  async getDashboard(filters: DispatchDashboardFilters) {
+    const now = new Date();
+    const fy = this.resolveFy(filters, now);
+    const rows = await this.loadRows(fy, now);
+
+    // FY options: from the earliest dispatch year to the current FY.
+    const earliest = await this.poRepository
+      .createQueryBuilder('po')
+      .innerJoin(DispatchEntity, 'dsp', 'dsp.poId = po.id')
+      .select('MIN(dsp.actualDispatchDate)', 'min')
+      .where('po.isDeleted = false')
+      .getRawOne();
+    const firstFy = earliest?.min ? fyStartYear(new Date(earliest.min)) : fyStartYear(now);
+    const fyOptions: number[] = [];
+    for (let y = fyStartYear(now); y >= Math.min(firstFy, fyStartYear(now)); y--) fyOptions.push(y);
+
     // Cross-filtering: every visual respects every active filter EXCEPT its
     // own dimension, so clicking a slice narrows the others without making
     // the chart you clicked collapse to a single bar.
-    type Dim = 'channel' | 'month' | 'status' | 'partner' | 'aging';
-    const active: Record<Dim, string | undefined> = {
-      channel: filters.channel || undefined,
-      month: filters.month || undefined,
-      status: filters.status || undefined,
-      partner: filters.partner || undefined,
-      aging: filters.aging || undefined,
-    };
-    const pick = (r: Row): Record<Dim, string> => ({ channel: r.channel, month: r.monthKey, status: r.status, partner: r.partner, aging: r.aging });
-    const filtered = (except?: Dim) =>
-      rows.filter((r) => {
-        const v = pick(r);
-        return (Object.keys(active) as Dim[]).every((d) => d === except || !active[d] || v[d] === active[d]);
-      });
+    const active = activeFiltersOf(filters);
+    const filtered = (except?: Dim) => rowsMatching(rows, active, except);
     const countBy = (list: Row[], key: (r: Row) => string) => {
       const m = new Map<string, number>();
       list.forEach((r) => m.set(key(r), (m.get(key(r)) ?? 0) + 1));
@@ -187,10 +236,10 @@ export class DispatchDashboardService {
     const main = filtered();
     const kpis = {
       totalPOs: main.length,
-      delivered: main.filter((r) => r.status === 'Delivered').length,
-      inTransit: main.filter((r) => r.status === 'In Transit').length,
-      grnDone: main.filter((r) => r.grnDone).length,
-      grnPending: main.filter((r) => r.status === 'Delivered' && !r.grnDone).length,
+      delivered: main.filter(KPI_PREDICATES.delivered).length,
+      inTransit: main.filter(KPI_PREDICATES.inTransit).length,
+      grnDone: main.filter(KPI_PREDICATES.grnDone).length,
+      grnPending: main.filter(KPI_PREDICATES.grnPending).length,
       totalInvoiceValue: main.reduce((s, r) => s + r.invoiceValue, 0),
     };
 
@@ -218,19 +267,7 @@ export class DispatchDashboardService {
       .slice()
       .sort((a, b) => b.dispatchDate.getTime() - a.dispatchDate.getTime())
       .slice(0, 300)
-      .map((r) => ({
-        id: r.id,
-        poNumber: r.poNumber,
-        location: r.location,
-        channel: r.channel,
-        dispatchDate: r.dispatchDate,
-        invoiceNumber: r.invoiceNumber,
-        invoiceValue: r.invoiceValue,
-        partner: r.partner,
-        awb: r.awb,
-        status: r.status,
-        grn: r.grnDone ? (r.grnOutcome ?? 'Done') : r.status === 'Delivered' ? 'Pending' : '-',
-      }));
+      .map(toTableRow);
 
     return {
       fy,
@@ -248,6 +285,31 @@ export class DispatchDashboardService {
       byAging,
       byMonth,
       table: { total: main.length, rows: table },
+    };
+  }
+
+  /**
+   * Every PO behind one headline tile, for the list that opens when it's clicked.
+   * Honours the same active filters as the tiles (so the list always matches the
+   * number that was clicked) and, unlike the dashboard table, isn't cut at 300.
+   */
+  async getKpiList(filters: DispatchDashboardFilters, kpi: DispatchKpi) {
+    const now = new Date();
+    const fy = this.resolveFy(filters, now);
+    const rows = await this.loadRows(fy, now);
+
+    const matching = rowsMatching(rows, activeFiltersOf(filters)).filter(KPI_PREDICATES[kpi]);
+    // "Total Invoice Value" reads best biggest-first; everything else newest-dispatched-first.
+    matching.sort((a, b) => (kpi === 'invoiceValue' ? b.invoiceValue - a.invoiceValue : 0) || b.dispatchDate.getTime() - a.dispatchDate.getTime());
+
+    return {
+      fy,
+      fyLabel: `FY ${fy}-${fy + 1}`,
+      kpi,
+      total: matching.length,
+      invoiceValue: matching.reduce((sum, r) => sum + r.invoiceValue, 0),
+      truncated: matching.length > KPI_LIST_LIMIT,
+      rows: matching.slice(0, KPI_LIST_LIMIT).map(toTableRow),
     };
   }
 }

@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { MainLayout } from '@/components/Layout';
-import { poService, DispatchDashboardData, DispatchDashboardParams } from '@/services/po.service';
+import { poService, DispatchDashboardData, DispatchDashboardParams, DispatchDashboardList, DispatchKpi } from '@/services/po.service';
 import { format } from 'date-fns';
 
 type Filters = Omit<DispatchDashboardParams, 'fy'>;
@@ -9,6 +9,15 @@ const FILTER_LABELS: Record<keyof Filters, string> = { channel: 'Channel', month
 const PALETTE = ['#E8862A', '#1F4E79', '#2E8B57', '#8E44AD', '#C0392B', '#16A085', '#7F8C8D', '#D4AC0D'];
 const VALUE_COLOR = '#E8862A';
 const COUNT_COLOR = '#1F4E79';
+
+const KPI_TITLES: Record<DispatchKpi, string> = {
+  all: 'All POs',
+  delivered: 'Delivered POs',
+  inTransit: 'POs in transit',
+  grnDone: 'GRN done',
+  grnPending: 'GRN pending - delivered, no GRN recorded yet',
+  invoiceValue: 'Invoice value by PO (highest first)',
+};
 
 const inr = (n: number) => Math.round(n).toLocaleString('en-IN');
 const compact = (n: number) => {
@@ -32,16 +41,36 @@ export default function DispatchDashboard() {
   const [data, setData] = useState<DispatchDashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  // Bumping this re-fetches with the current filters (Refresh button / timer).
+  const [reloadKey, setReloadKey] = useState(0);
+  const silentReload = useRef(false);
+  // The PO list that opens when a tile is clicked.
+  const [listKpi, setListKpi] = useState<DispatchKpi | null>(null);
+
+  // The figures are computed live from the database on every request, but the
+  // page only asked once - a tab left open never showed new dispatches/GRNs.
+  // Re-check every minute while the tab is visible, without dimming the page.
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (document.visibilityState !== 'visible') return;
+      silentReload.current = true;
+      setReloadKey((k) => k + 1);
+    }, 60_000);
+    return () => clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
+    if (!silentReload.current) setLoading(true);
+    silentReload.current = false;
     poService
       .getDispatchDashboard({ fy, ...filters })
       .then((d) => {
         if (cancelled) return;
         setData(d);
         setError('');
+        setLastUpdated(new Date());
         if (fy === undefined) setFy(d.fy);
       })
       .catch(() => !cancelled && setError('Could not load the dashboard.'))
@@ -50,7 +79,7 @@ export default function DispatchDashboard() {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fy, filters]);
+  }, [fy, filters, reloadKey]);
 
   // Click again to clear - same behaviour as a Power BI slicer/visual.
   const toggle = (key: keyof Filters, value: string) => setFilters((f) => ({ ...f, [key]: f[key] === value ? undefined : value }));
@@ -62,6 +91,15 @@ export default function DispatchDashboard() {
       {/* Title banner */}
       <div className="bg-nootie-orange-dark text-white rounded-t-lg px-6 py-4 flex items-center justify-between">
         <h2 className="text-2xl font-bold tracking-tight">Dispatch and GRN Dashboard ({data?.fyLabel ?? '...'})</h2>
+        <div className="flex items-center gap-3">
+        {lastUpdated && <span className="text-xs text-white/80 whitespace-nowrap">Updated {lastUpdated.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>}
+        <button
+          onClick={() => setReloadKey((k) => k + 1)}
+          disabled={loading}
+          className="text-sm px-3 py-1 rounded bg-white/20 hover:bg-white/30 disabled:opacity-50 whitespace-nowrap"
+        >
+          {loading ? 'Refreshing...' : '🔄 Refresh'}
+        </button>
         {data && data.fyOptions.length > 1 && (
           <select
             value={fy}
@@ -77,6 +115,7 @@ export default function DispatchDashboard() {
             ))}
           </select>
         )}
+        </div>
       </div>
 
       {error && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 text-sm">{error}</div>}
@@ -87,12 +126,12 @@ export default function DispatchDashboard() {
         <div className={`transition-opacity ${loading ? 'opacity-60' : ''}`}>
           {/* KPI tiles */}
           <div className="grid grid-cols-2 lg:grid-cols-6 gap-3 bg-gray-100 p-3">
-            <Kpi icon="📋" label="Total POs" value={data.kpis.totalPOs.toLocaleString('en-IN')} />
-            <Kpi icon="🚚" label="Delivered" value={data.kpis.delivered.toLocaleString('en-IN')} onClick={() => toggle('status', 'Delivered')} active={filters.status === 'Delivered'} />
-            <Kpi icon="📦" label="In Transit" value={data.kpis.inTransit.toLocaleString('en-IN')} onClick={() => toggle('status', 'In Transit')} active={filters.status === 'In Transit'} />
-            <Kpi icon="✅" label="GRN Done" value={data.kpis.grnDone.toLocaleString('en-IN')} />
-            <Kpi icon="⚠️" label="GRN Pending" value={data.kpis.grnPending.toLocaleString('en-IN')} hint="Delivered, no GRN yet" />
-            <Kpi icon="₹" label="Total Invoice Value" value={inr(data.kpis.totalInvoiceValue)} />
+            <Kpi icon="📋" label="Total POs" value={data.kpis.totalPOs.toLocaleString('en-IN')} hint="Click to list these POs" onClick={() => setListKpi('all')} active={listKpi === 'all'} />
+            <Kpi icon="🚚" label="Delivered" value={data.kpis.delivered.toLocaleString('en-IN')} hint="Click to list these POs" onClick={() => setListKpi('delivered')} active={listKpi === 'delivered'} />
+            <Kpi icon="📦" label="In Transit" value={data.kpis.inTransit.toLocaleString('en-IN')} hint="Click to list these POs" onClick={() => setListKpi('inTransit')} active={listKpi === 'inTransit'} />
+            <Kpi icon="✅" label="GRN Done" value={data.kpis.grnDone.toLocaleString('en-IN')} hint="Click to list these POs" onClick={() => setListKpi('grnDone')} active={listKpi === 'grnDone'} />
+            <Kpi icon="⚠️" label="GRN Pending" value={data.kpis.grnPending.toLocaleString('en-IN')} hint="Delivered, no GRN yet - click to list these POs" onClick={() => setListKpi('grnPending')} active={listKpi === 'grnPending'} />
+            <Kpi icon="₹" label="Total Invoice Value" value={inr(data.kpis.totalInvoiceValue)} hint="Click to list these POs" onClick={() => setListKpi('invoiceValue')} active={listKpi === 'invoiceValue'} />
           </div>
 
           {/* Active filters */}
@@ -181,11 +220,141 @@ export default function DispatchDashboard() {
           </div>
         </div>
       )}
+
+      {listKpi && (
+        <PoListModal
+          kpi={listKpi}
+          fy={fy}
+          filters={filters}
+          fyLabel={data?.fyLabel}
+          monthLabel={monthLabel}
+          onClose={() => setListKpi(null)}
+        />
+      )}
     </MainLayout>
   );
 }
 
 /* ---------- small pieces ---------- */
+
+/** The full list of POs behind a clicked tile - same filters as the tile, searchable, each PO opens its own page. */
+const PoListModal: React.FC<{
+  kpi: DispatchKpi;
+  fy: number | undefined;
+  filters: Filters;
+  fyLabel?: string;
+  monthLabel: (v: string) => string;
+  onClose: () => void;
+}> = ({ kpi, fy, filters, fyLabel, monthLabel, onClose }) => {
+  const [list, setList] = useState<DispatchDashboardList | null>(null);
+  const [error, setError] = useState('');
+  const [search, setSearch] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    setList(null);
+    setError('');
+    poService
+      .getDispatchDashboardList(kpi, { fy, ...filters })
+      .then((d) => !cancelled && setList(d))
+      .catch(() => !cancelled && setError('Could not load the list.'));
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kpi, fy, filters]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  const q = search.trim().toLowerCase();
+  const rows = (list?.rows ?? []).filter(
+    (r) => !q || [r.poNumber, r.awb, r.invoiceNumber, r.location, r.partner, r.channel].some((v) => v && String(v).toLowerCase().includes(q)),
+  );
+  const active = (Object.keys(filters) as (keyof Filters)[]).filter((k) => filters[k]);
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-6xl max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()} role="dialog" aria-label={KPI_TITLES[kpi]}>
+        <div className="px-6 py-4 border-b flex items-start justify-between gap-4">
+          <div>
+            <h3 className="text-lg font-semibold text-gray-800">{KPI_TITLES[kpi]}</h3>
+            <p className="text-sm text-gray-500 mt-0.5">
+              {list ? (
+                <>
+                  <b className="text-gray-800">{list.total.toLocaleString('en-IN')}</b> PO{list.total === 1 ? '' : 's'} · invoice value <b className="text-gray-800">₹{inr(list.invoiceValue)}</b> · {list.fyLabel ?? fyLabel}
+                </>
+              ) : (
+                'Loading...'
+              )}
+              {active.length > 0 && <> · {active.map((k) => `${FILTER_LABELS[k]}: ${k === 'month' ? monthLabel(filters[k]!) : filters[k]}`).join(' · ')}</>}
+            </p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-700 text-xl leading-none" aria-label="Close">
+            ✕
+          </button>
+        </div>
+
+        <div className="px-6 py-3 border-b bg-gray-50 flex items-center gap-3">
+          <input
+            type="search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search PO, AWB, invoice, location or partner"
+            className="px-3 py-1.5 border border-gray-300 rounded text-sm w-80"
+            autoFocus
+          />
+          {q && list && <span className="text-xs text-gray-500">{rows.length.toLocaleString('en-IN')} of {list.total.toLocaleString('en-IN')} match</span>}
+        </div>
+
+        {error ? (
+          <p className="p-6 text-red-700 text-sm">{error}</p>
+        ) : !list ? (
+          <p className="p-10 text-center text-gray-500">Loading...</p>
+        ) : (
+          <div className="overflow-auto">
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 bg-white shadow-[0_1px_0_#e5e7eb]">
+                <tr className="text-left text-xs text-gray-600">
+                  {['PO Number', 'Location/Hub', 'Channel', 'Dispatched', 'Invoice No.', 'Invoice Value', 'Delivery Partner', 'AWB', 'Status', 'GRN'].map((h) => (
+                    <th key={h} className="px-3 py-2 font-medium whitespace-nowrap">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {rows.map((r) => (
+                  <tr key={r.id} className="hover:bg-gray-50">
+                    <td className="px-3 py-2 whitespace-nowrap">
+                      <Link href={`/pos/${r.id}`} className="text-nootie-orange-dark hover:underline">{r.poNumber}</Link>
+                    </td>
+                    <td className="px-3 py-2 whitespace-nowrap text-gray-700">{r.location}</td>
+                    <td className="px-3 py-2 whitespace-nowrap text-gray-700">{r.channel}</td>
+                    <td className="px-3 py-2 whitespace-nowrap text-gray-600">{format(new Date(r.dispatchDate), 'dd MMM yy')}</td>
+                    <td className="px-3 py-2 whitespace-nowrap text-gray-600">{r.invoiceNumber || '-'}</td>
+                    <td className="px-3 py-2 whitespace-nowrap text-right tabular-nums">{inr(r.invoiceValue)}</td>
+                    <td className="px-3 py-2 whitespace-nowrap text-gray-700">{r.partner}</td>
+                    <td className="px-3 py-2 whitespace-nowrap text-gray-600">{r.awb || '-'}</td>
+                    <td className="px-3 py-2 whitespace-nowrap"><StatusPill status={r.status} /></td>
+                    <td className="px-3 py-2 whitespace-nowrap text-gray-600">{r.grn}</td>
+                  </tr>
+                ))}
+                {rows.length === 0 && (
+                  <tr>
+                    <td colSpan={10} className="px-3 py-10 text-center text-gray-500">{q ? 'No POs match that search.' : 'No POs here.'}</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+            {list.truncated && <p className="px-6 py-3 text-xs text-gray-500 border-t">Showing the first {list.rows.length.toLocaleString('en-IN')} of {list.total.toLocaleString('en-IN')} - narrow the filters to see the rest.</p>}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
 
 const Kpi: React.FC<{ icon: string; label: string; value: string; hint?: string; onClick?: () => void; active?: boolean }> = ({ icon, label, value, hint, onClick, active }) => {
   const Tag = onClick ? 'button' : 'div';

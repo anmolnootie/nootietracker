@@ -16,7 +16,7 @@ import { AuthGuard } from '@nestjs/passport';
 import type { Response } from 'express';
 import { POService, SENSITIVE_PO_FIELDS } from './po.service';
 import { POPdfService } from './po-pdf.service';
-import { DispatchDashboardService } from './dispatch-dashboard.service';
+import { DispatchDashboardService, DISPATCH_KPIS, DispatchKpi } from './dispatch-dashboard.service';
 import { EditPORequest } from './edit-po.dto';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { RolesGuard } from '../../common/guards/roles.guard';
@@ -96,6 +96,20 @@ export class POController {
     @Query('aging') aging?: string,
   ) {
     return this.dispatchDashboardService.getDashboard({ fy: fy ? Number(fy) : undefined, channel, month, status, partner, aging });
+  }
+
+  @Get('dispatch-dashboard/list')
+  async getDispatchDashboardList(
+    @Query('kpi') kpi: string,
+    @Query('fy') fy?: string,
+    @Query('channel') channel?: string,
+    @Query('month') month?: string,
+    @Query('status') status?: string,
+    @Query('partner') partner?: string,
+    @Query('aging') aging?: string,
+  ) {
+    if (!DISPATCH_KPIS.includes(kpi as DispatchKpi)) throw new BadRequestException(`kpi must be one of: ${DISPATCH_KPIS.join(', ')}`);
+    return this.dispatchDashboardService.getKpiList({ fy: fy ? Number(fy) : undefined, channel, month, status, partner, aging }, kpi as DispatchKpi);
   }
 
   @Get('filter-options')
