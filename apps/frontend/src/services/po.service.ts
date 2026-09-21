@@ -16,6 +16,26 @@ export interface InventoryRow {
   fulfilmentPercent: number;
 }
 
+export interface POListFilters {
+  channelId?: string;
+  customerId?: string;
+  status?: string;
+  risk?: string;
+  view?: POView;
+  search?: string;
+  location?: string;
+  dateField?: 'poDate' | 'expiry' | 'dispatch' | 'appointment' | 'invoice';
+  dateFrom?: string;
+  dateTo?: string;
+  valueMin?: number;
+  valueMax?: number;
+  fulfilmentDecision?: string;
+  fulfilmentStatus?: string;
+  sourceType?: string;
+  invoiced?: 'yes' | 'no';
+  reattempt?: 'yes' | 'no';
+}
+
 export const poService = {
   createPO: async (data: CreatePORequest) => {
     const response = await api.post('/pos', data);
@@ -27,8 +47,13 @@ export const poService = {
     return response.data;
   },
 
-  getAllPOs: async (filters?: { channelId?: string; customerId?: string; status?: string; risk?: string; view?: POView }) => {
+  getAllPOs: async (filters?: POListFilters) => {
     const response = await api.get('/pos', { params: filters });
+    return response.data;
+  },
+
+  getFilterOptions: async (): Promise<{ channels: string[]; locations: string[]; customers: string[] }> => {
+    const response = await api.get('/pos/filter-options');
     return response.data;
   },
 

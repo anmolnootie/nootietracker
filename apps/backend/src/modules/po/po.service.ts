@@ -541,9 +541,25 @@ export class POService {
     status?: POStatus;
     risk?: string;
     view?: 'active' | 'at_risk' | 'expiring_soon' | 'low_value' | 'not_fulfilled';
+    search?: string;
+    location?: string;
+    dateField?: 'poDate' | 'expiry' | 'dispatch' | 'appointment' | 'invoice';
+    dateFrom?: string;
+    dateTo?: string;
+    valueMin?: number;
+    valueMax?: number;
+    fulfilmentDecision?: string;
+    fulfilmentStatus?: string;
+    sourceType?: string;
+    invoiced?: 'yes' | 'no';
+    reattempt?: 'yes' | 'no';
   }): Promise<POMasterEntity[]> {
     // Deleted POs live in the Bin, not in any regular PO view.
-    let query = this.poRepository.createQueryBuilder('po').where('po.isDeleted = false');
+    let query = this.poRepository
+      .createQueryBuilder('po')
+      .leftJoin(DispatchEntity, 'dsp', 'dsp.poId = po.id')
+      .leftJoin(AppointmentEntity, 'apt', 'apt.poId = po.id')
+      .where('po.isDeleted = false');
 
     if (filters?.channelId) {
       query = query.andWhere('po.channelId = :channelId', { channelId: filters.channelId });
@@ -556,6 +572,59 @@ export class POService {
     }
     if (filters?.risk) {
       query = query.andWhere('po.riskStatus = :risk', { risk: filters.risk });
+    }
+    if (filters?.location) {
+      query = query.andWhere('po.location = :location', { location: filters.location });
+    }
+    if (filters?.search?.trim()) {
+      query = query.andWhere(
+        '(po.poNumber ILIKE :search OR po.location ILIKE :search OR po.channelId ILIKE :search OR dsp.invoiceNumber ILIKE :search OR dsp.awbNumber ILIKE :search)',
+        { search: `%${filters.search.trim()}%` },
+      );
+    }
+
+    // Date range on whichever date the person picked. Compared as plain dates
+    // (not timestamps) so "to" is inclusive of the whole day and server
+    // timezone never shifts a boundary.
+    const dateColumns: Record<string, string> = {
+      poDate: 'po.poDate',
+      expiry: 'po.poExpiryDate',
+      dispatch: 'dsp.actualDispatchDate',
+      appointment: 'apt.appointmentDate',
+      invoice: 'dsp.invoiceDate',
+    };
+    const dateColumn = dateColumns[filters?.dateField ?? 'poDate'] ?? dateColumns.poDate;
+    if (filters?.dateFrom) {
+      query = query.andWhere(`CAST(${dateColumn} AS date) >= :dateFrom`, { dateFrom: filters.dateFrom });
+    }
+    if (filters?.dateTo) {
+      query = query.andWhere(`CAST(${dateColumn} AS date) <= :dateTo`, { dateTo: filters.dateTo });
+    }
+
+    if (filters?.valueMin != null && !Number.isNaN(filters.valueMin)) {
+      query = query.andWhere('po.poValue >= :valueMin', { valueMin: filters.valueMin });
+    }
+    if (filters?.valueMax != null && !Number.isNaN(filters.valueMax)) {
+      query = query.andWhere('po.poValue <= :valueMax', { valueMax: filters.valueMax });
+    }
+    if (filters?.fulfilmentDecision) {
+      query = query.andWhere('po.fulfilmentDecision = :fulfilmentDecision', { fulfilmentDecision: filters.fulfilmentDecision });
+    }
+    if (filters?.fulfilmentStatus) {
+      query = query.andWhere('po.fulfilmentStatus = :fulfilmentStatus', { fulfilmentStatus: filters.fulfilmentStatus });
+    }
+    if (filters?.sourceType) {
+      query = query.andWhere('po.sourceType = :sourceType', { sourceType: filters.sourceType });
+    }
+    if (filters?.invoiced === 'yes') {
+      query = query.andWhere("dsp.invoiceNumber IS NOT NULL AND dsp.invoiceNumber <> ''");
+    } else if (filters?.invoiced === 'no') {
+      query = query.andWhere("(dsp.invoiceNumber IS NULL OR dsp.invoiceNumber = '')");
+    }
+    if (filters?.reattempt === 'yes') {
+      query = query.andWhere('po.isReattemptPo = true');
+    } else if (filters?.reattempt === 'no') {
+      query = query.andWhere('po.isReattemptPo = false');
     }
 
     switch (filters?.view) {
@@ -586,6 +655,24 @@ export class POService {
     }
 
     return query.orderBy('po.priorityScore', 'DESC').addOrderBy('po.poExpiryDate', 'ASC').getMany();
+  }
+
+  /** Distinct values that actually exist on live POs, so filter dropdowns offer real choices rather than free text. */
+  async getFilterOptions(): Promise<{ channels: string[]; locations: string[]; customers: string[] }> {
+    const distinct = async (column: 'channelId' | 'location' | 'customerId') => {
+      const rows = await this.poRepository
+        .createQueryBuilder('po')
+        .select(`DISTINCT po.${column}`, 'value')
+        .where('po.isDeleted = false')
+        .orderBy('value', 'ASC')
+        .getRawMany();
+      return rows.map((r) => r.value).filter((v) => !!v);
+    };
+    return {
+      channels: await distinct('channelId'),
+      locations: await distinct('location'),
+      customers: await distinct('customerId'),
+    };
   }
 
   /** 🗑️ PO Bin - soft-deleted POs, recoverable until someone with permission permanently deletes them. */

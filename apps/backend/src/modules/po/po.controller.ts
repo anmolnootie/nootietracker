@@ -51,6 +51,18 @@ export class POController {
     @Query('status') status?: POStatus,
     @Query('risk') risk?: string,
     @Query('view') view?: 'active' | 'at_risk' | 'expiring_soon' | 'low_value' | 'not_fulfilled',
+    @Query('search') search?: string,
+    @Query('location') location?: string,
+    @Query('dateField') dateField?: 'poDate' | 'expiry' | 'dispatch' | 'appointment' | 'invoice',
+    @Query('dateFrom') dateFrom?: string,
+    @Query('dateTo') dateTo?: string,
+    @Query('valueMin') valueMin?: string,
+    @Query('valueMax') valueMax?: string,
+    @Query('fulfilmentDecision') fulfilmentDecision?: string,
+    @Query('fulfilmentStatus') fulfilmentStatus?: string,
+    @Query('sourceType') sourceType?: string,
+    @Query('invoiced') invoiced?: 'yes' | 'no',
+    @Query('reattempt') reattempt?: 'yes' | 'no',
   ) {
     return this.poService.getAllPOs({
       channelId,
@@ -58,7 +70,24 @@ export class POController {
       status,
       risk,
       view,
+      search,
+      location,
+      dateField,
+      dateFrom,
+      dateTo,
+      valueMin: valueMin ? Number(valueMin) : undefined,
+      valueMax: valueMax ? Number(valueMax) : undefined,
+      fulfilmentDecision,
+      fulfilmentStatus,
+      sourceType,
+      invoiced,
+      reattempt,
     });
+  }
+
+  @Get('filter-options')
+  async getFilterOptions() {
+    return this.poService.getFilterOptions();
   }
 
   @Get('dashboard/metrics')
