@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { MainLayout } from '@/components/Layout';
 import { RiskBadge } from '@/components/Badges';
+import { PowerBIEmbed } from '@/components/PowerBIEmbed';
 import { poService } from '@/services/po.service';
 
 interface DashboardMetrics {
@@ -269,6 +270,11 @@ export default function Dashboard() {
           </div>
         </div>
       )}
+
+      {/* Power BI - below the operational dashboard */}
+      <div className="mt-8">
+        <PowerBIEmbed title="Power BI Dashboard" height="85vh" />
+      </div>
     </MainLayout>
   );
 }
