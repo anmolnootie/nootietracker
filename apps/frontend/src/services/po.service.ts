@@ -36,6 +36,46 @@ export interface POListFilters {
   reattempt?: 'yes' | 'no';
 }
 
+export interface DispatchDashboardParams {
+  fy?: number;
+  channel?: string;
+  month?: string;
+  status?: string;
+  partner?: string;
+  aging?: string;
+}
+
+export interface DispatchDashboardData {
+  fy: number;
+  fyLabel: string;
+  fyOptions: number[];
+  kpis: { totalPOs: number; delivered: number; inTransit: number; grnDone: number; grnPending: number; totalInvoiceValue: number };
+  slicers: {
+    channels: { name: string; count: number }[];
+    months: { value: string; label: string; count: number }[];
+    statuses: { name: string; count: number }[];
+  };
+  byPartner: { name: string; count: number }[];
+  byAging: { name: string; count: number }[];
+  byMonth: { value: string; label: string; count: number; invoiceValue: number }[];
+  table: {
+    total: number;
+    rows: {
+      id: string;
+      poNumber: string;
+      location: string;
+      channel: string;
+      dispatchDate: string;
+      invoiceNumber: string | null;
+      invoiceValue: number;
+      partner: string;
+      awb: string | null;
+      status: string;
+      grn: string;
+    }[];
+  };
+}
+
 export const poService = {
   createPO: async (data: CreatePORequest) => {
     const response = await api.post('/pos', data);
@@ -49,6 +89,12 @@ export const poService = {
 
   getAllPOs: async (filters?: POListFilters) => {
     const response = await api.get('/pos', { params: filters });
+    return response.data;
+  },
+
+  getDispatchDashboard: async (params: DispatchDashboardParams): Promise<DispatchDashboardData> => {
+    const clean = Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined && v !== ''));
+    const response = await api.get('/pos/dispatch-dashboard', { params: clean });
     return response.data;
   },
 

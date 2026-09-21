@@ -47,6 +47,7 @@ export const MainLayout: React.FC<LayoutProps> = ({ children }) => {
   const navGroups: { title?: string; items: { label: string; href: string }[] }[] = [
     { items: [
       { label: '🏠 Dashboard', href: '/dashboard' },
+      { label: '🚚 Dispatch & GRN Dashboard', href: '/dispatch-dashboard' },
       { label: '📈 Power BI Dashboard', href: '/powerbi' },
     ] },
     { title: 'Purchase Orders', items: [
@@ -199,6 +200,7 @@ function getPageTitle(pathname: string): string {
     '/tasks': 'My Tasks',
     '/reports': 'Reports',
     '/powerbi': 'Power BI Dashboard',
+    '/dispatch-dashboard': 'Dispatch & GRN Dashboard',
     '/settings': 'Settings',
     '/masters': 'Master Data',
     '/users': 'Users',

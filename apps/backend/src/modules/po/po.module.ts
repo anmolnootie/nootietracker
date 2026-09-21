@@ -19,6 +19,7 @@ import { PODeletionAuditEntity } from '../../database/entities/po-deletion-audit
 
 import { POService } from './po.service';
 import { POPdfService } from './po-pdf.service';
+import { DispatchDashboardService } from './dispatch-dashboard.service';
 import { POController } from './po.controller';
 import { StatusEngine } from '../../engines/status.engine';
 import { RiskEngine } from '../../engines/risk.engine';
@@ -60,7 +61,7 @@ import { POMappingModule } from '../po-mapping/po-mapping.module';
     DocumentsModule,
     POMappingModule,
   ],
-  providers: [POService, POPdfService, StatusEngine, RiskEngine, DispatchPlanningEngine, LocationDispatchEngine, FulfilmentStatusEngine],
+  providers: [DispatchDashboardService, POService, POPdfService, StatusEngine, RiskEngine, DispatchPlanningEngine, LocationDispatchEngine, FulfilmentStatusEngine],
   controllers: [POController],
   exports: [POService],
 })

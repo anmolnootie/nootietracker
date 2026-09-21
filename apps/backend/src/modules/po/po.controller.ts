@@ -16,6 +16,7 @@ import { AuthGuard } from '@nestjs/passport';
 import type { Response } from 'express';
 import { POService, SENSITIVE_PO_FIELDS } from './po.service';
 import { POPdfService } from './po-pdf.service';
+import { DispatchDashboardService } from './dispatch-dashboard.service';
 import { EditPORequest } from './edit-po.dto';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { RolesGuard } from '../../common/guards/roles.guard';
@@ -24,7 +25,7 @@ import { CreatePORequest, POStatus, UserRole, NonFulfilmentReason } from '@po-co
 @Controller('pos')
 @UseGuards(AuthGuard('jwt'))
 export class POController {
-  constructor(private poService: POService, private poPdfService: POPdfService) {}
+  constructor(private poService: POService, private poPdfService: POPdfService, private dispatchDashboardService: DispatchDashboardService) {}
 
   @Post()
   async createPO(
@@ -83,6 +84,18 @@ export class POController {
       invoiced,
       reattempt,
     });
+  }
+
+  @Get('dispatch-dashboard')
+  async getDispatchDashboard(
+    @Query('fy') fy?: string,
+    @Query('channel') channel?: string,
+    @Query('month') month?: string,
+    @Query('status') status?: string,
+    @Query('partner') partner?: string,
+    @Query('aging') aging?: string,
+  ) {
+    return this.dispatchDashboardService.getDashboard({ fy: fy ? Number(fy) : undefined, channel, month, status, partner, aging });
   }
 
   @Get('filter-options')
