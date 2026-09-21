@@ -77,7 +77,10 @@ export const MainLayout: React.FC<LayoutProps> = ({ children }) => {
       { label: '🧊 Stuck Stock', href: '/stuck-stock' },
       { label: '🔗 PO Mapping', href: '/po-mapping' },
     ] },
-    { title: 'Reports', items: [{ label: '📊 Reports', href: '/reports' }] },
+    { title: 'Reports', items: [
+      { label: '📊 Reports', href: '/reports' },
+      { label: '📈 Power BI Dashboard', href: '/powerbi' },
+    ] },
     { title: 'Settings', items: [
       { label: '⚙ Settings', href: '/settings' },
       ...(isAdmin
@@ -195,6 +198,7 @@ function getPageTitle(pathname: string): string {
     '/returns': 'Returns',
     '/tasks': 'My Tasks',
     '/reports': 'Reports',
+    '/powerbi': 'Power BI Dashboard',
     '/settings': 'Settings',
     '/masters': 'Master Data',
     '/users': 'Users',
