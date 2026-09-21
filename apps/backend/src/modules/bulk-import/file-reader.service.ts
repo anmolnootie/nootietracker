@@ -31,9 +31,16 @@ export class FileReaderService {
     // non-empty cells versus a real header row's many. Take the first row in
     // the top of the sheet that is nearly as wide as the widest one there -
     // row 1 for an ordinary file, the real header row under any banner rows.
-    const grid: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true, defval: '' });
-    if (grid.length === 0) return { headers: [], rows: [] };
+    return this.fromGrid(XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true, defval: '' }));
+  }
 
+  /**
+   * Turns a raw grid (array of rows) into headers + keyed rows, finding the
+   * real header row under any title/group banner rows. Used for files and
+   * for sheets pushed in directly (Google Apps Script).
+   */
+  fromGrid(grid: any[][]): ParsedFile {
+    if (!grid || grid.length === 0) return { headers: [], rows: [] };
     const nonEmptyCount = (row: any[]) => row.filter((c) => c !== '' && c !== null && c !== undefined).length;
     const window = grid.slice(0, 15);
     const widest = Math.max(...window.map(nonEmptyCount));

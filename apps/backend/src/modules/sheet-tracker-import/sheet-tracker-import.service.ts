@@ -1,4 +1,5 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException } from '@nestjs/common';
+import { createHash } from 'crypto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Like, Repository } from 'typeorm';
 import { format } from 'date-fns';
@@ -10,7 +11,7 @@ import { DispatchEntity } from '../../database/entities/dispatch.entity';
 import { AppointmentEntity } from '../../database/entities/appointment.entity';
 import { GRNTrackerEntity } from '../../database/entities/grn-tracker.entity';
 import { GRNOutcome } from '@po-control-tower/shared';
-import { FileReaderService } from '../bulk-import/file-reader.service';
+import { FileReaderService, ParsedFile } from '../bulk-import/file-reader.service';
 import { POService } from '../po/po.service';
 
 // The "Master Dispatch & GRN Tracker" sheet: one row per PO carrying its
@@ -66,6 +67,14 @@ function date(v: any): Date | null {
   if (v instanceof Date && !Number.isNaN(v.getTime())) return v;
   const s = String(v ?? '').trim();
   if (!s) return null;
+  // "2026-04-07" (what the Google Sheet script sends) - build the local date
+  // directly; new Date('2026-04-07') would be UTC midnight and can land on the
+  // previous day depending on server timezone.
+  const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})(?:$|T)/);
+  if (iso) {
+    const d = new Date(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3]));
+    if (!Number.isNaN(d.getTime())) return d;
+  }
   const dmy = s.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})$/);
   if (dmy) {
     const y = dmy[3].length === 2 ? `20${dmy[3]}` : dmy[3];
@@ -81,6 +90,9 @@ function date(v: any): Date | null {
   const native = new Date(s);
   return Number.isNaN(native.getTime()) ? null : native;
 }
+
+// A sheet missing any of these isn't the tracker - refuse rather than misapply.
+const REQUIRED_FIELDS: Field[] = ['poNumber', 'invoiceNumber', 'grnStatus'];
 
 const GRN_DONE = new Set(['completed', 'complete', 'done', 'received', 'closed']);
 
@@ -106,13 +118,46 @@ export class SheetTrackerImportService {
   ) {}
 
   async processFile(buffer: Buffer, fileName: string, uploadedByUserId: string): Promise<SheetTrackerUploadBatchEntity> {
+    return this.processParsed(this.fileReaderService.read(buffer, fileName), fileName, uploadedByUserId, null);
+  }
+
+  /**
+   * Automatic sync from the Google Sheet (pushed by an Apps Script). Refuses
+   * a sheet whose headers don't look like the tracker rather than guessing,
+   * and does nothing if the rows are identical to the last sync's.
+   */
+  async syncFromGrid(grid: any[][]): Promise<{ unchanged: true } | SheetTrackerUploadBatchEntity> {
+    if (!Array.isArray(grid) || grid.length === 0) throw new BadRequestException('No rows received');
+
+    const parsed = this.fileReaderService.fromGrid(grid);
+    const mapping = this.mapHeaders(parsed.headers);
+    const missing = REQUIRED_FIELDS.filter((f) => !mapping[f]);
+    if (missing.length) {
+      throw new BadRequestException(
+        `Sheet headers don't look like the Master Dispatch & GRN Tracker - couldn't find: ${missing.map((f) => ALIASES[f][0]).join(', ')}. Nothing was applied.`,
+      );
+    }
+
+    const hash = createHash('sha256').update(JSON.stringify(parsed.rows)).digest('hex');
+    const last = await this.batchRepository.findOne({ where: { status: 'COMPLETED' }, order: { uploadedAt: 'DESC' } });
+    if (last?.payloadHash === hash) return { unchanged: true };
+
+    return this.processParsed(parsed, 'Google Sheet sync', null, hash);
+  }
+
+  private async processParsed(
+    parsed: ParsedFile,
+    fileName: string,
+    uploadedByUserId: string | null,
+    payloadHash: string | null,
+  ): Promise<SheetTrackerUploadBatchEntity> {
     const batchCode = await this.generateBatchCode();
     let batch = await this.batchRepository.save(
-      this.batchRepository.create({ batchCode, fileName, uploadedByUserId, status: 'PROCESSING' }),
+      this.batchRepository.create({ batchCode, fileName, uploadedByUserId, payloadHash, status: 'PROCESSING' }),
     );
 
     try {
-      const { headers, rows } = this.fileReaderService.read(buffer, fileName);
+      const { headers, rows } = parsed;
       const mapping = this.mapHeaders(headers);
       let applied = 0;
       let skipped = 0;

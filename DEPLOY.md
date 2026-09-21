@@ -46,6 +46,7 @@ SPACES_ENDPOINT=https://xcjrvrnpfvstfpxskfmm.storage.supabase.co/storage/v1/s3
 SPACES_BUCKET=PO Files
 SPACES_REGION=ap-south-1
 PARTNERSBIZ_API_KEY=<from Blinkit, once issued>
+SHEET_SYNC_KEY=<long random secret; same value goes in the Google Sheet's Apps Script - leave unset to disable the sync>
 ```
 
 ### Env vars - worker

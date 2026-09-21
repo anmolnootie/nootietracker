@@ -19,6 +19,21 @@ export default function GoogleSheetsUpload() {
   const [batches, setBatches] = useState<SheetTrackerBatch[]>([]);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
+  const [copied, setCopied] = useState(false);
+  const endpoint = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001'}/webhooks/google-sheets/tracker`;
+  const lastSync = batches.find((b) => b.fileName === 'Google Sheet sync');
+  const script = APPS_SCRIPT.replace('__ENDPOINT__', endpoint);
+
+  const copyScript = async () => {
+    try {
+      await navigator.clipboard.writeText(script);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      /* clipboard blocked - the script is selectable in the box */
+    }
+  };
+
   const loadBatches = async () => setBatches(await sheetTrackerImportService.listBatches());
   useEffect(() => {
     loadBatches();
@@ -128,6 +143,62 @@ export default function GoogleSheetsUpload() {
         )}
       </div>
 
+
+      <div className="bg-white rounded-lg shadow p-8 mb-6">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-xl font-bold mb-1 text-gray-800">Automatic sync from Google Sheets</h2>
+            <p className="text-gray-500 text-sm">
+              Free, and no Google Cloud account or payment details needed. A small script inside your sheet sends its rows here
+              every 15 minutes - unchanged sheets are skipped, and a sheet that isn&apos;t the tracker is refused.
+            </p>
+          </div>
+          <div className="text-right shrink-0">
+            <p className="text-xs text-gray-400 uppercase tracking-wide">Last automatic sync</p>
+            {lastSync ? (
+              <a href={`/sheets-import/${lastSync.id}`} className="text-sm text-nootie-orange-dark hover:underline">
+                {format(new Date(lastSync.uploadedAt), 'dd MMM yyyy HH:mm')} · {lastSync.appliedCount} applied
+              </a>
+            ) : (
+              <p className="text-sm text-gray-500">Not connected yet</p>
+            )}
+          </div>
+        </div>
+
+        <details className="mt-5">
+          <summary className="cursor-pointer text-sm font-medium text-nootie-orange-dark">Set it up (about 5 minutes)</summary>
+          <ol className="list-decimal pl-5 mt-3 space-y-2 text-sm text-gray-700">
+            <li>
+              Ask whoever runs the server to set an environment variable <code className="bg-gray-100 px-1 rounded">SHEET_SYNC_KEY</code> to a long random
+              secret (Railway → backend service → Variables). Sync stays switched off until it exists.
+            </li>
+            <li>In your Google Sheet: <b>Extensions → Apps Script</b>. Delete any code there and paste the script below.</li>
+            <li>
+              In the script, replace <code className="bg-gray-100 px-1 rounded">PASTE_YOUR_SYNC_KEY_HERE</code> with that same secret, and set{' '}
+              <code className="bg-gray-100 px-1 rounded">TAB_NAME</code> to the tab that holds the tracker. Click <b>Run</b> once and approve the permissions prompt.
+            </li>
+            <li>
+              Click the clock icon (<b>Triggers</b>) → <b>Add Trigger</b> → function <code className="bg-gray-100 px-1 rounded">syncTracker</code> → time-driven →
+              every 15 minutes.
+            </li>
+          </ol>
+          <p className="text-xs text-gray-500 mt-3">
+            Tip: format the PO Number and Invoice Number columns as <b>Plain text</b> in the sheet - numbers over 15 digits lose their last digits in any spreadsheet.
+          </p>
+          {endpoint.includes('localhost') && (
+            <p className="text-xs text-red-600 mt-2">
+              This address is localhost, which Google can&apos;t reach. Use the script from the deployed site (app.mynootie.com) so it points at your live server.
+            </p>
+          )}
+          <div className="relative mt-4">
+            <button onClick={copyScript} className="absolute top-2 right-2 text-xs px-2 py-1 rounded bg-white border border-gray-300 text-gray-600 hover:bg-gray-50">
+              {copied ? 'Copied' : 'Copy script'}
+            </button>
+            <pre className="bg-gray-50 border rounded-lg p-4 text-xs overflow-x-auto text-gray-800 whitespace-pre">{script}</pre>
+          </div>
+        </details>
+      </div>
+
       <div className="bg-white rounded-lg shadow">
         <div className="p-6 border-b">
           <h3 className="text-lg font-semibold text-gray-800">Upload History</h3>
@@ -175,6 +246,37 @@ export default function GoogleSheetsUpload() {
     </MainLayout>
   );
 }
+
+const APPS_SCRIPT = `// Nootie Control Tower - sends this sheet's tracker rows to the app.
+const ENDPOINT = '__ENDPOINT__';
+const SYNC_KEY = 'PASTE_YOUR_SYNC_KEY_HERE';
+const TAB_NAME = 'Master Tracker'; // the tab that holds the tracker
+
+function syncTracker() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(TAB_NAME);
+  if (!sheet) throw new Error('Tab not found: ' + TAB_NAME);
+  const tz = ss.getSpreadsheetTimeZone();
+
+  // getValues() returns the real cell values (not the displayed text), so long
+  // numbers arrive exactly. Dates are sent as yyyy-MM-dd so no timezone can
+  // shift them by a day.
+  const rows = sheet.getDataRange().getValues().map(function (row) {
+    return row.map(function (v) {
+      return v instanceof Date ? Utilities.formatDate(v, tz, 'yyyy-MM-dd') : v;
+    });
+  });
+
+  const res = UrlFetchApp.fetch(ENDPOINT, {
+    method: 'post',
+    contentType: 'application/json',
+    headers: { 'x-sync-key': SYNC_KEY },
+    payload: JSON.stringify({ rows: rows }),
+    muteHttpExceptions: true,
+  });
+  Logger.log(res.getResponseCode() + ' ' + res.getContentText());
+}
+`;
 
 const Stat: React.FC<{ label: string; value: number; accent?: string }> = ({ label, value, accent }) => (
   <div>

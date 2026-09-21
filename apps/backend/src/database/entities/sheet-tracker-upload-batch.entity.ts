@@ -11,8 +11,14 @@ export class SheetTrackerUploadBatchEntity {
   @Column()
   fileName: string;
 
-  @Column('uuid')
-  uploadedByUserId: string;
+  // null = an automatic sync (Google Sheet), not a person's upload
+  @Column({ type: 'uuid', nullable: true })
+  uploadedByUserId: string | null;
+
+  // Hash of the rows an automatic sync received, so an unchanged sheet
+  // doesn't create a new batch every interval
+  @Column({ type: 'varchar', nullable: true })
+  payloadHash: string | null;
 
   @CreateDateColumn()
   uploadedAt: Date;

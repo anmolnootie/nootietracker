@@ -1,6 +1,7 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { SchedulerRegistry } from '@nestjs/schedule';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module';
 
 /**
@@ -21,7 +22,11 @@ async function bootstrap() {
     return;
   }
 
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+
+  // The Google Sheet sync posts the whole tracker as JSON - a few hundred rows
+  // easily passes Express's 100kb default.
+  app.useBodyParser('json', { limit: '5mb' });
 
   // Global pipes
   app.useGlobalPipes(

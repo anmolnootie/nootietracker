@@ -11,6 +11,7 @@ import { GRNTrackerEntity } from '../../database/entities/grn-tracker.entity';
 
 import { SheetTrackerImportService } from './sheet-tracker-import.service';
 import { SheetTrackerImportController } from './sheet-tracker-import.controller';
+import { SheetTrackerWebhookController } from './sheet-tracker-webhook.controller';
 import { BulkImportModule } from '../bulk-import/bulk-import.module';
 import { POModule } from '../po/po.module';
 
@@ -22,6 +23,6 @@ import { POModule } from '../po/po.module';
     POModule,
   ],
   providers: [SheetTrackerImportService],
-  controllers: [SheetTrackerImportController],
+  controllers: [SheetTrackerImportController, SheetTrackerWebhookController],
 })
 export class SheetTrackerImportModule {}
