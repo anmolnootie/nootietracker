@@ -148,7 +148,10 @@ export class SheetTrackerImportService {
 
     const hash = createHash('sha256').update(JSON.stringify(parsed.rows)).digest('hex');
     const last = await this.batchRepository.findOne({ where: { status: 'COMPLETED' }, order: { uploadedAt: 'DESC' } });
-    if (last?.payloadHash === hash) return { unchanged: true };
+    // Identical sheet = nothing to do - unless some of its rows were skipped last
+    // time because their PO didn't exist yet and it does now (e.g. the PO import
+    // finished after the sheet was first synced). Those rows still need applying.
+    if (last?.payloadHash === hash && !(await this.hasRowsWhosePoHasSinceArrived(last.id))) return { unchanged: true };
 
     // Applying ~2,000 rows takes minutes against a remote database - longer
     // than Google's script will wait for a reply. So: refuse to overlap a run
@@ -170,6 +173,16 @@ export class SheetTrackerImportService {
     const batch = await this.createBatch('Google Sheet sync', null, hash);
     void this.runBatch(batch, parsed).catch((err) => this.logger.error(`Background sync ${batch.batchCode} crashed`, err as any));
     return batch;
+  }
+
+  private async hasRowsWhosePoHasSinceArrived(batchId: string): Promise<boolean> {
+    const [{ n }] = await this.rowRepository.query(
+      `SELECT count(*)::int AS n FROM sheet_tracker_rows r
+       WHERE r."batchId" = $1 AND r."matchStatus" = 'PO_NOT_FOUND'
+         AND EXISTS (SELECT 1 FROM po_master p WHERE p."poNumber" = r."poNumber")`,
+      [batchId],
+    );
+    return n > 0;
   }
 
   private async processParsed(
