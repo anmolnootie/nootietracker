@@ -1,7 +1,7 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { createHash } from 'crypto';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Like, Repository } from 'typeorm';
+import { In, Like, Repository } from 'typeorm';
 import { format } from 'date-fns';
 
 import { SheetTrackerUploadBatchEntity } from '../../database/entities/sheet-tracker-upload-batch.entity';
@@ -95,6 +95,13 @@ function date(v: any): Date | null {
 // A sheet missing any of these isn't the tracker - refuse rather than misapply.
 const REQUIRED_FIELDS: Field[] = ['poNumber', 'invoiceNumber', 'grnStatus'];
 
+// Compare calendar days (dates in the sheet carry no meaningful time).
+function sameDay(a: Date | string | null | undefined, b: Date | null): boolean {
+  if (!a || !b) return false;
+  const x = new Date(a);
+  return x.getFullYear() === b.getFullYear() && x.getMonth() === b.getMonth() && x.getDate() === b.getDate();
+}
+
 const GRN_DONE = new Set(['completed', 'complete', 'done', 'received', 'closed']);
 
 @Injectable()
@@ -147,8 +154,18 @@ export class SheetTrackerImportService {
     // than Google's script will wait for a reply. So: refuse to overlap a run
     // that's still going, then answer right away and finish in the background
     // (the outcome shows on the batch, like any upload).
+    // A running sync saves progress every few seconds (which bumps updatedAt).
+    // A PROCESSING batch that hasn't moved for 5 minutes died with its server
+    // (restart/redeploy) - mark it failed so it can't block the next sync.
+    const stale = new Date(Date.now() - 5 * 60 * 1000);
+    await this.batchRepository
+      .createQueryBuilder()
+      .update()
+      .set({ status: 'FAILED', errorMessage: 'Interrupted (the server restarted mid-run) - the next sync redoes it' })
+      .where("status = 'PROCESSING' AND \"updatedAt\" < :stale", { stale })
+      .execute();
     const running = await this.batchRepository.findOne({ where: { status: 'PROCESSING' }, order: { uploadedAt: 'DESC' } });
-    if (running && Date.now() - running.uploadedAt.getTime() < 30 * 60 * 1000) return { busy: true, batchCode: running.batchCode };
+    if (running) return { busy: true, batchCode: running.batchCode };
 
     const batch = await this.createBatch('Google Sheet sync', null, hash);
     void this.runBatch(batch, parsed).catch((err) => this.logger.error(`Background sync ${batch.batchCode} crashed`, err as any));
@@ -174,48 +191,85 @@ export class SheetTrackerImportService {
   private async runBatch(created: SheetTrackerUploadBatchEntity, parsed: ParsedFile): Promise<SheetTrackerUploadBatchEntity> {
     let batch = created;
     try {
-      const { headers, rows } = parsed;
-      const mapping = this.mapHeaders(headers);
+      const mapping = this.mapHeaders(parsed.headers);
+
+      // Read every row into typed values first; a row with no PO number is a
+      // blank/subtotal line, not a tracker row.
+      const candidates: { index: number; r: any }[] = [];
+      parsed.rows.forEach((row, index) => {
+        const get = (f: Field) => (mapping[f] ? row[mapping[f]!] : undefined);
+        const poNumber = text(get('poNumber'));
+        if (!poNumber) return;
+        candidates.push({
+          index,
+          r: {
+            poNumber,
+            invoiceNumber: text(get('invoiceNumber')),
+            channel: text(get('channel')),
+            location: text(get('location')),
+            dispatchDate: date(get('dispatchDate')),
+            invoiceValue: num(get('invoiceValue')),
+            docketAwb: text(get('docketAwb')),
+            deliveryPartner: text(get('deliveryPartner')),
+            deliveryStatus: text(get('deliveryStatus')),
+            comment: text(get('comment')),
+            expiryDate: date(get('expiryDate')),
+            appointmentDate: date(get('appointmentDate')),
+            grnStatus: text(get('grnStatus')),
+            shortageQty: num(get('shortageQty')) ?? 0,
+            shortageValue: num(get('shortageValue')) ?? 0,
+            damageQty: num(get('damageQty')) ?? 0,
+            damageValue: num(get('damageValue')) ?? 0,
+            excessQty: num(get('excessQty')) ?? 0,
+            excessValue: num(get('excessValue')) ?? 0,
+            netDiscrepancy: num(get('netDiscrepancy')),
+            creditNoteNumber: text(get('creditNoteNumber')),
+            creditNoteValue: num(get('creditNoteValue')),
+          },
+        });
+      });
+
+      // Total known up front, so the batch shows "n of total" while it runs.
+      batch.totalRows = candidates.length;
+      batch = await this.batchRepository.save(batch);
+
+      // Load everything the sheet refers to in a handful of queries rather than
+      // several per row - against a remote database that's the difference
+      // between seconds and an hour.
+      const poNumbers = [...new Set(candidates.map((c) => c.r.poNumber as string))];
+      const pos = await this.loadInChunks(poNumbers, (chunk) => this.poRepository.find({ where: { poNumber: In(chunk) } }));
+      const poByNumber = new Map(pos.map((po) => [po.poNumber, po]));
+      const poIds = pos.map((po) => po.id);
+      const dispatchByPo = new Map((await this.loadInChunks(poIds, (c) => this.dispatchRepository.find({ where: { poId: In(c) } }))).map((d) => [d.poId, d]));
+      const appointmentByPo = new Map((await this.loadInChunks(poIds, (c) => this.appointmentRepository.find({ where: { poId: In(c) } }))).map((a) => [a.poId, a]));
+      const grnByPo = new Map((await this.loadInChunks(poIds, (c) => this.grnRepository.find({ where: { poId: In(c) } }))).map((g) => [g.poId, g]));
+
       let applied = 0;
       let skipped = 0;
+      let pending: SheetTrackerRowEntity[] = [];
+      let lastFlush = Date.now();
 
-      for (let i = 0; i < rows.length; i++) {
-        const get = (f: Field) => (mapping[f] ? rows[i][mapping[f]!] : undefined);
-        const poNumber = text(get('poNumber'));
-        // No PO number = a blank/subtotal line, not a tracker row.
-        if (!poNumber) continue;
+      const flush = async () => {
+        if (pending.length) await this.rowRepository.save(pending, { chunk: 100 });
+        pending = [];
+        // Saving the batch also bumps updatedAt, which is how a stalled sync
+        // (server restarted mid-run) is told apart from a busy one.
+        batch.appliedCount = applied;
+        batch.skippedCount = skipped;
+        batch = await this.batchRepository.save(batch);
+        lastFlush = Date.now();
+      };
 
-        const r = {
-          poNumber,
-          invoiceNumber: text(get('invoiceNumber')),
-          channel: text(get('channel')),
-          location: text(get('location')),
-          dispatchDate: date(get('dispatchDate')),
-          invoiceValue: num(get('invoiceValue')),
-          docketAwb: text(get('docketAwb')),
-          deliveryPartner: text(get('deliveryPartner')),
-          deliveryStatus: text(get('deliveryStatus')),
-          comment: text(get('comment')),
-          expiryDate: date(get('expiryDate')),
-          appointmentDate: date(get('appointmentDate')),
-          grnStatus: text(get('grnStatus')),
-          shortageQty: num(get('shortageQty')) ?? 0,
-          shortageValue: num(get('shortageValue')) ?? 0,
-          damageQty: num(get('damageQty')) ?? 0,
-          damageValue: num(get('damageValue')) ?? 0,
-          excessQty: num(get('excessQty')) ?? 0,
-          excessValue: num(get('excessValue')) ?? 0,
-          netDiscrepancy: num(get('netDiscrepancy')),
-          creditNoteNumber: text(get('creditNoteNumber')),
-          creditNoteValue: num(get('creditNoteValue')),
-        };
+      for (const { index, r } of candidates) {
+        const po = poByNumber.get(r.poNumber);
+        const result = po
+          ? await this.applyRow(r, po, dispatchByPo.get(po.id), appointmentByPo.get(po.id), grnByPo)
+          : { matchStatus: 'PO_NOT_FOUND' as const, matchedPoId: null, netDiscrepancy: r.netDiscrepancy, actions: null, errorMessage: `No PO found with number ${r.poNumber}` };
 
-        const result = await this.applyRow(r);
-
-        await this.rowRepository.save(
+        pending.push(
           this.rowRepository.create({
             batchId: batch.id,
-            rowIndex: i,
+            rowIndex: index,
             poNumber: r.poNumber,
             invoiceNumber: r.invoiceNumber,
             channel: r.channel,
@@ -237,10 +291,12 @@ export class SheetTrackerImportService {
             errorMessage: result.errorMessage,
           }),
         );
-
         if (result.matchStatus === 'APPLIED') applied++;
         else skipped++;
+
+        if (pending.length >= 50 || Date.now() - lastFlush > 10_000) await flush();
       }
+      await flush();
 
       batch.totalRows = applied + skipped;
       batch.appliedCount = applied;
@@ -256,53 +312,72 @@ export class SheetTrackerImportService {
     return batch;
   }
 
+  private async loadInChunks<T, K>(keys: K[], load: (chunk: K[]) => Promise<T[]>): Promise<T[]> {
+    const out: T[] = [];
+    for (let i = 0; i < keys.length; i += 1000) out.push(...(await load(keys.slice(i, i + 1000))));
+    return out;
+  }
+
   /**
    * The tracker is the master record, so unlike the single-purpose uploads it
    * updates several parts of a PO at once - but only ever with what the row
-   * actually carries (blank cells never overwrite existing data), and each
-   * part reports what it did so nothing changes silently.
+   * actually carries (blank cells never overwrite existing data), only where
+   * the value actually differs (so re-syncing an unchanged sheet does almost
+   * no work), and each part reports what it did so nothing changes silently.
+   * Status/risk/dispatch-window recalculation is left to the 5-minute
+   * automation sweep, which already does it for every open PO.
    */
-  private async applyRow(r: any): Promise<{
+  private async applyRow(
+    r: any,
+    po: POMasterEntity,
+    dispatch: DispatchEntity | undefined,
+    appointment: AppointmentEntity | undefined,
+    grnByPo: Map<string, GRNTrackerEntity>,
+  ): Promise<{
     matchStatus: SheetTrackerRowEntity['matchStatus'];
     matchedPoId: string | null;
     netDiscrepancy: number | null;
     actions: string | null;
     errorMessage: string | null;
   }> {
-    const po = await this.poRepository.findOne({ where: { poNumber: r.poNumber } });
-    if (!po) {
-      return { matchStatus: 'PO_NOT_FOUND', matchedPoId: null, netDiscrepancy: r.netDiscrepancy, actions: null, errorMessage: `No PO found with number ${r.poNumber}` };
-    }
-
     const actions: string[] = [];
     // Net discrepancy as the sheet defines it: shortage + damage - excess.
     const net = r.netDiscrepancy ?? r.shortageValue + r.damageValue - r.excessValue;
 
     // ---- Dispatch details
-    const dispatch = await this.dispatchRepository.findOneBy({ poId: po.id });
     if (dispatch) {
-      const before = JSON.stringify(dispatch);
-      if (r.dispatchDate) dispatch.actualDispatchDate = r.dispatchDate;
-      if (r.invoiceNumber) dispatch.invoiceNumber = r.invoiceNumber;
-      if (r.invoiceValue != null) dispatch.invoiceValue = r.invoiceValue;
-      if (r.docketAwb) dispatch.awbNumber = r.docketAwb;
-      if (r.deliveryPartner) dispatch.transporterId = r.deliveryPartner;
-      if (r.deliveryStatus) dispatch.dispatchStatus = r.deliveryStatus;
-      if (r.comment) dispatch.remarks = r.comment;
-      if (JSON.stringify(dispatch) !== before) {
+      let changed = false;
+      let invoiceValueChanged = false;
+      const setIf = (differs: boolean, apply: () => void) => {
+        if (differs) {
+          apply();
+          changed = true;
+        }
+      };
+      setIf(!!r.dispatchDate && !sameDay(dispatch.actualDispatchDate, r.dispatchDate), () => (dispatch.actualDispatchDate = r.dispatchDate));
+      setIf(!!r.invoiceNumber && dispatch.invoiceNumber !== r.invoiceNumber, () => (dispatch.invoiceNumber = r.invoiceNumber));
+      if (r.invoiceValue != null && Number(dispatch.invoiceValue) !== r.invoiceValue) {
+        dispatch.invoiceValue = r.invoiceValue;
+        changed = invoiceValueChanged = true;
+      }
+      setIf(!!r.docketAwb && dispatch.awbNumber !== r.docketAwb, () => (dispatch.awbNumber = r.docketAwb));
+      setIf(!!r.deliveryPartner && dispatch.transporterId !== r.deliveryPartner, () => (dispatch.transporterId = r.deliveryPartner));
+      setIf(!!r.deliveryStatus && dispatch.dispatchStatus !== r.deliveryStatus, () => (dispatch.dispatchStatus = r.deliveryStatus));
+      setIf(!!r.comment && dispatch.remarks !== r.comment, () => (dispatch.remarks = r.comment));
+      if (changed) {
         await this.dispatchRepository.save(dispatch);
         actions.push('Dispatch updated');
+        if (invoiceValueChanged) await this.poService.recomputeFillRate(po.id);
       }
     }
 
     // ---- Appointment + expiry
-    const appointment = await this.appointmentRepository.findOneBy({ poId: po.id });
-    if (appointment && r.appointmentDate) {
+    if (appointment && r.appointmentDate && !sameDay(appointment.appointmentDate, r.appointmentDate)) {
       appointment.appointmentDate = r.appointmentDate;
       await this.appointmentRepository.save(appointment);
       actions.push('Appointment date set');
     }
-    if (r.expiryDate) {
+    if (r.expiryDate && !sameDay(po.poExpiryDate, r.expiryDate)) {
       po.poExpiryDate = r.expiryDate;
       await this.poRepository.save(po);
       actions.push('Expiry date set');
@@ -312,18 +387,12 @@ export class SheetTrackerImportService {
     let grnError: string | null = null;
     if (r.grnStatus && GRN_DONE.has(r.grnStatus.toLowerCase().replace(/[^a-z]/g, ''))) {
       try {
-        const done = await this.applyGrn(po.id, r, net);
+        const done = await this.applyGrn(po.id, r, net, grnByPo);
         if (done) actions.push(done);
       } catch (err) {
         grnError = `GRN not recorded: ${(err as Error).message}`;
       }
     }
-
-    // Keep derived values in step with what was just written.
-    await this.poService.recomputeFillRate(po.id);
-    await this.poService.recomputeStatus(po.id);
-    await this.poService.recomputeRisk(po.id);
-    await this.poService.recomputeDispatchPlan(po.id);
 
     return {
       matchStatus: grnError ? 'INVALID' : 'APPLIED',
@@ -334,7 +403,8 @@ export class SheetTrackerImportService {
     };
   }
 
-  private async applyGrn(poId: string, r: any, net: number): Promise<string | null> {
+  private async applyGrn(poId: string, r: any, net: number, grnByPo: Map<string, GRNTrackerEntity>): Promise<string | null> {
+    const existing = grnByPo.get(poId);
     const hasShort = r.shortageQty > 0 || r.shortageValue > 0;
     const hasDamage = r.damageQty > 0 || r.damageValue > 0;
     const hasExcess = r.excessQty > 0 || r.excessValue > 0;
@@ -360,8 +430,8 @@ export class SheetTrackerImportService {
       r.creditNoteValue != null ? `Credit note value ₹${r.creditNoteValue}` : null,
     ].filter(Boolean) as string[];
     const reason = notes.length ? `${notes.join('; ')} (per master tracker)` : '';
+    const remarks = notes.length ? notes.join('; ') : null;
 
-    const existing = await this.grnRepository.findOneBy({ poId });
     if (!existing?.grnDate) {
       // First time this PO's GRN is recorded: full recordGRN path so mapping
       // recovery, task completion, and NO_GRN/discrepancy handling all fire.
@@ -372,22 +442,43 @@ export class SheetTrackerImportService {
         discrepancyReason: outcome === GRNOutcome.MATCHED ? undefined : reason || 'Discrepancy per master tracker',
         discrepancyAmount: net,
       });
-    } else {
-      // Already recorded (e.g. an earlier upload of this same sheet): refresh
-      // the reconciliation figures in place without re-firing side effects
-      // like duplicate discrepancy tasks.
-      existing.grnValue = grnValue;
-      existing.outcome = outcome;
-      existing.discrepancyAmount = net;
-      existing.discrepancyReason = outcome === GRNOutcome.MATCHED ? '' : reason;
+      const grn = await this.grnRepository.findOneByOrFail({ poId });
+      grn.shortQuantity = r.shortageQty || null;
+      grn.rejectedQuantity = r.damageQty || null;
+      if (r.creditNoteNumber) grn.creditNoteNumber = r.creditNoteNumber;
+      if (remarks) grn.remarks = remarks;
+      await this.grnRepository.save(grn);
+      // Later rows for the same PO (the sheet has several) must see this GRN
+      // as already recorded, not record it a second time.
+      grnByPo.set(poId, grn);
+      return `GRN recorded (${outcome})`;
     }
-    const grn = existing?.grnDate ? existing : await this.grnRepository.findOneByOrFail({ poId });
-    grn.shortQuantity = r.shortageQty || null;
-    grn.rejectedQuantity = r.damageQty || null;
-    if (r.creditNoteNumber) grn.creditNoteNumber = r.creditNoteNumber;
-    grn.remarks = notes.length ? notes.join('; ') : grn.remarks;
-    await this.grnRepository.save(grn);
-    return existing?.grnDate ? 'GRN figures refreshed' : `GRN recorded (${outcome})`;
+
+    // Already recorded (an earlier sync, or a manual entry): refresh the
+    // reconciliation figures in place - and only if they differ - without
+    // re-firing side effects like duplicate discrepancy tasks.
+    const nextReason = outcome === GRNOutcome.MATCHED ? '' : reason;
+    const differs =
+      Number(existing.grnValue) !== grnValue ||
+      existing.outcome !== outcome ||
+      Number(existing.discrepancyAmount ?? 0) !== net ||
+      (existing.discrepancyReason ?? '') !== nextReason ||
+      Number(existing.shortQuantity ?? 0) !== (r.shortageQty || 0) ||
+      Number(existing.rejectedQuantity ?? 0) !== (r.damageQty || 0) ||
+      (!!r.creditNoteNumber && existing.creditNoteNumber !== r.creditNoteNumber) ||
+      (!!remarks && existing.remarks !== remarks);
+    if (!differs) return null;
+
+    existing.grnValue = grnValue;
+    existing.outcome = outcome;
+    existing.discrepancyAmount = net;
+    existing.discrepancyReason = nextReason;
+    existing.shortQuantity = r.shortageQty || null;
+    existing.rejectedQuantity = r.damageQty || null;
+    if (r.creditNoteNumber) existing.creditNoteNumber = r.creditNoteNumber;
+    if (remarks) existing.remarks = remarks;
+    await this.grnRepository.save(existing);
+    return 'GRN figures refreshed';
   }
 
   private mapHeaders(headers: string[]): Partial<Record<Field, string>> {
