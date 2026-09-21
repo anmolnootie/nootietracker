@@ -10,12 +10,6 @@ const STATUS_STYLES: Record<string, string> = {
 };
 
 export default function GrnImport() {
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [file, setFile] = useState<File | null>(null);
-  const [dragging, setDragging] = useState(false);
-  const [uploading, setUploading] = useState(false);
-  const [result, setResult] = useState<GrnUploadBatch | null>(null);
-  const [error, setError] = useState('');
   const [batches, setBatches] = useState<GrnUploadBatch[]>([]);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
@@ -36,99 +30,32 @@ export default function GrnImport() {
     loadBatches();
   }, []);
 
-  const handleFile = (fileList: FileList | null) => {
-    if (!fileList || fileList.length === 0) return;
-    setFile(fileList[0]);
-    setResult(null);
-    setError('');
-  };
-
-  const upload = async () => {
-    if (!file) {
-      setError('Choose or drop a GRN file first.');
-      return;
-    }
-    setUploading(true);
-    setError('');
-    try {
-      const res = await grnImportService.upload(file);
-      setResult(res);
-      setFile(null);
-      await loadBatches();
-    } catch (err: any) {
-      setError(err.response?.data?.message || 'Upload failed');
-    } finally {
-      setUploading(false);
-    }
-  };
-
   return (
     <MainLayout>
-      <div className="bg-white rounded-lg shadow p-8 mb-6">
-        <h2 className="text-2xl font-bold mb-2 text-gray-800">GRN Bulk Upload</h2>
-        <p className="text-gray-500 text-sm mb-6">
-          Upload a GRN sheet (PO Number or Invoice Number, GRN Number, GRN Value, GRN Status). Each row runs through
-          the same recording path as the single-PO GRN screen - stuck-stock recovery, task completion, and
-          auto-created returns on "Not done" all fire exactly as they would for a manual entry.
-        </p>
+      <UploadCard
+        title="GRN Bulk Upload"
+        description={'Upload a GRN sheet (PO Number or Invoice Number, GRN Number, GRN Value, GRN Status). Each row runs through the same recording path as the single-PO GRN screen - stuck-stock recovery, task completion, and auto-created returns on "Not done" all fire exactly as they would for a manual entry.'}
+        buttonLabel="Upload GRNs"
+        emptyError="Choose or drop a GRN file first."
+        onUpload={grnImportService.upload}
+        onDone={loadBatches}
+      />
 
-        <div
-          onDragOver={(e) => {
-            e.preventDefault();
-            setDragging(true);
-          }}
-          onDragLeave={() => setDragging(false)}
-          onDrop={(e) => {
-            e.preventDefault();
-            setDragging(false);
-            handleFile(e.dataTransfer.files);
-          }}
-          onClick={() => fileInputRef.current?.click()}
-          className={`border-2 border-dashed rounded-lg p-10 text-center cursor-pointer transition-colors ${
-            dragging ? 'border-nootie-orange bg-nootie-orange-light' : 'border-gray-300 hover:border-nootie-orange'
-          }`}
-        >
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".xlsx,.xls,.csv"
-            className="hidden"
-            onChange={(e) => handleFile(e.target.files)}
-          />
-          <p className="text-gray-600 font-medium">Drag &amp; drop an Excel/CSV file here, or click to browse</p>
-          {file && <p className="mt-4 text-sm text-gray-700">📄 {file.name}</p>}
-        </div>
-
-        {error && <div className="mt-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded text-sm">{error}</div>}
-
-        <button
-          disabled={uploading || !file}
-          onClick={upload}
-          className="mt-6 bg-nootie-orange-dark hover:bg-nootie-orange text-white font-medium py-2 px-6 rounded-lg transition-colors disabled:opacity-50"
-        >
-          {uploading ? 'Processing...' : 'Upload GRNs'}
-        </button>
-
-        {result && (
-          <div className="mt-8 border rounded-lg p-5 bg-nootie-cream">
-            <div className="flex items-center justify-between mb-3">
-              <div>
-                <p className="font-semibold text-gray-800">{result.fileName}</p>
-                <p className="text-xs text-gray-500">{result.batchCode}</p>
-              </div>
-              <span className={`px-2 py-1 rounded text-xs font-medium ${STATUS_STYLES[result.status]}`}>{result.status}</span>
-            </div>
-            <div className="grid grid-cols-3 gap-4 text-center">
-              <Stat label="Rows" value={result.totalRows} />
-              <Stat label="Recorded" value={result.matchedCount} accent="text-green-600" />
-              <Stat label="Failed / Unmatched" value={result.unmatchedCount} accent="text-nootie-orange-dark" />
-            </div>
-            <a href={`/grn-import/${result.id}`} className="text-sm text-nootie-orange-dark hover:underline mt-4 inline-block">
-              View Results →
-            </a>
-          </div>
-        )}
-      </div>
+      <UploadCard
+        title="Record GRN from Invoice Sheet"
+        description={
+          <>
+            Upload the invoice sheet as exported (Invoice No., Customer Name, Net Amount). Every invoice listed is recorded as
+            goods received in full: <b>GRN number = invoice number</b>, <b>GRN value = Net Amount</b>, <b>status = Matched</b>.
+            POs are linked through the Daily Dispatch Report, so upload that first. A PO that already has a GRN is left
+            untouched and reported.
+          </>
+        }
+        buttonLabel="Record GRNs from Invoices"
+        emptyError="Choose or drop the invoice sheet first."
+        onUpload={grnImportService.uploadFromInvoices}
+        onDone={loadBatches}
+      />
 
       <div className="bg-white rounded-lg shadow">
         <div className="p-6 border-b">
@@ -179,6 +106,105 @@ export default function GrnImport() {
     </MainLayout>
   );
 }
+
+const UploadCard: React.FC<{
+  title: string;
+  description: React.ReactNode;
+  buttonLabel: string;
+  emptyError: string;
+  onUpload: (file: File) => Promise<GrnUploadBatch>;
+  onDone: () => Promise<void>;
+}> = ({ title, description, buttonLabel, emptyError, onUpload, onDone }) => {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [file, setFile] = useState<File | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [result, setResult] = useState<GrnUploadBatch | null>(null);
+  const [error, setError] = useState('');
+
+  const handleFile = (fileList: FileList | null) => {
+    if (!fileList || fileList.length === 0) return;
+    setFile(fileList[0]);
+    setResult(null);
+    setError('');
+  };
+
+  const upload = async () => {
+    if (!file) {
+      setError(emptyError);
+      return;
+    }
+    setUploading(true);
+    setError('');
+    try {
+      setResult(await onUpload(file));
+      setFile(null);
+      await onDone();
+    } catch (err: any) {
+      setError(err.response?.data?.message || 'Upload failed');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <div className="bg-white rounded-lg shadow p-8 mb-6">
+      <h2 className="text-2xl font-bold mb-2 text-gray-800">{title}</h2>
+      <p className="text-gray-500 text-sm mb-6">{description}</p>
+
+      <div
+        onDragOver={(e) => {
+          e.preventDefault();
+          setDragging(true);
+        }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragging(false);
+          handleFile(e.dataTransfer.files);
+        }}
+        onClick={() => fileInputRef.current?.click()}
+        className={`border-2 border-dashed rounded-lg p-10 text-center cursor-pointer transition-colors ${
+          dragging ? 'border-nootie-orange bg-nootie-orange-light' : 'border-gray-300 hover:border-nootie-orange'
+        }`}
+      >
+        <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={(e) => handleFile(e.target.files)} />
+        <p className="text-gray-600 font-medium">Drag &amp; drop an Excel/CSV file here, or click to browse</p>
+        {file && <p className="mt-4 text-sm text-gray-700">📄 {file.name}</p>}
+      </div>
+
+      {error && <div className="mt-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded text-sm">{error}</div>}
+
+      <button
+        disabled={uploading || !file}
+        onClick={upload}
+        className="mt-6 bg-nootie-orange-dark hover:bg-nootie-orange text-white font-medium py-2 px-6 rounded-lg transition-colors disabled:opacity-50"
+      >
+        {uploading ? 'Processing...' : buttonLabel}
+      </button>
+
+      {result && (
+        <div className="mt-8 border rounded-lg p-5 bg-nootie-cream">
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <p className="font-semibold text-gray-800">{result.fileName}</p>
+              <p className="text-xs text-gray-500">{result.batchCode}</p>
+            </div>
+            <span className={`px-2 py-1 rounded text-xs font-medium ${STATUS_STYLES[result.status]}`}>{result.status}</span>
+          </div>
+          <div className="grid grid-cols-3 gap-4 text-center">
+            <Stat label="Rows" value={result.totalRows} />
+            <Stat label="Recorded" value={result.matchedCount} accent="text-green-600" />
+            <Stat label="Failed / Unmatched" value={result.unmatchedCount} accent="text-nootie-orange-dark" />
+          </div>
+          <a href={`/grn-import/${result.id}`} className="text-sm text-nootie-orange-dark hover:underline mt-4 inline-block">
+            View Results →
+          </a>
+        </div>
+      )}
+    </div>
+  );
+};
 
 const Stat: React.FC<{ label: string; value: number; accent?: string }> = ({ label, value, accent }) => (
   <div>

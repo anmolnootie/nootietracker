@@ -7,9 +7,11 @@ import { GrnUploadBatchEntity } from '../../database/entities/grn-upload-batch.e
 import { GrnImportRowEntity } from '../../database/entities/grn-import-row.entity';
 import { POMasterEntity } from '../../database/entities/po-master.entity';
 import { DispatchEntity } from '../../database/entities/dispatch.entity';
+import { GRNTrackerEntity } from '../../database/entities/grn-tracker.entity';
 import { GRNOutcome } from '@po-control-tower/shared';
 import { FileReaderService } from '../bulk-import/file-reader.service';
 import { POService } from '../po/po.service';
+import { InvoiceImportService } from '../invoice-import/invoice-import.service';
 
 // Deliberately a small, self-contained alias set - same rationale as
 // invoice-import.service.ts. GRN sheets vary a lot in wording for the
@@ -73,12 +75,15 @@ export class GrnImportService {
     private readonly poRepository: Repository<POMasterEntity>,
     @InjectRepository(DispatchEntity)
     private readonly dispatchRepository: Repository<DispatchEntity>,
+    @InjectRepository(GRNTrackerEntity)
+    private readonly grnRepository: Repository<GRNTrackerEntity>,
     private readonly fileReaderService: FileReaderService,
     private readonly poService: POService,
+    private readonly invoiceImportService: InvoiceImportService,
   ) {}
 
   async processFile(buffer: Buffer, fileName: string, uploadedByUserId: string): Promise<GrnUploadBatchEntity> {
-    const batchCode = await this.generateBatchCode();
+    const batchCode = await this.generateBatchCode('GRN');
     let batch = await this.batchRepository.save(
       this.batchRepository.create({ batchCode, fileName, uploadedByUserId, status: 'PROCESSING' }),
     );
@@ -144,6 +149,104 @@ export class GrnImportService {
     }
 
     return batch;
+  }
+
+  /**
+   * Records GRNs from an invoice sheet (Invoice No., Customer Name, Net
+   * Amount - no GRN columns at all): an invoice appearing here is treated
+   * as goods received in full. Since the sheet carries no GRN number, value
+   * or status, they're derived - GRN number = invoice number, value = Net
+   * Amount, outcome = MATCHED. POs are linked exactly like Invoice Bulk
+   * Upload (PO Number column, then existing invoice, then the Daily Dispatch
+   * Report), and each row goes through recordGRN() like every other GRN
+   * path. A PO that already has a real GRN is never overwritten.
+   */
+  async processInvoiceSheet(buffer: Buffer, fileName: string, uploadedByUserId: string): Promise<GrnUploadBatchEntity> {
+    const batchCode = await this.generateBatchCode('GRI');
+    let batch = await this.batchRepository.save(
+      this.batchRepository.create({ batchCode, fileName, uploadedByUserId, status: 'PROCESSING' }),
+    );
+
+    try {
+      const parsed = this.invoiceImportService.parseSheet(buffer, fileName);
+      let matchedCount = 0;
+      let unmatchedCount = 0;
+
+      for (const r of parsed) {
+        const result = await this.recordFromInvoice(r.poNumber, r.invoiceNumber, r.invoiceValue);
+
+        await this.rowRepository.save(
+          this.rowRepository.create({
+            batchId: batch.id,
+            rowIndex: r.rowIndex,
+            poNumber: result.poNumber ?? r.poNumber,
+            invoiceNumber: r.invoiceNumber,
+            grnNumber: r.invoiceNumber,
+            grnValue: r.invoiceValue,
+            outcome: GRNOutcome.MATCHED,
+            discrepancyReason: null,
+            discrepancyAmount: null,
+            matchStatus: result.matchStatus,
+            matchedPoId: result.matchedPoId,
+            errorMessage: result.errorMessage,
+          }),
+        );
+
+        if (result.matchStatus === 'MATCHED') matchedCount++;
+        else unmatchedCount++;
+      }
+
+      batch.totalRows = matchedCount + unmatchedCount;
+      batch.matchedCount = matchedCount;
+      batch.unmatchedCount = unmatchedCount;
+      batch.status = 'COMPLETED';
+      batch = await this.batchRepository.save(batch);
+    } catch (err) {
+      this.logger.error(`GRN-from-invoices import failed for batch ${batch.batchCode}`, err as any);
+      batch.status = 'FAILED';
+      batch.errorMessage = (err as Error).message;
+      batch = await this.batchRepository.save(batch);
+    }
+
+    return batch;
+  }
+
+  private async recordFromInvoice(
+    poNumber: string | null,
+    invoiceNumber: string | null,
+    invoiceValue: number | null,
+  ): Promise<{ matchStatus: GrnImportRowEntity['matchStatus']; matchedPoId: string | null; poNumber: string | null; errorMessage: string | null }> {
+    const po = await this.invoiceImportService.resolvePo(poNumber, invoiceNumber);
+    if (!po) {
+      return {
+        matchStatus: 'PO_NOT_FOUND',
+        matchedPoId: null,
+        poNumber: null,
+        errorMessage: poNumber
+          ? `No PO found with number ${poNumber}`
+          : `Couldn't link invoice ${invoiceNumber} to a PO - upload the Daily Dispatch Report first (it pairs each voucher with its PO), then re-upload this sheet.`,
+      };
+    }
+    if (!invoiceNumber || invoiceValue == null) {
+      return { matchStatus: 'INVALID', matchedPoId: po.id, poNumber: po.poNumber, errorMessage: 'Invoice number and Net Amount are both required to record a GRN' };
+    }
+
+    const existing = await this.grnRepository.findOneBy({ poId: po.id });
+    if (existing?.grnDate) {
+      return {
+        matchStatus: 'INVALID',
+        matchedPoId: po.id,
+        poNumber: po.poNumber,
+        errorMessage: `GRN already recorded on this PO (${existing.grnNumber || 'no number'}, ${existing.outcome}) - left untouched`,
+      };
+    }
+
+    try {
+      await this.poService.recordGRN(po.id, { grnNumber: invoiceNumber, grnValue: invoiceValue, outcome: GRNOutcome.MATCHED });
+    } catch (err) {
+      return { matchStatus: 'INVALID', matchedPoId: po.id, poNumber: po.poNumber, errorMessage: (err as Error).message };
+    }
+    return { matchStatus: 'MATCHED', matchedPoId: po.id, poNumber: po.poNumber, errorMessage: null };
   }
 
   private async matchAndApply(
@@ -228,11 +331,11 @@ export class GrnImportService {
     return mapping;
   }
 
-  private async generateBatchCode(): Promise<string> {
+  private async generateBatchCode(prefix: 'GRN' | 'GRI'): Promise<string> {
     const datePart = format(new Date(), 'yyyyMMdd');
-    const countToday = await this.batchRepository.count({ where: { batchCode: Like(`GRN-${datePart}-%`) } });
+    const countToday = await this.batchRepository.count({ where: { batchCode: Like(`${prefix}-${datePart}-%`) } });
     const seq = String(countToday + 1).padStart(3, '0');
-    return `GRN-${datePart}-${seq}`;
+    return `${prefix}-${datePart}-${seq}`;
   }
 
   async listBatches(): Promise<GrnUploadBatchEntity[]> {

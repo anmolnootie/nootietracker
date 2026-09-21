@@ -41,6 +41,15 @@ export const grnImportService = {
     return response.data;
   },
 
+  uploadFromInvoices: async (file: File): Promise<GrnUploadBatch> => {
+    const form = new FormData();
+    form.append('file', file);
+    const response = await api.post('/grn-import/upload-from-invoices', form, {
+      headers: { 'Content-Type': undefined },
+    });
+    return response.data;
+  },
+
   listBatches: async (): Promise<GrnUploadBatch[]> => (await api.get('/grn-import/batches')).data,
 
   getBatch: async (id: string): Promise<GrnUploadBatch> => (await api.get(`/grn-import/batches/${id}`)).data,

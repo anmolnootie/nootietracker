@@ -17,6 +17,15 @@ export class GrnImportController {
     return this.grnImportService.processFile(file.buffer, file.originalname, req.user.userId);
   }
 
+  @Post('upload-from-invoices')
+  @UseInterceptors(FileInterceptor('file'))
+  async uploadFromInvoices(@UploadedFile() file: Express.Multer.File, @Request() req: any) {
+    if (!file) {
+      throw new BadRequestException('A file is required');
+    }
+    return this.grnImportService.processInvoiceSheet(file.buffer, file.originalname, req.user.userId);
+  }
+
   @Get('batches')
   listBatches() {
     return this.grnImportService.listBatches();

@@ -86,27 +86,12 @@ export class InvoiceImportService {
     );
 
     try {
-      const { headers, rows } = this.fileReaderService.read(buffer, fileName);
-      const mapping = this.mapHeaders(headers);
+      const parsed = this.parseSheet(buffer, fileName);
 
       let matchedCount = 0;
       let unmatchedCount = 0;
 
-      for (let i = 0; i < rows.length; i++) {
-        const row = rows[i];
-        const get = (field: InvoiceField) => (mapping[field] ? row[mapping[field]!] : undefined);
-
-        const poNumber = get('poNumber') ? String(get('poNumber')).trim() : null;
-        const invoiceNumber = get('invoiceNumber') ? String(get('invoiceNumber')).trim() : null;
-        const invoiceValue = parseNumber(get('invoiceValue'));
-        const invoiceDate = parseFlexibleDate(get('invoiceDate'));
-        const awbNumber = get('awbNumber') ? String(get('awbNumber')).trim() : null;
-        const customerName = get('customerName') ? String(get('customerName')).trim() : null;
-
-        // A row with no invoice number and no PO number is a blank/spacer/total
-        // line - nothing to link or apply, so skip it rather than flag INVALID.
-        if (!invoiceNumber && !poNumber) continue;
-
+      for (const { rowIndex: i, poNumber, invoiceNumber, invoiceValue, invoiceDate, awbNumber, customerName } of parsed) {
         const result = await this.matchAndApply(poNumber, { invoiceNumber, invoiceValue, invoiceDate, awbNumber });
 
         // Show the PO this row resolved to even though the sheet itself has no PO column.
@@ -146,6 +131,44 @@ export class InvoiceImportService {
     }
 
     return batch;
+  }
+
+  /**
+   * Reads an invoice sheet into typed rows, skipping blank/total lines (a
+   * row with neither an invoice number nor a PO number). Shared with GRN
+   * Bulk Upload's "from invoices" mode so both read the same export the
+   * same way.
+   */
+  parseSheet(buffer: Buffer, fileName: string) {
+    const { headers, rows } = this.fileReaderService.read(buffer, fileName);
+    const mapping = this.mapHeaders(headers);
+    const out: {
+      rowIndex: number;
+      poNumber: string | null;
+      invoiceNumber: string | null;
+      invoiceValue: number | null;
+      invoiceDate: Date | null;
+      awbNumber: string | null;
+      customerName: string | null;
+    }[] = [];
+
+    rows.forEach((row, rowIndex) => {
+      const get = (field: InvoiceField) => (mapping[field] ? row[mapping[field]!] : undefined);
+      const text = (field: InvoiceField) => (get(field) ? String(get(field)).trim() : null);
+      const poNumber = text('poNumber');
+      const invoiceNumber = text('invoiceNumber');
+      if (!invoiceNumber && !poNumber) return;
+      out.push({
+        rowIndex,
+        poNumber,
+        invoiceNumber,
+        invoiceValue: parseNumber(get('invoiceValue')),
+        invoiceDate: parseFlexibleDate(get('invoiceDate')),
+        awbNumber: text('awbNumber'),
+        customerName: text('customerName'),
+      });
+    });
+    return out;
   }
 
   private async matchAndApply(
@@ -190,7 +213,7 @@ export class InvoiceImportService {
    * number (re-uploads/corrections); or the Daily Dispatch Report, which is
    * the one document that pairs each voucher number with its PO number.
    */
-  private async resolvePo(poNumber: string | null, invoiceNumber: string | null): Promise<POMasterEntity | null> {
+  async resolvePo(poNumber: string | null, invoiceNumber: string | null): Promise<POMasterEntity | null> {
     if (poNumber) return this.poRepository.findOne({ where: { poNumber } });
     if (!invoiceNumber) return null;
 
