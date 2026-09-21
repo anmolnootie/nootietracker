@@ -262,6 +262,7 @@ export default function PODetail() {
           <InfoBox label="Fill Rate %" value={po.fillRatePercent != null ? `${Number(po.fillRatePercent).toFixed(1)}%` : '-'} />
           <InfoBox label="Available Stock Value" value={po.availableStockValue != null ? `₹${Number(po.availableStockValue).toLocaleString()}` : '-'} />
           <InfoBox label="Dispatch Value" value={po.dispatchValue != null ? `₹${Number(po.dispatchValue).toLocaleString()}` : '-'} />
+          <InfoBox label="GRN Value" value={timeline?.grn?.grnValue != null ? `₹${Number(timeline.grn.grnValue).toLocaleString()}` : '-'} />
           <InfoBox
             label="Low PO Value"
             value={
