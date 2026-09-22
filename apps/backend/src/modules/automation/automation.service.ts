@@ -319,7 +319,19 @@ export class AutomationService {
       if (po.poExpiryDate > new Date()) continue;
 
       const dispatch = await this.dispatchRepository.findOneBy({ poId: po.id });
-      if (dispatch?.actualDispatchDate) continue; // was dispatched - not an undelivered recall case
+      // actualDispatchDate alone under-detects a real dispatch: the master
+      // tracker sheet's "Dispatch Date" column is sparsely filled even for
+      // POs it clearly did dispatch (it also carries a status/invoice/AWB),
+      // and that sheet data often arrives *after* this job has already run
+      // for a PO past its expiry - recalling something that, per the sheet,
+      // was already on its way or delivered. Any of these signals means it
+      // wasn't actually undelivered, whatever the date field says.
+      const wasDispatched =
+        !!dispatch?.actualDispatchDate ||
+        !!dispatch?.dispatchStatus?.trim() ||
+        !!dispatch?.invoiceNumber?.trim() ||
+        !!dispatch?.awbNumber?.trim();
+      if (wasDispatched) continue;
 
       const appointment = await this.appointmentRepository.findOneBy({ poId: po.id });
       if (appointment?.extensionGranted && appointment.newExpiryDate && appointment.newExpiryDate > new Date()) {
