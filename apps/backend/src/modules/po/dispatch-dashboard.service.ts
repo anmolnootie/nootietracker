@@ -37,9 +37,12 @@ const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'S
 const AGING_BUCKETS = ['0-3 Days', '4-7 Days', '8-15 Days', '16-30 Days', '30+ Days'];
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+const TERMINAL_NEGATIVE_STATUSES = new Set(['RTO', 'Need to Mark RTO', 'Returned', 'Cancelled']);
+
 /** Sheets and manual entry spell the same status several ways ("DELIVERED", "In Transit", "IN TRANSIT"). */
 function normalizeStatus(raw: string | null, poStatus: string): string {
   const s = (raw ?? '').trim();
+  let mapped: string | null = null;
   if (s) {
     const up = s.toUpperCase();
     const known: Record<string, string> = {
@@ -54,12 +57,21 @@ function normalizeStatus(raw: string | null, poStatus: string): string {
       INVOICED: 'Invoiced',
       DISPATCHED: 'Dispatched',
     };
-    return known[up] ?? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
+    mapped = known[up] ?? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
   }
+
+  // po.status RETURNED/CANCELLED is a definitive, later signal - returns
+  // processing sets it but never touches dispatch.dispatchStatus, so a PO
+  // returned after being marked Delivered/In Transit kept showing whatever
+  // stale text was there before the return. Don't let it, UNLESS the raw
+  // text already agrees (e.g. "RTO"), which carries more detail worth
+  // keeping than the generic "Returned"/"Cancelled".
+  if ((poStatus === 'RETURNED' || poStatus === 'CANCELLED') && !(mapped && TERMINAL_NEGATIVE_STATUSES.has(mapped))) {
+    return poStatus === 'RETURNED' ? 'Returned' : 'Cancelled';
+  }
+  if (mapped) return mapped;
   if (['DELIVERED', 'GRN_PENDING', 'RECONCILED', 'CLOSED'].includes(poStatus)) return 'Delivered';
   if (poStatus === 'IN_TRANSIT') return 'In Transit';
-  if (poStatus === 'RETURNED') return 'Returned';
-  if (poStatus === 'CANCELLED') return 'Cancelled';
   return 'Dispatched';
 }
 

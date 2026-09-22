@@ -104,6 +104,21 @@ function sameDay(a: Date | string | null | undefined, b: Date | null): boolean {
 
 const GRN_DONE = new Set(['completed', 'complete', 'done', 'received', 'closed']);
 
+// The tracker can carry more than one row for the same PO Number (multiple
+// SKU lines, multiple shipment legs, ...). Rows for one PO are applied in
+// whatever order they appear in the sheet, each straight-up overwriting
+// dispatchStatus - so a later, less-advanced row ("In Transit") could
+// silently undo an already-recorded more-advanced one ("Delivered") from an
+// earlier row, even within the very same sync. Rank the forward-progress
+// spellings and refuse to move backward through them. Terminal negative
+// outcomes (RTO/Returned/Cancelled) and any unrecognised text sit outside
+// this chain and are always applied, same as before.
+const DELIVERY_STATUS_RANK: Record<string, number> = { DISPATCHED: 1, INVOICED: 2, INTRANSIT: 3, DELIVERED: 4 };
+function deliveryStatusRank(raw: string | null | undefined): number | null {
+  if (!raw) return null;
+  return DELIVERY_STATUS_RANK[raw.toUpperCase().replace(/[^A-Z]/g, '')] ?? null;
+}
+
 @Injectable()
 export class SheetTrackerImportService {
   private readonly logger = new Logger(SheetTrackerImportService.name);
@@ -375,7 +390,10 @@ export class SheetTrackerImportService {
       }
       setIf(!!r.docketAwb && dispatch.awbNumber !== r.docketAwb, () => (dispatch.awbNumber = r.docketAwb));
       setIf(!!r.deliveryPartner && dispatch.transporterId !== r.deliveryPartner, () => (dispatch.transporterId = r.deliveryPartner));
-      setIf(!!r.deliveryStatus && dispatch.dispatchStatus !== r.deliveryStatus, () => (dispatch.dispatchStatus = r.deliveryStatus));
+      const newRank = deliveryStatusRank(r.deliveryStatus);
+      const oldRank = deliveryStatusRank(dispatch.dispatchStatus);
+      const isRegression = newRank !== null && oldRank !== null && newRank < oldRank;
+      setIf(!!r.deliveryStatus && dispatch.dispatchStatus !== r.deliveryStatus && !isRegression, () => (dispatch.dispatchStatus = r.deliveryStatus));
       setIf(!!r.comment && dispatch.remarks !== r.comment, () => (dispatch.remarks = r.comment));
       if (changed) {
         await this.dispatchRepository.save(dispatch);
