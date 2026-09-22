@@ -112,6 +112,27 @@ export class POController {
     return this.dispatchDashboardService.getKpiList({ fy: fy ? Number(fy) : undefined, channel, month, status, partner, aging }, kpi as DispatchKpi);
   }
 
+  @Get('dispatch-dashboard/list.xlsx')
+  async downloadDispatchDashboardList(
+    @Query('kpi') kpi: string,
+    @Res() res: Response,
+    @Query('fy') fy?: string,
+    @Query('channel') channel?: string,
+    @Query('month') month?: string,
+    @Query('status') status?: string,
+    @Query('partner') partner?: string,
+    @Query('aging') aging?: string,
+  ) {
+    if (!DISPATCH_KPIS.includes(kpi as DispatchKpi)) throw new BadRequestException(`kpi must be one of: ${DISPATCH_KPIS.join(', ')}`);
+    const buffer = await this.dispatchDashboardService.buildKpiListWorkbook(
+      { fy: fy ? Number(fy) : undefined, channel, month, status, partner, aging },
+      kpi as DispatchKpi,
+    );
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="dispatch-dashboard-${kpi}.xlsx"`);
+    res.send(buffer);
+  }
+
   @Get('filter-options')
   async getFilterOptions() {
     return this.poService.getFilterOptions();

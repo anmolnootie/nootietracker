@@ -253,6 +253,20 @@ const PoListModal: React.FC<{
   const [list, setList] = useState<DispatchDashboardList | null>(null);
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
+  const [downloading, setDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState('');
+
+  const download = async () => {
+    setDownloading(true);
+    setDownloadError('');
+    try {
+      await poService.downloadDispatchDashboardList(kpi, { fy, ...filters });
+    } catch {
+      setDownloadError('Could not download the file.');
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -312,7 +326,15 @@ const PoListModal: React.FC<{
             autoFocus
           />
           {q && list && <span className="text-xs text-gray-500">{rows.length.toLocaleString('en-IN')} of {list.total.toLocaleString('en-IN')} match</span>}
+          <button
+            onClick={download}
+            disabled={!list || downloading}
+            className="ml-auto px-3 py-1.5 rounded border border-gray-300 bg-white text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50 whitespace-nowrap"
+          >
+            {downloading ? 'Downloading...' : '⬇ Download Excel'}
+          </button>
         </div>
+        {downloadError && <p className="px-6 py-2 text-xs text-red-700 bg-red-50 border-b">{downloadError}</p>}
 
         {error ? (
           <p className="p-6 text-red-700 text-sm">{error}</p>

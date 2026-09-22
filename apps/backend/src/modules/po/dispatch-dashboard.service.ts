@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import ExcelJS from 'exceljs';
 
 import { POMasterEntity } from '../../database/entities/po-master.entity';
 import { DispatchEntity } from '../../database/entities/dispatch.entity';
@@ -70,6 +71,15 @@ function normalizePartner(raw: string | null): string {
 function fyStartYear(d: Date): number {
   return d.getMonth() >= 3 ? d.getFullYear() : d.getFullYear() - 1;
 }
+
+// Fixed to IST regardless of the server's own clock/timezone - see the same
+// class of bug fixed in po-reports.service.ts's date formatter.
+function formatIST(date: Date | null | undefined): string {
+  if (!date) return '';
+  return new Date(date).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' });
+}
+
+const GRAND_TOTAL_FILL: ExcelJS.Fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF2F2F2' } };
 
 type Dim = 'channel' | 'month' | 'status' | 'partner' | 'aging';
 
@@ -316,5 +326,63 @@ export class DispatchDashboardService {
       truncated: matching.length > KPI_LIST_LIMIT,
       rows: matching.slice(0, KPI_LIST_LIMIT).map(toTableRow),
     };
+  }
+
+  /**
+   * The same PO list as getKpiList, as a downloadable .xlsx - the "Download
+   * Excel" button on each dashboard tile's list. Not capped at KPI_LIST_LIMIT:
+   * a spreadsheet has no reason to stop at 5,000 rows the way an on-page list
+   * does, so this exports every matching PO.
+   */
+  async buildKpiListWorkbook(filters: DispatchDashboardFilters, kpi: DispatchKpi): Promise<Buffer> {
+    const now = new Date();
+    const fy = this.resolveFy(filters, now);
+    const rows = await this.loadRows(fy, now);
+    const matching = rowsMatching(rows, activeFiltersOf(filters)).filter(KPI_PREDICATES[kpi]);
+    matching.sort((a, b) => (kpi === 'invoiceValue' ? b.invoiceValue - a.invoiceValue : 0) || b.dispatchDate.getTime() - a.dispatchDate.getTime());
+
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('POs');
+    sheet.columns = [
+      { header: 'PO Number', key: 'poNumber', width: 18 },
+      { header: 'Location/Hub', key: 'location', width: 28 },
+      { header: 'Channel', key: 'channel', width: 14 },
+      { header: 'Dispatched', key: 'dispatchDate', width: 14 },
+      { header: 'Invoice No.', key: 'invoiceNumber', width: 18 },
+      { header: 'Invoice Value', key: 'invoiceValue', width: 16 },
+      { header: 'Delivery Partner', key: 'partner', width: 18 },
+      { header: 'AWB', key: 'awb', width: 18 },
+      { header: 'Status', key: 'status', width: 14 },
+      { header: 'GRN', key: 'grn', width: 12 },
+      { header: 'Note', key: 'note', width: 40 },
+    ];
+    sheet.getRow(1).font = { bold: true };
+
+    let totalInvoiceValue = 0;
+    for (const r of matching) {
+      totalInvoiceValue += r.invoiceValue;
+      sheet.addRow({
+        poNumber: r.poNumber,
+        location: r.location,
+        channel: r.channel,
+        dispatchDate: formatIST(r.dispatchDate),
+        invoiceNumber: r.invoiceNumber || '',
+        invoiceValue: r.invoiceValue,
+        partner: r.partner,
+        awb: r.awb || '',
+        status: r.status,
+        grn: r.grnDone ? (r.grnOutcome ?? 'Done') : r.status === 'Delivered' ? 'Pending' : '-',
+        // Same flag the dashboard shows with a ⚠️ - a GRN recorded while the
+        // status still isn't Delivered means the status cell is stale.
+        note: r.grnDone && r.status !== 'Delivered' ? `GRN recorded but status still "${r.status}" - check the source sheet` : '',
+      });
+    }
+
+    const totalRow = sheet.addRow({ poNumber: 'Grand Total', location: '', channel: '', dispatchDate: '', invoiceNumber: '', invoiceValue: totalInvoiceValue, partner: '', awb: '', status: '', grn: '', note: '' });
+    totalRow.font = { bold: true };
+    totalRow.eachCell((cell) => (cell.fill = GRAND_TOTAL_FILL));
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    return Buffer.from(buffer);
   }
 }

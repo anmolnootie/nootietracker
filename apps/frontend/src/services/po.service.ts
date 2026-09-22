@@ -131,6 +131,20 @@ export const poService = {
     return response.data;
   },
 
+  /** Downloads the same list as getDispatchDashboardList, as an .xlsx file. */
+  downloadDispatchDashboardList: async (kpi: DispatchKpi, params: DispatchDashboardParams): Promise<void> => {
+    const clean = Object.fromEntries(Object.entries({ ...params, kpi }).filter(([, v]) => v !== undefined && v !== ''));
+    const response = await api.get('/pos/dispatch-dashboard/list.xlsx', { params: clean, responseType: 'blob' });
+    const url = window.URL.createObjectURL(new Blob([response.data]));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `dispatch-dashboard-${kpi}.xlsx`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+  },
+
   getFilterOptions: async (): Promise<{ channels: string[]; locations: string[]; customers: string[] }> => {
     const response = await api.get('/pos/filter-options');
     return response.data;
