@@ -133,7 +133,7 @@ export default function DispatchDashboard() {
             <Kpi icon="⚠️" label="GRN Pending" value={data.kpis.grnPending.toLocaleString('en-IN')} hint="Delivered, no GRN yet - click to list these POs" onClick={() => setListKpi('grnPending')} active={listKpi === 'grnPending'} />
             <Kpi
               icon="💰"
-              label="Total Invoice Value"
+              label="Invoice Value"
               // The currency symbol belongs attached to the number, not floating
               // as a separate icon - a bare number here reads as unformatted.
               value={`₹${inr(data.kpis.totalInvoiceValue)}`}
@@ -362,9 +362,11 @@ const PoListModal: React.FC<{
 
 const Kpi: React.FC<{ icon: string; label: string; value: string; hint?: string; onClick?: () => void; active?: boolean }> = ({ icon, label, value, hint, onClick, active }) => {
   const Tag = onClick ? 'button' : 'div';
-  // The exact figure must always be shown in full, never cut off with an
-  // ellipsis - a long number (e.g. a full-rupee invoice total) shrinks to fit
-  // this tile's width instead of truncating.
+  // Neither the label nor the value may wrap - a wrapped label (e.g. a long
+  // "Total Invoice Value") throws off the icon's vertical alignment against
+  // its neighbours, and a wrapped value defeats the point of showing it in
+  // full. Both shrink instead, only as much as their own length needs.
+  const labelSize = label.length > 14 ? 'text-[10px]' : 'text-xs';
   const valueSize = value.length > 12 ? 'text-base' : value.length > 9 ? 'text-lg' : value.length > 6 ? 'text-xl' : 'text-2xl';
   return (
     <Tag
@@ -374,7 +376,7 @@ const Kpi: React.FC<{ icon: string; label: string; value: string; hint?: string;
     >
       <span className="text-3xl" aria-hidden>{icon}</span>
       <span className="min-w-0 ml-auto text-right">
-        <span className="block text-xs font-semibold text-gray-700">{label}</span>
+        <span className={`block ${labelSize} font-semibold text-gray-700 whitespace-nowrap`}>{label}</span>
         <span className={`block ${valueSize} font-bold text-gray-900 tabular-nums whitespace-nowrap`}>{value}</span>
       </span>
     </Tag>
