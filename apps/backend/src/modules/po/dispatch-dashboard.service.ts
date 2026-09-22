@@ -119,6 +119,11 @@ const toTableRow = (r: Row) => ({
   awb: r.awb,
   status: r.status,
   grn: r.grnDone ? (r.grnOutcome ?? 'Done') : r.status === 'Delivered' ? 'Pending' : '-',
+  // A GRN means the goods were physically received, so one recorded while the
+  // sheet still says In Transit/Dispatched means the sheet's status cell is
+  // stale, not that goods were GRN'd mid-transit - flag it for someone to fix
+  // at the source rather than silently reinterpreting the status here.
+  grnStatusMismatch: r.grnDone && r.status !== 'Delivered',
 });
 
 @Injectable()

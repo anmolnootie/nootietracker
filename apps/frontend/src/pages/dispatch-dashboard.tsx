@@ -131,7 +131,17 @@ export default function DispatchDashboard() {
             <Kpi icon="📦" label="In Transit" value={data.kpis.inTransit.toLocaleString('en-IN')} hint="Click to list these POs" onClick={() => setListKpi('inTransit')} active={listKpi === 'inTransit'} />
             <Kpi icon="✅" label="GRN Done" value={data.kpis.grnDone.toLocaleString('en-IN')} hint="Click to list these POs" onClick={() => setListKpi('grnDone')} active={listKpi === 'grnDone'} />
             <Kpi icon="⚠️" label="GRN Pending" value={data.kpis.grnPending.toLocaleString('en-IN')} hint="Delivered, no GRN yet - click to list these POs" onClick={() => setListKpi('grnPending')} active={listKpi === 'grnPending'} />
-            <Kpi icon="₹" label="Total Invoice Value" value={inr(data.kpis.totalInvoiceValue)} hint="Click to list these POs" onClick={() => setListKpi('invoiceValue')} active={listKpi === 'invoiceValue'} />
+            <Kpi
+              icon="₹"
+              label="Total Invoice Value"
+              // The full number ("84,944,250") doesn't fit this tile's width and was
+              // being cut off with an ellipsis - "8.5 Cr" reads in full; the exact
+              // figure is still one hover (or the list panel) away.
+              value={`₹${compact(data.kpis.totalInvoiceValue)}`}
+              hint={`₹${inr(data.kpis.totalInvoiceValue)} - click to list these POs`}
+              onClick={() => setListKpi('invoiceValue')}
+              active={listKpi === 'invoiceValue'}
+            />
           </div>
 
           {/* Active filters */}
@@ -158,14 +168,9 @@ export default function DispatchDashboard() {
                 <Slicer title="Status" items={data.slicers.statuses.map((s) => ({ key: s.name, label: s.name, count: s.count }))} selected={filters.status} onPick={(k) => toggle('status', k)} />
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <Card title="POs by Delivery Partner">
-                  <PartnerPie data={data.byPartner} selected={filters.partner} onPick={(k) => toggle('partner', k)} />
-                </Card>
-                <Card title="POs by Aging">
-                  <AgingBars data={data.byAging} selected={filters.aging} onPick={(k) => toggle('aging', k)} />
-                </Card>
-              </div>
+              <Card title="POs by Delivery Partner">
+                <PartnerPie data={data.byPartner} selected={filters.partner} onPick={(k) => toggle('partner', k)} />
+              </Card>
 
               <Card title="Invoice Value and PO Count by Month" subtitle="Month of dispatch">
                 <MonthLine data={data.byMonth} selected={filters.month} onPick={(k) => toggle('month', k)} />
@@ -454,26 +459,6 @@ const PartnerPie: React.FC<{ data: { name: string; count: number }[]; selected?:
           </li>
         ))}
       </ul>
-    </div>
-  );
-};
-
-const AgingBars: React.FC<{ data: { name: string; count: number }[]; selected?: string; onPick: (k: string) => void }> = ({ data, selected, onPick }) => {
-  const max = Math.max(1, ...data.map((d) => d.count));
-  if (data.length === 0) return <p className="text-sm text-gray-400 py-10 text-center">No data</p>;
-  const CHART_H = 150;
-  return (
-    <div className="flex items-end justify-around gap-2" style={{ height: CHART_H + 56 }}>
-      {data.map((d) => {
-        const dim = selected && selected !== d.name;
-        return (
-          <button key={d.name} onClick={() => onPick(d.name)} className={`flex flex-col items-center justify-end flex-1 min-w-0 ${dim ? 'opacity-30' : ''}`} title={`${d.name}: ${d.count}`}>
-            <span className="text-sm font-semibold text-gray-800 tabular-nums mb-1">{d.count}</span>
-            <span className="w-full max-w-[44px] rounded-t" style={{ height: Math.max(3, (d.count / max) * CHART_H), background: COUNT_COLOR }} />
-            <span className="text-[11px] text-gray-600 text-center leading-tight mt-2 h-8">{d.name}</span>
-          </button>
-        );
-      })}
     </div>
   );
 };

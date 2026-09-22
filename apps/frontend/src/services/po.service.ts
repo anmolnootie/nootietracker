@@ -97,6 +97,7 @@ export interface DispatchDashboardData {
       awb: string | null;
       status: string;
       grn: string;
+      grnStatusMismatch: boolean;
     }[];
   };
 }
