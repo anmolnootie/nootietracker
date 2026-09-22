@@ -1,0 +1,82 @@
+# HawkScan (StackHawk DAST) configuration for the Nootie Control Tower API.
+#
+# SETUP STILL NEEDED - none of this has been run or validated yet. The hawk
+# CLI is not installed in this environment, so no app was created on
+# StackHawk's platform and no scan/auth was verified. This file is a
+# scaffold built from reading the code, not a working config.
+#
+#   1. Install the hawk CLI (>= 6.0.0):
+#        brew tap stackhawk/cli && brew install hawk
+#      or download a binary - see https://docs.stackhawk.com/downloads/
+#      Verify with `hawk version`.
+#
+#   2. Get a StackHawk account + credential (free tier is enough to start):
+#        - Sign up at https://app.stackhawk.com
+#        - Interactive: `hawk init --browser` (opens a browser, no key to copy)
+#        - Non-interactive (CI/headless): Settings -> API Keys -> create one,
+#          then set it as HAWK_API_KEY and prefix commands:
+#            API_KEY=$HAWK_API_KEY hawk scan
+#
+#   3. Create the app once the CLI is authenticated:
+#        hawk create app --name nootietracker --env Development
+#      That prints an applicationId - put it in the APP_ID env var (do not
+#      hardcode it here); this file already reads it via ${APP_ID}.
+#
+#   4. Auth: the API is JWT-bearer, issued by POST /auth/login. Once the CLI
+#      is installed, fetch the live recipe rather than hand-writing it here
+#      (the schema drifts between hawk versions):
+#        hawk config show app.authentication --text
+#      What it needs to know about this app's login (from
+#      apps/backend/src/modules/auth/auth.controller.ts and
+#      packages/shared/src/index.ts):
+#        request:  POST /auth/login   {"email": "...", "password": "..."}
+#        response: {"accessToken": "...", "user": {...}}
+#        subsequent requests: header  Authorization: Bearer <accessToken>
+#      A seed account exists outside production (see
+#      apps/backend/src/modules/scripts/scripts.controller.ts,
+#      GET /scripts/seed, disabled when NODE_ENV=production):
+#        admin@demo.local / password
+#      Add a testPath that returns 401 unauthenticated and 200 authenticated,
+#      e.g. GET /pos/batches or GET /exceptions.
+#
+#   5. No OpenAPI/Swagger spec exists yet - this app has no @nestjs/swagger
+#      setup, so a scan today can only rely on the spider, which reaches a
+#      small fraction of the ~20 route modules (pos, bulk-import, grn-import,
+#      invoice-import, dispatch-report-import, sheet-tracker-import,
+#      exceptions, tasks, locations, ...). Recommended before the first real
+#      scan: add DocumentBuilder + SwaggerModule.setup() to
+#      apps/backend/src/main.ts to expose a live spec, then wire it here
+#      under app.openApiConf.apiUrl. This is a bigger call than a config
+#      change - not done as part of this setup; ask if you want it added.
+#
+#   6. Two endpoints are intentionally unauthenticated by the app's normal
+#      login - they're inbound webhooks checked against their own
+#      shared-secret headers instead:
+#        POST /webhooks/partnersbiz/po       Api-Key header (PARTNERSBIZ_API_KEY)
+#        POST /webhooks/google-sheets/tracker x-sync-key header (SHEET_SYNC_KEY)
+#      They're in scope below by default (worth scanning - e.g. that a bad
+#      key is properly rejected). Move them to app.excludePaths if that's
+#      not wanted.
+#
+# Until steps 1-4 are done, `hawk scan` has no applicationId and no working
+# credential to run against.
+
+app:
+  applicationId: ${APP_ID}
+  env: ${APP_ENV:Development}
+  # Local dev backend per docker-compose.yml / apps/backend/.env.example
+  # (PORT=3001). Override per environment, e.g.:
+  #   APP_HOST=https://<railway-backend-domain> hawk scan
+  host: ${APP_HOST:http://localhost:3001}
+
+hawk:
+  spider:
+    # No OpenAPI spec yet (see note 5 above) - base spider only, so this
+    # scan's route coverage is thin until a spec is wired in.
+    maxDurationMinutes: 5
+
+tags:
+  - name: _STACKHAWK_AGENT
+    value: ${HAWK_AGENT:none}
+  - name: git_origin
+    value: github.com/anmolnootie/nootietracker
