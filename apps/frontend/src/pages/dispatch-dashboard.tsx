@@ -132,9 +132,11 @@ export default function DispatchDashboard() {
             <Kpi icon="✅" label="GRN Done" value={data.kpis.grnDone.toLocaleString('en-IN')} hint="Click to list these POs" onClick={() => setListKpi('grnDone')} active={listKpi === 'grnDone'} />
             <Kpi icon="⚠️" label="GRN Pending" value={data.kpis.grnPending.toLocaleString('en-IN')} hint="Delivered, no GRN yet - click to list these POs" onClick={() => setListKpi('grnPending')} active={listKpi === 'grnPending'} />
             <Kpi
-              icon="₹"
+              icon="💰"
               label="Total Invoice Value"
-              value={inr(data.kpis.totalInvoiceValue)}
+              // The currency symbol belongs attached to the number, not floating
+              // as a separate icon - a bare number here reads as unformatted.
+              value={`₹${inr(data.kpis.totalInvoiceValue)}`}
               hint="Click to list these POs"
               onClick={() => setListKpi('invoiceValue')}
               active={listKpi === 'invoiceValue'}
