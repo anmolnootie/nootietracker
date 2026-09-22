@@ -134,11 +134,8 @@ export default function DispatchDashboard() {
             <Kpi
               icon="₹"
               label="Total Invoice Value"
-              // The full number ("84,944,250") doesn't fit this tile's width and was
-              // being cut off with an ellipsis - "8.5 Cr" reads in full; the exact
-              // figure is still one hover (or the list panel) away.
-              value={`₹${compact(data.kpis.totalInvoiceValue)}`}
-              hint={`₹${inr(data.kpis.totalInvoiceValue)} - click to list these POs`}
+              value={inr(data.kpis.totalInvoiceValue)}
+              hint="Click to list these POs"
               onClick={() => setListKpi('invoiceValue')}
               active={listKpi === 'invoiceValue'}
             />
@@ -363,6 +360,10 @@ const PoListModal: React.FC<{
 
 const Kpi: React.FC<{ icon: string; label: string; value: string; hint?: string; onClick?: () => void; active?: boolean }> = ({ icon, label, value, hint, onClick, active }) => {
   const Tag = onClick ? 'button' : 'div';
+  // The exact figure must always be shown in full, never cut off with an
+  // ellipsis - a long number (e.g. a full-rupee invoice total) shrinks to fit
+  // this tile's width instead of truncating.
+  const valueSize = value.length > 12 ? 'text-base' : value.length > 9 ? 'text-lg' : value.length > 6 ? 'text-xl' : 'text-2xl';
   return (
     <Tag
       onClick={onClick}
@@ -372,7 +373,7 @@ const Kpi: React.FC<{ icon: string; label: string; value: string; hint?: string;
       <span className="text-3xl" aria-hidden>{icon}</span>
       <span className="min-w-0 ml-auto text-right">
         <span className="block text-xs font-semibold text-gray-700">{label}</span>
-        <span className="block text-2xl font-bold text-gray-900 tabular-nums truncate">{value}</span>
+        <span className={`block ${valueSize} font-bold text-gray-900 tabular-nums whitespace-nowrap`}>{value}</span>
       </span>
     </Tag>
   );
