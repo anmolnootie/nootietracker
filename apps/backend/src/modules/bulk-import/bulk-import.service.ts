@@ -69,6 +69,10 @@ export class BulkImportService {
   private queue: Promise<unknown> = Promise.resolve();
   // Batches queued or running in THIS process - never mistaken for stalled.
   private readonly inFlight = new Set<string>();
+  // Ids the Stop button has flagged - checked once per row (and once before a
+  // still-queued import even starts), so a cancel is noticed within a row's
+  // processing time, or immediately if the batch hasn't started yet.
+  private readonly cancelRequested = new Set<string>();
 
   constructor(
     @InjectRepository(UploadBatchEntity) private readonly batchRepository: Repository<UploadBatchEntity>,
@@ -105,8 +109,27 @@ export class BulkImportService {
     this.queue = this.queue
       .then(() => this.runBatch(batch, buffer, fileName, platform, uploadedByUserId))
       .catch((err) => this.logger.error(`Background import ${batch.batchCode} crashed`, err as any))
-      .finally(() => this.inFlight.delete(batch.id));
+      .finally(() => {
+        this.inFlight.delete(batch.id);
+        this.cancelRequested.delete(batch.id);
+      });
 
+    return batch;
+  }
+
+  /**
+   * The Stop button. Only flags the batch - the running loop (or, if it's
+   * still queued behind an earlier import, the very start of its own run)
+   * notices and stops itself, so whatever's already been written stays
+   * consistent instead of being torn down mid-row.
+   */
+  async cancelBatch(batchId: string): Promise<UploadBatchEntity> {
+    const batch = await this.batchRepository.findOneBy({ id: batchId });
+    if (!batch) throw new NotFoundException('Upload batch not found');
+    if (!ACTIVE_STATUSES.includes(batch.status)) {
+      throw new BadRequestException(`This import has already finished (${batch.status}) - nothing to stop.`);
+    }
+    this.cancelRequested.add(batchId);
     return batch;
   }
 
@@ -127,6 +150,9 @@ export class BulkImportService {
     let batch = created;
 
     try {
+      if (this.cancelRequested.has(batch.id)) {
+        return await this.updateBatch(batch, { status: UploadBatchStatus.CANCELLED, errorMessage: 'Stopped before it started - still queued behind an earlier import.' });
+      }
       batch = await this.updateBatch(batch, { status: UploadBatchStatus.READING });
       const { headers, rows } = this.fileReader.read(buffer, fileName);
       batch = await this.updateBatch(batch, { totalRows: rows.length, status: UploadBatchStatus.PROCESSING });
@@ -159,7 +185,12 @@ export class BulkImportService {
         lastFlush = Date.now();
       };
 
+      let cancelledAt: number | null = null;
       for (let i = 0; i < rows.length; i++) {
+        if (this.cancelRequested.has(batch.id)) {
+          cancelledAt = i;
+          break;
+        }
         if (i > 0 && (i % 25 === 0 || Date.now() - lastFlush > 5000)) await flushProgress(i);
 
         const rawRow = await this.rawRepository.save(this.rawRepository.create({ batchId: batch.id, rowIndex: i, rawData: rows[i] }), { transaction: false });
@@ -280,7 +311,7 @@ export class BulkImportService {
       const totalExceptions = await this.exceptionsService.countByBatch(batch.id);
 
       batch = await this.updateBatch(batch, {
-        processedRows: rows.length,
+        processedRows: cancelledAt ?? rows.length,
         poCount: poNumbers.size,
         skuCount: skuCodes.size,
         dateRangeStart: minDate,
@@ -290,7 +321,13 @@ export class BulkImportService {
         duplicateRecords: dupCount,
         exceptionRecords: totalExceptions,
         failedRecords: failedCount,
-        status: totalExceptions > 0 || failedCount > 0 ? UploadBatchStatus.COMPLETED_WITH_EXCEPTIONS : UploadBatchStatus.COMPLETED,
+        status:
+          cancelledAt != null
+            ? UploadBatchStatus.CANCELLED
+            : totalExceptions > 0 || failedCount > 0
+              ? UploadBatchStatus.COMPLETED_WITH_EXCEPTIONS
+              : UploadBatchStatus.COMPLETED,
+        errorMessage: cancelledAt != null ? `Stopped at row ${cancelledAt} of ${rows.length} - everything up to there was kept.` : undefined,
       });
     } catch (err) {
       this.logger.error(`Bulk import failed for batch ${batch.batchCode}`, err as any);

@@ -25,6 +25,8 @@ export const bulkImportService = {
 
   deleteBatch: async (id: string): Promise<any> => (await api.delete(`/bulk-import/batches/${id}`)).data,
 
+  cancelBatch: async (id: string): Promise<any> => (await api.post(`/bulk-import/batches/${id}/cancel`)).data,
+
   reprocessRow: async (processedRowId: string, corrections: Record<string, any>): Promise<any> =>
     (await api.post(`/bulk-import/processed-rows/${processedRowId}/reprocess`, corrections)).data,
 

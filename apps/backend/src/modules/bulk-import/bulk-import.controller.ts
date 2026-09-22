@@ -80,6 +80,11 @@ export class BulkImportController {
     return this.bulkImportService.getDeletePreview(id);
   }
 
+  @Post('batches/:id/cancel')
+  cancelBatch(@Param('id') id: string) {
+    return this.bulkImportService.cancelBatch(id);
+  }
+
   @Delete('batches/:id')
   deleteBatch(@Param('id') id: string) {
     return this.bulkImportService.deleteBatch(id);

@@ -21,6 +21,7 @@ export default function BatchDetail() {
   const [exceptions, setExceptions] = useState<any[]>([]);
   const [showResolved, setShowResolved] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [stopping, setStopping] = useState(false);
 
   const load = async (showSpinner = true) => {
     if (!id) return;
@@ -57,6 +58,17 @@ export default function BatchDetail() {
     if (router.query.tab === 'exceptions') setTab('exceptions');
   }, [router.query.tab]);
 
+  const stopBatch = async () => {
+    if (!window.confirm('Stop this import? Rows already processed stay - only what hasn\'t run yet is skipped.')) return;
+    setStopping(true);
+    try {
+      await bulkImportService.cancelBatch(id as string);
+      await load(false);
+    } finally {
+      setStopping(false);
+    }
+  };
+
   if (loading || !data) {
     return (
       <MainLayout>
@@ -83,11 +95,20 @@ export default function BatchDetail() {
         </div>
 
         {stillRunning && (
-          <p className="text-sm text-gray-600 mb-4">
-            Still importing - {batch.processedRows ?? 0} of {batch.totalRows} rows done. This page refreshes on its own.
-          </p>
+          <div className="flex items-center justify-between gap-3 mb-4">
+            <p className="text-sm text-gray-600">
+              Still importing - {batch.processedRows ?? 0} of {batch.totalRows} rows done. This page refreshes on its own.
+            </p>
+            <button
+              onClick={stopBatch}
+              disabled={stopping}
+              className="text-xs px-2 py-1 rounded border border-red-300 text-red-600 hover:bg-red-50 disabled:opacity-50 whitespace-nowrap"
+            >
+              {stopping ? 'Stopping...' : '■ Stop'}
+            </button>
+          </div>
         )}
-        {batch.status === 'FAILED' && batch.errorMessage && (
+        {(batch.status === 'FAILED' || batch.status === 'CANCELLED') && batch.errorMessage && (
           <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded text-sm">{batch.errorMessage}</div>
         )}
 

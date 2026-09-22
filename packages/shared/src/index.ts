@@ -125,6 +125,7 @@ export enum UploadBatchStatus {
   COMPLETED = 'COMPLETED',
   COMPLETED_WITH_EXCEPTIONS = 'COMPLETED_WITH_EXCEPTIONS',
   FAILED = 'FAILED',
+  CANCELLED = 'CANCELLED',
 }
 
 export enum DedupClassification {

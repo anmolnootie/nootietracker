@@ -14,6 +14,7 @@ const STATUS_STYLES: Record<string, string> = {
   COMPLETED: 'bg-green-100 text-green-700',
   COMPLETED_WITH_EXCEPTIONS: 'bg-nootie-orange-light text-nootie-orange-dark',
   FAILED: 'bg-red-100 text-red-700',
+  CANCELLED: 'bg-gray-200 text-gray-600',
 };
 
 // Imports run in the background after the upload returns - these are the
@@ -38,6 +39,7 @@ export default function BulkImport() {
   const [batches, setBatches] = useState<any[]>([]);
   const [deleteTarget, setDeleteTarget] = useState<{ batch: any; preview: any } | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [stoppingId, setStoppingId] = useState<string | null>(null);
 
   const loadBatches = async () => setBatches(await bulkImportService.listBatches());
 
@@ -81,6 +83,17 @@ export default function BulkImport() {
       await loadBatches();
     } finally {
       setDeleting(false);
+    }
+  };
+
+  const stopBatch = async (batch: any) => {
+    if (!window.confirm(`Stop ${batch.batchCode}? Rows already processed stay - only what hasn't run yet is skipped.`)) return;
+    setStoppingId(batch.id);
+    try {
+      await bulkImportService.cancelBatch(batch.id);
+      await loadBatches();
+    } finally {
+      setStoppingId(null);
     }
   };
 
@@ -183,7 +196,16 @@ export default function BulkImport() {
                 </div>
                 {isActive(batch) && (
                   <div className="mb-4">
-                    <p className="text-sm text-gray-600 mb-1">{progressLabel(batch)}</p>
+                    <div className="flex items-center justify-between gap-3 mb-1">
+                      <p className="text-sm text-gray-600">{progressLabel(batch)}</p>
+                      <button
+                        onClick={() => stopBatch(batch)}
+                        disabled={stoppingId === batch.id}
+                        className="text-xs px-2 py-1 rounded border border-red-300 text-red-600 hover:bg-red-50 disabled:opacity-50 whitespace-nowrap"
+                      >
+                        {stoppingId === batch.id ? 'Stopping...' : '■ Stop'}
+                      </button>
+                    </div>
                     <div className="h-2 bg-gray-200 rounded overflow-hidden">
                       <div
                         className="h-2 bg-nootie-orange transition-all"
@@ -195,6 +217,9 @@ export default function BulkImport() {
                 )}
                 {batch.status === 'FAILED' && batch.errorMessage && (
                   <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded text-sm">{batch.errorMessage}</div>
+                )}
+                {batch.status === 'CANCELLED' && batch.errorMessage && (
+                  <div className="mb-4 bg-gray-50 border border-gray-200 text-gray-600 px-3 py-2 rounded text-sm">{batch.errorMessage}</div>
                 )}
                 <div className="grid grid-cols-3 md:grid-cols-6 gap-4 text-center">
                   <Stat label="Rows" value={batch.totalRows} />
@@ -264,10 +289,18 @@ export default function BulkImport() {
                   </td>
                   <td className="px-4 py-3">
                     <span className={`px-2 py-1 rounded text-xs font-medium ${STATUS_STYLES[b.status]}`}>{b.status.replace(/_/g, ' ')}</span>
-                    {b.status === 'FAILED' && b.errorMessage && <p className="text-xs text-red-600 mt-1 max-w-xs">{b.errorMessage}</p>}
+                    {(b.status === 'FAILED' || b.status === 'CANCELLED') && b.errorMessage && <p className="text-xs text-gray-500 mt-1 max-w-xs">{b.errorMessage}</p>}
                   </td>
                   <td className="px-4 py-3">
-                    {!isActive(b) && (
+                    {isActive(b) ? (
+                      <button
+                        onClick={() => stopBatch(b)}
+                        disabled={stoppingId === b.id}
+                        className="text-xs text-red-600 hover:underline disabled:opacity-50"
+                      >
+                        {stoppingId === b.id ? 'Stopping...' : '■ Stop'}
+                      </button>
+                    ) : (
                       <button onClick={() => openDeletePreview(b)} className="text-xs text-red-600 hover:underline">
                         Delete Import
                       </button>
