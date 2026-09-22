@@ -34,12 +34,16 @@ export class POCompilationService {
     private readonly exceptionsService: ExceptionsService,
   ) {}
 
+  // `existingPo` is looked up once by the caller (bulk-import.service.ts, right
+  // before it also needs the same PO for duplicate-detection) and reused here -
+  // this used to redo that exact lookup itself on every single row.
   async compileRow(
     row: BulkPOProcessedRowEntity,
     batch: UploadBatchEntity,
     uploadedByUserId: string,
+    existingPo: POMasterEntity | null,
   ): Promise<{ poId: string; created: boolean }> {
-    let po = await this.poRepository.findOne({ where: { poNumber: row.poNumber, channelId: row.platform } });
+    let po = existingPo;
     let created = false;
 
     if (!po) {
@@ -62,23 +66,28 @@ export class POCompilationService {
         poStatusRaw: row.poStatus,
         lastStatusChangeAt: new Date(),
       });
-      po = await this.poRepository.save(po);
+      // { transaction: false }: a plain single-row save has no cascade to protect -
+      // TypeORM wraps every save() in its own transaction by default, which against
+      // a remote database is two extra round trips (BEGIN/COMMIT) per call for
+      // nothing. Applied throughout this file's hot path for the same reason.
+      po = await this.poRepository.save(po, { transaction: false });
       created = true;
 
-      await this.appointmentRepository.save(this.appointmentRepository.create({ poId: po.id, slaStatus: 'ON_TIME' }));
+      await this.appointmentRepository.save(this.appointmentRepository.create({ poId: po.id, slaStatus: 'ON_TIME' }), { transaction: false });
       await this.dispatchRepository.save(
         this.dispatchRepository.create({
           poId: po.id,
           idealDispatchDate: row.poDate || new Date(),
           latestSafeDispatchDate: row.expiryDate,
         }),
+        { transaction: false },
       );
     } else {
       po.lastBulkBatchId = batch.id;
       if (row.appointmentStatus) po.appointmentStatusRaw = row.appointmentStatus;
       if (row.deliveryStatus) po.deliveryStatusRaw = row.deliveryStatus;
       if (row.poStatus) po.poStatusRaw = row.poStatus;
-      await this.poRepository.save(po);
+      await this.poRepository.save(po, { transaction: false });
     }
 
     // Location Master traceability - an unmatched warehouse defaults to NON_LOCAL
@@ -107,12 +116,23 @@ export class POCompilationService {
     await this.applyDispatchSignal(po.id, row);
     await this.applyDeliverySignal(po.id, row, line);
 
-    await this.recalculatePoValue(po.id);
+    await this.recalculatePoValue(po.id, po);
 
-    await this.poService.recomputeStatus(po.id);
-    await this.poService.recomputeRisk(po.id);
-    await this.poService.recomputeDispatchPlan(po.id);
-    await this.applyFulfilmentStatus(po.id, row);
+    // Loaded once and reused across every recompute below, instead of each of
+    // them separately re-fetching the same PO/appointment/dispatch/logistics/GRN
+    // rows - against a remote database this was most of a bulk import's cost.
+    const [appointment, dispatch, logistics, grn] = await Promise.all([
+      this.appointmentRepository.findOneBy({ poId: po.id }),
+      this.dispatchRepository.findOneBy({ poId: po.id }),
+      this.logisticsRepository.findOneBy({ poId: po.id }),
+      this.grnRepository.findOneBy({ poId: po.id }),
+    ]);
+    const preloaded = { po, appointment, dispatch, logistics, grn };
+
+    await this.poService.recomputeStatus(po.id, preloaded);
+    await this.poService.recomputeRisk(po.id, preloaded);
+    await this.poService.recomputeDispatchPlan(po.id, preloaded);
+    await this.applyFulfilmentStatus(row, po, line, appointment, dispatch);
 
     return { poId: po.id, created };
   }
@@ -172,7 +192,7 @@ export class POCompilationService {
       line.availability = delivered >= ordered ? 'AVAILABLE' : delivered > 0 ? 'SHORT' : line.availability;
     }
 
-    return this.lineRepository.save(line);
+    return this.lineRepository.save(line, { transaction: false });
   }
 
   private async upsertAppointment(poId: string, row: BulkPOProcessedRowEntity, batch: UploadBatchEntity, userId: string) {
@@ -194,7 +214,7 @@ export class POCompilationService {
     }
     appt.appointmentDate = row.appointmentDate;
     appt.confirmedAt = appt.confirmedAt || new Date();
-    await this.appointmentRepository.save(appt);
+    await this.appointmentRepository.save(appt, { transaction: false });
   }
 
   private async applyDispatchSignal(poId: string, row: BulkPOProcessedRowEntity) {
@@ -202,7 +222,7 @@ export class POCompilationService {
     const dispatch = await this.dispatchRepository.findOneBy({ poId });
     if (dispatch && !dispatch.actualDispatchDate) {
       dispatch.actualDispatchDate = row.poDate || new Date();
-      await this.dispatchRepository.save(dispatch);
+      await this.dispatchRepository.save(dispatch, { transaction: false });
     }
   }
 
@@ -225,39 +245,48 @@ export class POCompilationService {
       logistics.lastTrackedStatus = 'DELIVERED';
       logistics.lastUpdateTime = new Date();
     }
-    await this.logisticsRepository.save(logistics);
+    await this.logisticsRepository.save(logistics, { transaction: false });
 
     const existingGrn = await this.grnRepository.findOneBy({ poId });
     if (!existingGrn) {
-      await this.grnRepository.save(this.grnRepository.create({ poId, slaStatus: 'ON_TIME' }));
+      await this.grnRepository.save(this.grnRepository.create({ poId, slaStatus: 'ON_TIME' }), { transaction: false });
     }
   }
 
-  private async recalculatePoValue(poId: string) {
+  // Mutates `po.poValue` in memory too, not just the DB row - compileRow passes
+  // this same po object into recomputeStatus/recomputeRisk right after, which
+  // save() the whole entity back; without this they'd overwrite the total just
+  // written here with the stale value po was holding before this ran.
+  private async recalculatePoValue(poId: string, po: POMasterEntity) {
     const lines = await this.lineRepository.find({ where: { poId } });
     const total = lines.reduce((sum, l) => sum + (Number(l.lineValue) || 0), 0);
     if (total > 0) {
       await this.poRepository.update(poId, { poValue: total });
+      po.poValue = total;
     }
   }
 
-  private async applyFulfilmentStatus(poId: string, row: BulkPOProcessedRowEntity) {
-    const po = await this.poRepository.findOneBy({ id: poId });
-    const line = await this.lineRepository.findOne({ where: { poId, skuCode: row.skuCode } });
-    const appointment = await this.appointmentRepository.findOneBy({ poId });
-    const dispatch = await this.dispatchRepository.findOneBy({ poId });
-
+  // Takes every row already loaded by the caller (compileRow) instead of
+  // re-fetching po/line/appointment/dispatch itself - only call site is
+  // compileRow, so its signature is free to shape around that.
+  private async applyFulfilmentStatus(
+    row: BulkPOProcessedRowEntity,
+    po: POMasterEntity,
+    line: POLineItemEntity,
+    appointment: AppointmentEntity | null,
+    dispatch: DispatchEntity | null,
+  ) {
     const fulfilmentStatus = this.fulfilmentStatusEngine.compute({
       orderedQty: Number(line?.quantity) || 0,
       deliveredQty: Number(line?.deliveredQuantity) || 0,
       pendingQty: Number(line?.pendingQuantity) || 0,
-      poExpiryDate: po!.poExpiryDate,
+      poExpiryDate: po.poExpiryDate,
       appointmentDate: appointment?.appointmentDate,
       dispatchPlanStatus: dispatch?.dispatchPlanStatus,
       poCancelled: (row.poStatus || '').toLowerCase().includes('cancel'),
     });
 
-    await this.poRepository.update(poId, { fulfilmentStatus });
+    await this.poRepository.update(po.id, { fulfilmentStatus });
   }
 
   private async trackChange(
@@ -281,6 +310,7 @@ export class POCompilationService {
         sourceFileName: batch.fileName,
         changedByUserId: userId,
       }),
+      { transaction: false },
     );
   }
 }

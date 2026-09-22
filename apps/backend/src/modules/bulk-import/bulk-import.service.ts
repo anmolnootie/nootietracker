@@ -162,7 +162,7 @@ export class BulkImportService {
       for (let i = 0; i < rows.length; i++) {
         if (i > 0 && (i % 25 === 0 || Date.now() - lastFlush > 5000)) await flushProgress(i);
 
-        const rawRow = await this.rawRepository.save(this.rawRepository.create({ batchId: batch.id, rowIndex: i, rawData: rows[i] }));
+        const rawRow = await this.rawRepository.save(this.rawRepository.create({ batchId: batch.id, rowIndex: i, rawData: rows[i] }), { transaction: false });
 
         const cleaning = this.dataCleaning.clean(rows[i], mapping, platform);
         if (cleaning.isBlank) continue; // RAW row is preserved above; nothing further to process
@@ -174,9 +174,16 @@ export class BulkImportService {
           if (!maxDate || cleaning.cleaned.poDate > maxDate) maxDate = cleaning.cleaned.poDate;
         }
 
+        // Looked up once here, reused by both classify() and compileRow() right
+        // below - they used to each look this exact PO up separately.
+        const existingPo =
+          cleaning.status !== 'INVALID' && cleaning.cleaned.poNumber
+            ? await this.poRepository.findOne({ where: { poNumber: cleaning.cleaned.poNumber, channelId: cleaning.cleaned.platform } })
+            : null;
+
         let dedup: { classification: DedupClassification; matchedPoId?: string } = { classification: DedupClassification.NEW };
         if (cleaning.status !== 'INVALID') {
-          dedup = await this.duplicateDetection.classify(cleaning.cleaned, seenInBatch);
+          dedup = await this.duplicateDetection.classify(cleaning.cleaned, seenInBatch, existingPo);
         }
 
         const processedRow = await this.processedRepository.save(
@@ -210,6 +217,7 @@ export class BulkImportService {
             dedupClassification: dedup.classification,
             matchedPoId: dedup.matchedPoId,
           }),
+          { transaction: false },
         );
 
         if (cleaning.issues.length > 0) {
@@ -254,9 +262,9 @@ export class BulkImportService {
         }
 
         try {
-          const { poId, created } = await this.compilation.compileRow(processedRow, batch, uploadedByUserId);
+          const { poId, created } = await this.compilation.compileRow(processedRow, batch, uploadedByUserId, existingPo);
           processedRow.matchedPoId = poId; // always set post-compile, so every master record traces back to its rows
-          await this.processedRepository.save(processedRow);
+          await this.processedRepository.save(processedRow, { transaction: false });
           if (created) newCount++;
           else updatedCount++;
           await this.reconciliation.reconcileRow(processedRow, batch.id);
@@ -486,7 +494,10 @@ export class BulkImportService {
       };
     }
 
-    const dedup = await this.duplicateDetection.classify(cleaning.cleaned, new Set());
+    const existingPo = cleaning.cleaned.poNumber
+      ? await this.poRepository.findOne({ where: { poNumber: cleaning.cleaned.poNumber, channelId: cleaning.cleaned.platform } })
+      : null;
+    const dedup = await this.duplicateDetection.classify(cleaning.cleaned, new Set(), existingPo);
     processedRow.dedupClassification = dedup.classification;
 
     if (dedup.classification === DedupClassification.EXACT_DUPLICATE) {
@@ -495,7 +506,7 @@ export class BulkImportService {
       return { success: true, message: 'This now matches existing data exactly - nothing new was compiled.', processedRow };
     }
 
-    const { poId } = await this.compilation.compileRow(processedRow, batch, userId);
+    const { poId } = await this.compilation.compileRow(processedRow, batch, userId, existingPo);
     processedRow.matchedPoId = poId;
     await this.processedRepository.save(processedRow);
     await this.reconciliation.reconcileRow(processedRow, batch.id);

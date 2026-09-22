@@ -23,8 +23,17 @@ export interface ApprovePendingLocationInput {
   tatRuleDescription?: string;
 }
 
+// The Location Master rarely changes but classify() is called at least once,
+// often several times, per row of a bulk import - a full table scan each time
+// against a remote database was most of that cost. Cached briefly and
+// invalidated on any write, so an edit is picked up within seconds rather than
+// waiting out a longer TTL, while a single import run reuses one fetch.
+const ACTIVE_LOCATIONS_CACHE_MS = 15_000;
+
 @Injectable()
 export class LocationsService {
+  private activeLocationsCache: { rows: LocationMasterEntity[]; fetchedAt: number } | null = null;
+
   constructor(
     @InjectRepository(LocationMasterEntity)
     private readonly locationRepository: Repository<LocationMasterEntity>,
@@ -33,15 +42,25 @@ export class LocationsService {
     private readonly exceptionsService: ExceptionsService,
   ) {}
 
+  private async getActiveLocations(): Promise<LocationMasterEntity[]> {
+    const cached = this.activeLocationsCache;
+    if (cached && Date.now() - cached.fetchedAt < ACTIVE_LOCATIONS_CACHE_MS) return cached.rows;
+    const rows = await this.locationRepository.find({ where: { isActive: true } });
+    this.activeLocationsCache = { rows, fetchedAt: Date.now() };
+    return rows;
+  }
+
   list(): Promise<LocationMasterEntity[]> {
     return this.locationRepository.find({ order: { locationName: 'ASC' } });
   }
 
   create(data: Partial<LocationMasterEntity>): Promise<LocationMasterEntity> {
+    this.activeLocationsCache = null;
     return this.locationRepository.save(this.locationRepository.create(data));
   }
 
   async update(id: string, data: Partial<LocationMasterEntity>): Promise<LocationMasterEntity | null> {
+    this.activeLocationsCache = null;
     await this.locationRepository.update(id, data);
     return this.locationRepository.findOneBy({ id });
   }
@@ -55,7 +74,7 @@ export class LocationsService {
    */
   async classify(rawLocationName: string): Promise<{ location: LocationMasterEntity | null; matched: boolean }> {
     if (!rawLocationName) return { location: null, matched: false };
-    const all = await this.locationRepository.find({ where: { isActive: true } });
+    const all = await this.getActiveLocations();
     const target = normalize(rawLocationName);
 
     const exact = all.find(

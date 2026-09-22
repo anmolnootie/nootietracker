@@ -225,9 +225,9 @@ export class POService {
    * previously-stored dispatch date as final, since expiry, location, or TAT
    * config can all change after the fact.
    */
-  async recomputeDispatchPlan(poId: string): Promise<void> {
-    const po = await this.getPOById(poId);
-    const dispatch = await this.dispatchRepository.findOneBy({ poId });
+  async recomputeDispatchPlan(poId: string, preloaded?: { po?: POMasterEntity; dispatch?: DispatchEntity | null }): Promise<void> {
+    const po = preloaded?.po ?? (await this.getPOById(poId));
+    const dispatch = preloaded ? preloaded.dispatch ?? null : await this.dispatchRepository.findOneBy({ poId });
     if (!dispatch) return;
 
     const { location } = await this.locationsService.classify(po.location);
@@ -261,7 +261,7 @@ export class POService {
       dispatch.dispatchVarianceLabel = null;
     }
 
-    await this.dispatchRepository.save(dispatch);
+    await this.dispatchRepository.save(dispatch, { transaction: false }); // plain single-row save, no cascade to protect
   }
 
   /**
@@ -1292,22 +1292,32 @@ export class POService {
     return { newPo: await this.getPOById(newPo.id), mapping };
   }
 
-  async recomputeStatus(poId: string): Promise<void> {
-    const po = await this.getPOById(poId);
+  /**
+   * `preloaded` lets a caller that already has these rows in memory (the bulk
+   * import pipeline, which would otherwise re-fetch the same PO/appointment/
+   * dispatch/logistics/GRN separately in each of recomputeStatus/recomputeRisk/
+   * recomputeDispatchPlan for every single row) skip the redundant round trips.
+   * Every other caller omits it and gets exactly today's fetch-fresh behaviour.
+   */
+  async recomputeStatus(
+    poId: string,
+    preloaded?: { po?: POMasterEntity; appointment?: AppointmentEntity | null; dispatch?: DispatchEntity | null; logistics?: LogisticsTrackerEntity | null; grn?: GRNTrackerEntity | null },
+  ): Promise<void> {
+    const po = preloaded?.po ?? (await this.getPOById(poId));
     if ([POStatus.RETURNED, POStatus.CANCELLED, POStatus.CLOSED].includes(po.status)) {
       return; // terminal statuses are set explicitly (e.g. by the Returns/CN flow) and never derived
     }
-    const appointment = await this.appointmentRepository.findOneBy({ poId });
-    const dispatch = await this.dispatchRepository.findOneBy({ poId });
-    const logistics = await this.logisticsRepository.findOneBy({ poId });
-    const grn = await this.grnRepository.findOneBy({ poId });
+    const appointment = preloaded ? preloaded.appointment ?? null : await this.appointmentRepository.findOneBy({ poId });
+    const dispatch = preloaded ? preloaded.dispatch ?? null : await this.dispatchRepository.findOneBy({ poId });
+    const logistics = preloaded ? preloaded.logistics ?? null : await this.logisticsRepository.findOneBy({ poId });
+    const grn = preloaded ? preloaded.grn ?? null : await this.grnRepository.findOneBy({ poId });
 
     const newStatus = this.statusEngine.deriveStatus(po, appointment ?? undefined, dispatch ?? undefined, logistics ?? undefined, grn ?? undefined);
     if (newStatus !== po.status) {
       const oldStatus = po.status;
       po.status = newStatus;
       po.lastStatusChangeAt = new Date();
-      await this.poRepository.save(po);
+      await this.poRepository.save(po, { transaction: false });
       await this.auditLogRepository.save(
         this.auditLogRepository.create({
           tableName: 'po_master',
@@ -1317,14 +1327,15 @@ export class POService {
           newValue: newStatus,
           userId: 'system',
         }),
+        { transaction: false },
       );
     }
   }
 
-  async recomputeRisk(poId: string): Promise<void> {
-    const po = await this.getPOById(poId);
+  async recomputeRisk(poId: string, preloaded?: { po?: POMasterEntity; dispatch?: DispatchEntity | null }): Promise<void> {
+    const po = preloaded?.po ?? (await this.getPOById(poId));
     const daysToExpiry = this.riskEngine.getDaysToExpiry(po.poExpiryDate);
-    const dispatch = await this.dispatchRepository.findOneBy({ poId });
+    const dispatch = preloaded ? preloaded.dispatch ?? null : await this.dispatchRepository.findOneBy({ poId });
     const hasDelays = !!dispatch && dispatch.latestSafeDispatchDate < new Date() && !dispatch.actualDispatchDate;
 
     const { riskStatus, priorityScore } = this.riskEngine.computeRisk(
@@ -1346,6 +1357,7 @@ export class POService {
           newValue: riskStatus,
           userId: 'system',
         }),
+        { transaction: false },
       );
       if ([RiskStatus.RED, RiskStatus.BLACK].includes(riskStatus)) {
         await this.notificationsService.notify({
@@ -1360,7 +1372,7 @@ export class POService {
 
     po.riskStatus = riskStatus;
     po.priorityScore = priorityScore;
-    await this.poRepository.save(po);
+    await this.poRepository.save(po, { transaction: false });
   }
 
   async getDashboardMetrics(): Promise<any> {

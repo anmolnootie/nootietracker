@@ -32,14 +32,16 @@ export class DuplicateDetectionService {
    * resolves to an existing line item, compare quantities/status/appointment to
    * tell an EXACT_DUPLICATE (nothing changed) from an UPDATED PO (something did).
    */
-  async classify(cleaned: CleanedRow, seenInBatch: Set<string>): Promise<DedupResult> {
+  // `po` is looked up once by the caller and reused for compileRow right after -
+  // this and compileRow used to each do their own identical findOne(), doubling
+  // that round trip on every single row.
+  async classify(cleaned: CleanedRow, seenInBatch: Set<string>, po: POMasterEntity | null): Promise<DedupResult> {
     if (!cleaned.poNumber || !cleaned.skuCode) {
       return { classification: DedupClassification.POSSIBLE_DUPLICATE };
     }
 
     const key = `${cleaned.platform || ''}::${cleaned.poNumber}::${cleaned.skuCode}::${cleaned.warehouse || ''}`;
 
-    const po = await this.poRepository.findOne({ where: { poNumber: cleaned.poNumber, channelId: cleaned.platform } });
     if (!po) {
       seenInBatch.add(key);
       return { classification: DedupClassification.NEW };
