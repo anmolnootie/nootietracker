@@ -24,7 +24,10 @@ export default function GoogleSheetsUpload() {
   const lastSync = batches.find((b) => b.fileName === 'Google Sheet sync');
   const script = APPS_SCRIPT.replace('__ENDPOINT__', endpoint);
 
+  const endpointIsBroken = endpoint.includes('localhost');
+
   const copyScript = async () => {
+    if (endpointIsBroken) return; // never let a broken (localhost) endpoint get copied into the sheet
     try {
       await navigator.clipboard.writeText(script);
       setCopied(true);
@@ -185,13 +188,22 @@ export default function GoogleSheetsUpload() {
           <p className="text-xs text-gray-500 mt-3">
             Tip: format the PO Number and Invoice Number columns as <b>Plain text</b> in the sheet - numbers over 15 digits lose their last digits in any spreadsheet.
           </p>
-          {endpoint.includes('localhost') && (
-            <p className="text-xs text-red-600 mt-2">
-              This address is localhost, which Google can&apos;t reach. Use the script from the deployed site (app.mynootie.com) so it points at your live server.
+          {endpointIsBroken && (
+            <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded px-3 py-2 mt-2 font-medium">
+              ⚠️ This page doesn&apos;t know its own server address (the <code className="bg-white px-1 rounded">NEXT_PUBLIC_API_URL</code> environment
+              variable isn&apos;t set for this deployment, or it was set after the last build - Next.js only reads it at build time). The script below would
+              point Google at "localhost", which fails silently. Copying is disabled until this is fixed: set{' '}
+              <code className="bg-white px-1 rounded">NEXT_PUBLIC_API_URL</code> to the backend&apos;s public URL on the <b>frontend</b> Railway service, then
+              redeploy the frontend.
             </p>
           )}
           <div className="relative mt-4">
-            <button onClick={copyScript} className="absolute top-2 right-2 text-xs px-2 py-1 rounded bg-white border border-gray-300 text-gray-600 hover:bg-gray-50">
+            <button
+              onClick={copyScript}
+              disabled={endpointIsBroken}
+              title={endpointIsBroken ? 'Fix NEXT_PUBLIC_API_URL first - see the warning above' : undefined}
+              className="absolute top-2 right-2 text-xs px-2 py-1 rounded bg-white border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white"
+            >
               {copied ? 'Copied' : 'Copy script'}
             </button>
             <pre className="bg-gray-50 border rounded-lg p-4 text-xs overflow-x-auto text-gray-800 whitespace-pre">{script}</pre>

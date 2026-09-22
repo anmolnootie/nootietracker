@@ -49,6 +49,34 @@ PARTNERSBIZ_API_KEY=<from Blinkit, once issued>
 SHEET_SYNC_KEY=<long random secret; same value goes in the Google Sheet's Apps Script - leave unset to disable the sync>
 ```
 
+### Google Sheets auto-sync (Apps Script) setup
+The Master Dispatch & GRN Tracker sheet pushes its rows to the backend on a timer via a
+small Apps Script bound to the sheet (Extensions → Apps Script). Three things have to be
+right, and **all three fail silently** - a broken sync doesn't error anywhere visible, it
+just stops updating the app:
+
+1. **`ENDPOINT` must be the live public backend URL, never `localhost`.** Apps Script runs
+   on Google's own servers, not on your machine - `http://localhost:8001/...` means
+   *Google's* localhost, which has nothing listening on it, so every sync attempt fails.
+   Use the real domain instead (Railway → backend service → Settings → Networking →
+   Public Domain), e.g.:
+   ```js
+   const ENDPOINT = 'https://api.mynootie.com/webhooks/google-sheets/tracker';
+   ```
+2. **`SYNC_KEY` in the script must exactly match `SHEET_SYNC_KEY`** set on the backend
+   service above. A mismatch gets a 401 "Invalid sync key" - the sheet won't tell you this,
+   only the backend logs (or the Google Sheets Upload page's history) will show it.
+3. **A time-based trigger must exist** for `syncTracker()` - Apps Script editor → Triggers
+   (clock icon, left sidebar). Without one, the script only ever runs when someone opens
+   the editor and clicks Run manually.
+
+To sanity-check the endpoint is reachable at all (a 401 with a JSON body means the backend
+is up and the route exists - a connection failure or 404 means the URL is wrong):
+```bash
+curl -X POST https://api.mynootie.com/webhooks/google-sheets/tracker \
+  -H "Content-Type: application/json" -d '{"rows":[]}'
+```
+
 ### Env vars - worker
 Same as backend, except:
 ```
