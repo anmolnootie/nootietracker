@@ -102,6 +102,18 @@ const ENTITIES = [
           migrations: isProduction ? [__dirname + '/migrations/*.{ts,js}'] : undefined,
           ssl: configService.get('DATABASE_SSL') === 'true' ? { rejectUnauthorized: false } : false,
           logging: process.env.NODE_ENV === 'development',
+          // Unset, this defaults to 10 (the pg driver's own default) - fine
+          // alone, but the backend ("web") and worker are two separate
+          // Railway services each holding their own pool against the SAME
+          // database. Supabase's Session Pooler here has a hard cap of 15
+          // connections shared across every client that connects to it -
+          // two unbounded pools of 10 can add up to 20 and get refused,
+          // which is exactly what killed a bulk import partway through
+          // ("(EMAXCONNSESSION) max clients reached ... pool_size: 15").
+          // 5 per service leaves headroom for the Supabase dashboard or a
+          // one-off script; override with DATABASE_POOL_MAX if this ever
+          // needs to change (e.g. after moving off the Session Pooler).
+          extra: { max: Number(configService.get('DATABASE_POOL_MAX', 5)) },
         };
       },
     }),

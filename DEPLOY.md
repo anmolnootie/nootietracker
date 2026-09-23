@@ -11,6 +11,13 @@ All three Railway services build from this repo using the existing `Dockerfile.b
 
 ## 1. Supabase setup (done)
 - Database: Session pooler, `aws-0-ap-south-1.pooler.supabase.com:5432`, database `postgres` - migrated and verified (29 tables).
+  **Hard cap of 15 concurrent connections, shared across every client that connects to it** - the backend and worker
+  are two separate Railway services, each keeping its own pool; both must stay well under that cap between them, or a
+  long-running bulk import (many sequential queries, holding the pool busy for minutes) can collide with the worker's
+  own background sweeps and get refused mid-import (`(EMAXCONNSESSION) max clients reached ... pool_size: 15`, an
+  import stopping partway through with no rows lost, just not finishing). `DATABASE_POOL_MAX` below caps each
+  service's own pool (default 5) - 5 + 5 = 10, leaving headroom for the Supabase dashboard or a one-off script. Don't
+  raise it without lowering the other service or moving off the Session Pooler.
 - Storage bucket: `PO Files` (yes, with a space - the S3-compatible client uses path-style addressing so this works, verified with a live put/get/delete round trip).
 - S3 endpoint: `https://xcjrvrnpfvstfpxskfmm.storage.supabase.co/storage/v1/s3`, region `ap-south-1`.
 - Access key ID / secret: generated in Supabase → not written here, set directly in Railway's env var UI (see below).
@@ -37,6 +44,7 @@ DATABASE_USER=postgres.xcjrvrnpfvstfpxskfmm
 DATABASE_PASSWORD=<supabase db password - shared in chat, not repeated here>
 DATABASE_NAME=postgres
 DATABASE_SSL=true
+DATABASE_POOL_MAX=5
 JWT_SECRET=<generate a strong one - see below>
 JWT_EXPIRATION=24h
 FRONTEND_URL=https://<your-frontend-domain>
