@@ -11,7 +11,9 @@ const VALUE_COLOR = '#E8862A';
 const COUNT_COLOR = '#1F4E79';
 
 const KPI_TITLES: Record<DispatchKpi, string> = {
-  all: 'All POs',
+  totalPOs: 'All POs this FY, dispatched or not',
+  dispatched: 'Dispatched POs',
+  notFulfilled: 'Not fulfilled',
   delivered: 'Delivered POs',
   inTransit: 'POs in transit',
   grnDone: 'GRN done',
@@ -125,12 +127,21 @@ export default function DispatchDashboard() {
       ) : (
         <div className={`transition-opacity ${loading ? 'opacity-60' : ''}`}>
           {/* KPI tiles */}
-          <div className="grid grid-cols-2 lg:grid-cols-6 gap-3 bg-gray-100 p-3">
-            <Kpi icon="📋" label="Total POs" value={data.kpis.totalPOs.toLocaleString('en-IN')} hint="Click to list these POs" onClick={() => setListKpi('all')} active={listKpi === 'all'} />
+          <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-8 gap-3 bg-gray-100 p-3">
+            <Kpi
+              icon="📋"
+              label="Total POs"
+              value={data.kpis.totalPOs.toLocaleString('en-IN')}
+              hint="Every PO this FY, whether it's shipped yet or not - click to list them"
+              onClick={() => setListKpi('totalPOs')}
+              active={listKpi === 'totalPOs'}
+            />
+            <Kpi icon="🚀" label="Dispatched" value={data.kpis.dispatched.toLocaleString('en-IN')} hint="Click to list these POs" onClick={() => setListKpi('dispatched')} active={listKpi === 'dispatched'} />
             <Kpi icon="🚚" label="Delivered" value={data.kpis.delivered.toLocaleString('en-IN')} hint="Click to list these POs" onClick={() => setListKpi('delivered')} active={listKpi === 'delivered'} />
             <Kpi icon="📦" label="In Transit" value={data.kpis.inTransit.toLocaleString('en-IN')} hint="Click to list these POs" onClick={() => setListKpi('inTransit')} active={listKpi === 'inTransit'} />
             <Kpi icon="✅" label="GRN Done" value={data.kpis.grnDone.toLocaleString('en-IN')} hint="Click to list these POs" onClick={() => setListKpi('grnDone')} active={listKpi === 'grnDone'} />
             <Kpi icon="⚠️" label="GRN Pending" value={data.kpis.grnPending.toLocaleString('en-IN')} hint="Delivered, no GRN yet - click to list these POs" onClick={() => setListKpi('grnPending')} active={listKpi === 'grnPending'} />
+            <Kpi icon="🛑" label="Not Fulfilled" value={data.kpis.notFulfilled.toLocaleString('en-IN')} hint="Click to list these POs" onClick={() => setListKpi('notFulfilled')} active={listKpi === 'notFulfilled'} />
             <Kpi
               icon="💰"
               label="Invoice Value"
@@ -189,7 +200,7 @@ export default function DispatchDashboard() {
                   <table className="w-full text-sm">
                     <thead className="sticky top-0 bg-white shadow-[0_1px_0_#e5e7eb]">
                       <tr className="text-left text-xs text-gray-600">
-                        {['PO Number', 'Location/Hub', 'Channel', 'Dispatched', 'Invoice No.', 'Invoice Value', 'Delivery Partner', 'AWB', 'Status', 'GRN'].map((h) => (
+                        {['PO Number', 'Location/Hub', 'Channel', 'Dispatched', 'Invoice No.', 'Invoice Value', 'Delivery Partner', 'AWB', 'Status', 'Fulfilment', 'GRN'].map((h) => (
                           <th key={h} className="px-3 py-2 font-medium whitespace-nowrap">{h}</th>
                         ))}
                       </tr>
@@ -202,18 +213,19 @@ export default function DispatchDashboard() {
                           </td>
                           <td className="px-3 py-2 whitespace-nowrap text-gray-700">{r.location}</td>
                           <td className="px-3 py-2 whitespace-nowrap text-gray-700">{r.channel}</td>
-                          <td className="px-3 py-2 whitespace-nowrap text-gray-600">{format(new Date(r.dispatchDate), 'dd MMM yy')}</td>
+                          <td className="px-3 py-2 whitespace-nowrap text-gray-600">{r.dispatchDate ? format(new Date(r.dispatchDate), 'dd MMM yy') : '-'}</td>
                           <td className="px-3 py-2 whitespace-nowrap text-gray-600">{r.invoiceNumber || '-'}</td>
                           <td className="px-3 py-2 whitespace-nowrap text-right tabular-nums">{inr(r.invoiceValue)}</td>
                           <td className="px-3 py-2 whitespace-nowrap text-gray-700">{r.partner}</td>
                           <td className="px-3 py-2 whitespace-nowrap text-gray-600">{r.awb || '-'}</td>
                           <td className="px-3 py-2 whitespace-nowrap"><StatusPill status={r.status} /></td>
+                          <td className="px-3 py-2 whitespace-nowrap text-gray-600">{r.fulfilment}</td>
                           <td className="px-3 py-2 whitespace-nowrap text-gray-600">{r.grn}</td>
                         </tr>
                       ))}
                       {data.table.rows.length === 0 && (
                         <tr>
-                          <td colSpan={10} className="px-3 py-10 text-center text-gray-500">No dispatched POs match these filters.</td>
+                          <td colSpan={11} className="px-3 py-10 text-center text-gray-500">No dispatched POs match these filters.</td>
                         </tr>
                       )}
                     </tbody>
@@ -345,7 +357,7 @@ const PoListModal: React.FC<{
             <table className="w-full text-sm">
               <thead className="sticky top-0 bg-white shadow-[0_1px_0_#e5e7eb]">
                 <tr className="text-left text-xs text-gray-600">
-                  {['PO Number', 'Location/Hub', 'Channel', 'Dispatched', 'Invoice No.', 'Invoice Value', 'Delivery Partner', 'AWB', 'Status', 'GRN'].map((h) => (
+                  {['PO Number', 'Location/Hub', 'Channel', 'Dispatched', 'Invoice No.', 'Invoice Value', 'Delivery Partner', 'AWB', 'Status', 'Fulfilment', 'GRN'].map((h) => (
                     <th key={h} className="px-3 py-2 font-medium whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
@@ -358,18 +370,19 @@ const PoListModal: React.FC<{
                     </td>
                     <td className="px-3 py-2 whitespace-nowrap text-gray-700">{r.location}</td>
                     <td className="px-3 py-2 whitespace-nowrap text-gray-700">{r.channel}</td>
-                    <td className="px-3 py-2 whitespace-nowrap text-gray-600">{format(new Date(r.dispatchDate), 'dd MMM yy')}</td>
+                    <td className="px-3 py-2 whitespace-nowrap text-gray-600">{r.dispatchDate ? format(new Date(r.dispatchDate), 'dd MMM yy') : '-'}</td>
                     <td className="px-3 py-2 whitespace-nowrap text-gray-600">{r.invoiceNumber || '-'}</td>
                     <td className="px-3 py-2 whitespace-nowrap text-right tabular-nums">{inr(r.invoiceValue)}</td>
                     <td className="px-3 py-2 whitespace-nowrap text-gray-700">{r.partner}</td>
                     <td className="px-3 py-2 whitespace-nowrap text-gray-600">{r.awb || '-'}</td>
                     <td className="px-3 py-2 whitespace-nowrap"><StatusPill status={r.status} /></td>
+                    <td className="px-3 py-2 whitespace-nowrap text-gray-600">{r.fulfilment}</td>
                     <td className="px-3 py-2 whitespace-nowrap text-gray-600">{r.grn}</td>
                   </tr>
                 ))}
                 {rows.length === 0 && (
                   <tr>
-                    <td colSpan={10} className="px-3 py-10 text-center text-gray-500">{q ? 'No POs match that search.' : 'No POs here.'}</td>
+                    <td colSpan={11} className="px-3 py-10 text-center text-gray-500">{q ? 'No POs match that search.' : 'No POs here.'}</td>
                   </tr>
                 )}
               </tbody>

@@ -31,6 +31,29 @@ interface Row {
   grnOutcome: string | null;
   monthKey: string;
   aging: string;
+  fulfilmentDecision: string;
+}
+
+// The broader population behind Total POs/Dispatched/Not Fulfilled: every PO
+// for the FY (by PO Date, since that's the one date every PO has), whether or
+// not it's shipped yet - unlike Row above, which only ever holds POs that
+// already have a real dispatch date.
+interface AllPoRow {
+  id: string;
+  poNumber: string;
+  channel: string;
+  location: string;
+  poDate: Date;
+  dispatchDate: Date | null;
+  invoiceNumber: string | null;
+  invoiceValue: number;
+  awb: string | null;
+  partner: string;
+  status: string;
+  grnDone: boolean;
+  grnOutcome: string | null;
+  dispatched: boolean;
+  fulfilmentDecision: string;
 }
 
 const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -80,6 +103,17 @@ function normalizePartner(raw: string | null): string {
   return s ? s.charAt(0).toUpperCase() + s.slice(1) : 'Not assigned';
 }
 
+// For a PO that hasn't been dispatched yet, normalizeStatus's fallback chain
+// assumes a dispatch already happened (it was only ever fed rows that have
+// one) - so RECEIVED/APPOINTMENT_REQUESTED/etc. would wrongly fall through to
+// "Dispatched". This covers every POStatus value directly instead.
+function prettifyPoStatus(poStatus: string): string {
+  return poStatus
+    .split('_')
+    .map((w) => w.charAt(0) + w.slice(1).toLowerCase())
+    .join(' ');
+}
+
 function fyStartYear(d: Date): number {
   return d.getMonth() >= 3 ? d.getFullYear() : d.getFullYear() - 1;
 }
@@ -92,6 +126,41 @@ function formatIST(date: Date | null | undefined): string {
 }
 
 const GRAND_TOTAL_FILL: ExcelJS.Fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF2F2F2' } };
+
+// Shared by both the dispatch-scoped (Row) and all-POs (AllPoRow) export
+// paths - both carry these same fields, just with dispatchDate/partner/awb
+// possibly null on the latter (a PO that hasn't shipped yet).
+function toExportRow(r: {
+  poNumber: string;
+  location: string;
+  channel: string;
+  dispatchDate: Date | null;
+  invoiceNumber: string | null;
+  invoiceValue: number;
+  partner: string;
+  awb: string | null;
+  status: string;
+  grnDone: boolean;
+  grnOutcome: string | null;
+  fulfilmentDecision: string;
+}) {
+  return {
+    poNumber: r.poNumber,
+    location: r.location,
+    channel: r.channel,
+    dispatchDate: formatIST(r.dispatchDate),
+    invoiceNumber: r.invoiceNumber || '',
+    invoiceValue: r.invoiceValue,
+    partner: r.partner,
+    awb: r.awb || '',
+    status: r.status,
+    grn: r.grnDone ? (r.grnOutcome ?? 'Done') : r.status === 'Delivered' ? 'Pending' : '-',
+    fulfilment: fulfilmentLabel(r.fulfilmentDecision),
+    // Same flag the dashboard shows with a ⚠️ - a GRN recorded while the
+    // status still isn't Delivered means the status cell is stale.
+    note: r.grnDone && r.status !== 'Delivered' ? `GRN recorded but status still "${r.status}" - check the source sheet` : '',
+  };
+}
 
 type Dim = 'channel' | 'month' | 'status' | 'partner' | 'aging';
 
@@ -113,11 +182,17 @@ const rowsMatching = (rows: Row[], active: Record<Dim, string | undefined>, exce
   });
 
 /** The headline tiles, each of which opens the list of POs behind its number. */
-export type DispatchKpi = 'all' | 'delivered' | 'inTransit' | 'grnDone' | 'grnPending' | 'invoiceValue';
-export const DISPATCH_KPIS: DispatchKpi[] = ['all', 'delivered', 'inTransit', 'grnDone', 'grnPending', 'invoiceValue'];
+export type DispatchKpi = 'totalPOs' | 'dispatched' | 'notFulfilled' | 'delivered' | 'inTransit' | 'grnDone' | 'grnPending' | 'invoiceValue';
+export const DISPATCH_KPIS: DispatchKpi[] = ['totalPOs', 'dispatched', 'notFulfilled', 'delivered', 'inTransit', 'grnDone', 'grnPending', 'invoiceValue'];
 
-const KPI_PREDICATES: Record<DispatchKpi, (r: Row) => boolean> = {
-  all: () => true,
+type RowKpi = 'delivered' | 'inTransit' | 'grnDone' | 'grnPending' | 'invoiceValue';
+type AllPoKpi = 'totalPOs' | 'dispatched' | 'notFulfilled';
+
+function isAllPoKpi(kpi: DispatchKpi): kpi is AllPoKpi {
+  return kpi === 'totalPOs' || kpi === 'dispatched' || kpi === 'notFulfilled';
+}
+
+const KPI_PREDICATES: Record<RowKpi, (r: Row) => boolean> = {
   delivered: (r) => r.status === 'Delivered',
   inTransit: (r) => r.status === 'In Transit',
   grnDone: (r) => r.grnDone,
@@ -125,9 +200,20 @@ const KPI_PREDICATES: Record<DispatchKpi, (r: Row) => boolean> = {
   invoiceValue: () => true,
 };
 
+// Total POs/Dispatched/Not Fulfilled only ever honour the Channel filter (see
+// loadAllPOs's comment), so their list view does the same - never the
+// dispatch-only dimensions (month/status/partner/aging).
+const ALL_PO_PREDICATES: Record<AllPoKpi, (r: AllPoRow) => boolean> = {
+  totalPOs: () => true,
+  dispatched: (r) => r.dispatched,
+  notFulfilled: (r) => r.fulfilmentDecision === 'NOT_FULFILLED',
+};
+
 // The list is for reading down and searching, so it isn't capped at the 300 the
 // dashboard table shows - but a ceiling keeps one request bounded.
 const KPI_LIST_LIMIT = 5000;
+
+const fulfilmentLabel = (d: string) => (d === 'NOT_FULFILLED' ? 'Not Fulfilled' : 'Fulfilled');
 
 const toTableRow = (r: Row) => ({
   id: r.id,
@@ -146,6 +232,25 @@ const toTableRow = (r: Row) => ({
   // stale, not that goods were GRN'd mid-transit - flag it for someone to fix
   // at the source rather than silently reinterpreting the status here.
   grnStatusMismatch: r.grnDone && r.status !== 'Delivered',
+  fulfilment: fulfilmentLabel(r.fulfilmentDecision),
+});
+
+// Same shape as toTableRow, but for the broader all-POs population - dates
+// and dispatch-only fields (partner/AWB) can genuinely be absent here.
+const toAllPoTableRow = (r: AllPoRow) => ({
+  id: r.id,
+  poNumber: r.poNumber,
+  location: r.location,
+  channel: r.channel,
+  dispatchDate: r.dispatchDate,
+  invoiceNumber: r.invoiceNumber,
+  invoiceValue: r.invoiceValue,
+  partner: r.partner,
+  awb: r.awb,
+  status: r.status,
+  grn: r.grnDone ? (r.grnOutcome ?? 'Done') : r.dispatched && r.status === 'Delivered' ? 'Pending' : '-',
+  grnStatusMismatch: r.grnDone && r.dispatched && r.status !== 'Delivered',
+  fulfilment: fulfilmentLabel(r.fulfilmentDecision),
 });
 
 @Injectable()
@@ -173,6 +278,7 @@ export class DispatchDashboardService {
       .addSelect('po.channelId', 'channel')
       .addSelect('po.location', 'location')
       .addSelect('po.status', 'poStatus')
+      .addSelect('po.fulfilmentDecision', 'fulfilmentDecision')
       .addSelect('dsp.actualDispatchDate', 'dispatchDate')
       .addSelect('dsp.invoiceNumber', 'invoiceNumber')
       .addSelect('dsp.invoiceValue', 'invoiceValue')
@@ -213,6 +319,7 @@ export class DispatchDashboardService {
         grnOutcome: r.grnOutcome || null,
         monthKey: `${dispatchDate.getFullYear()}-${String(dispatchDate.getMonth() + 1).padStart(2, '0')}`,
         aging,
+        fulfilmentDecision: r.fulfilmentDecision || 'FULFILLED',
       };
     });
 
@@ -231,6 +338,67 @@ export class DispatchDashboardService {
     });
 
     return rows;
+  }
+
+  /**
+   * Every non-deleted PO for the FY, scoped by PO Date (the one date every PO
+   * has, unlike a dispatch date which only exists once shipped) - the basis
+   * for the Total POs / Dispatched / Not Fulfilled tiles. Deliberately
+   * separate from loadRows above: every existing chart, slicer and the on-page
+   * table stay exactly as they were, built only from POs that have actually
+   * shipped, since aging/month-of-dispatch/delivery-partner don't mean
+   * anything for one that hasn't.
+   */
+  private async loadAllPOs(fy: number): Promise<AllPoRow[]> {
+    const start = new Date(fy, 3, 1);
+    const end = new Date(fy + 1, 3, 1);
+
+    const raw = await this.poRepository
+      .createQueryBuilder('po')
+      .leftJoin(DispatchEntity, 'dsp', 'dsp.poId = po.id')
+      .leftJoin(GRNTrackerEntity, 'g', 'g.poId = po.id')
+      .select('po.id', 'id')
+      .addSelect('po.poNumber', 'poNumber')
+      .addSelect('po.channelId', 'channel')
+      .addSelect('po.location', 'location')
+      .addSelect('po.status', 'poStatus')
+      .addSelect('po.poDate', 'poDate')
+      .addSelect('po.fulfilmentDecision', 'fulfilmentDecision')
+      .addSelect('dsp.actualDispatchDate', 'dispatchDate')
+      .addSelect('dsp.invoiceNumber', 'invoiceNumber')
+      .addSelect('dsp.invoiceValue', 'invoiceValue')
+      .addSelect('dsp.awbNumber', 'awb')
+      .addSelect('dsp.transporterId', 'partner')
+      .addSelect('dsp.dispatchStatus', 'dispatchStatus')
+      .addSelect('g.grnDate', 'grnDate')
+      .addSelect('g.outcome', 'grnOutcome')
+      .where('po.isDeleted = false')
+      .andWhere('po.poDate >= :start AND po.poDate < :end', { start, end })
+      .getRawMany();
+
+    return raw.map((r) => {
+      // Same minute-snap as loadRows - Google-exported dates can sit 10s
+      // before midnight.
+      const dispatchDate = r.dispatchDate ? new Date(Math.round(new Date(r.dispatchDate).getTime() / 60000) * 60000) : null;
+      const status = dispatchDate ? normalizeStatus(r.dispatchStatus, r.poStatus) : prettifyPoStatus(r.poStatus);
+      return {
+        id: r.id,
+        poNumber: r.poNumber,
+        channel: r.channel || 'Unknown',
+        location: r.location || '-',
+        poDate: new Date(r.poDate),
+        dispatchDate,
+        invoiceNumber: r.invoiceNumber || null,
+        invoiceValue: Number(r.invoiceValue) || 0,
+        awb: r.awb || null,
+        partner: dispatchDate ? normalizePartner(r.partner) : '-',
+        status,
+        grnDone: !!r.grnDate,
+        grnOutcome: r.grnOutcome || null,
+        dispatched: !!dispatchDate,
+        fulfilmentDecision: r.fulfilmentDecision || 'FULFILLED',
+      };
+    });
   }
 
   async getDashboard(filters: DispatchDashboardFilters) {
@@ -261,8 +429,18 @@ export class DispatchDashboardService {
     };
 
     const main = filtered();
+
+    // Total POs/Dispatched/Not Fulfilled come from the broader all-POs
+    // population (every PO for the FY, dispatched or not) - only the Channel
+    // filter applies to it, since Month/Status/Partner/Aging are dimensions
+    // of a dispatch that may not exist yet for every one of these POs.
+    const allPOs = await this.loadAllPOs(fy);
+    const allFiltered = active.channel ? allPOs.filter((r) => r.channel === active.channel) : allPOs;
+
     const kpis = {
-      totalPOs: main.length,
+      totalPOs: allFiltered.length,
+      dispatched: allFiltered.filter((r) => r.dispatched).length,
+      notFulfilled: allFiltered.filter((r) => r.fulfilmentDecision === 'NOT_FULFILLED').length,
       delivered: main.filter(KPI_PREDICATES.delivered).length,
       inTransit: main.filter(KPI_PREDICATES.inTransit).length,
       grnDone: main.filter(KPI_PREDICATES.grnDone).length,
@@ -323,8 +501,24 @@ export class DispatchDashboardService {
   async getKpiList(filters: DispatchDashboardFilters, kpi: DispatchKpi) {
     const now = new Date();
     const fy = this.resolveFy(filters, now);
-    const rows = await this.loadRows(fy, now);
 
+    if (isAllPoKpi(kpi)) {
+      const allPOs = await this.loadAllPOs(fy);
+      const matching = (filters.channel ? allPOs.filter((r) => r.channel === filters.channel) : allPOs).filter(ALL_PO_PREDICATES[kpi]);
+      // Undispatched POs sort by PO Date (no dispatch date to sort by); dispatched ones still go newest-first.
+      matching.sort((a, b) => (b.dispatchDate ?? b.poDate).getTime() - (a.dispatchDate ?? a.poDate).getTime());
+      return {
+        fy,
+        fyLabel: `FY ${fy}-${fy + 1}`,
+        kpi,
+        total: matching.length,
+        invoiceValue: matching.reduce((sum, r) => sum + r.invoiceValue, 0),
+        truncated: matching.length > KPI_LIST_LIMIT,
+        rows: matching.slice(0, KPI_LIST_LIMIT).map(toAllPoTableRow),
+      };
+    }
+
+    const rows = await this.loadRows(fy, now);
     const matching = rowsMatching(rows, activeFiltersOf(filters)).filter(KPI_PREDICATES[kpi]);
     // "Total Invoice Value" reads best biggest-first; everything else newest-dispatched-first.
     matching.sort((a, b) => (kpi === 'invoiceValue' ? b.invoiceValue - a.invoiceValue : 0) || b.dispatchDate.getTime() - a.dispatchDate.getTime());
@@ -349,9 +543,19 @@ export class DispatchDashboardService {
   async buildKpiListWorkbook(filters: DispatchDashboardFilters, kpi: DispatchKpi): Promise<Buffer> {
     const now = new Date();
     const fy = this.resolveFy(filters, now);
-    const rows = await this.loadRows(fy, now);
-    const matching = rowsMatching(rows, activeFiltersOf(filters)).filter(KPI_PREDICATES[kpi]);
-    matching.sort((a, b) => (kpi === 'invoiceValue' ? b.invoiceValue - a.invoiceValue : 0) || b.dispatchDate.getTime() - a.dispatchDate.getTime());
+
+    let exportRows: ReturnType<typeof toExportRow>[];
+    if (isAllPoKpi(kpi)) {
+      const allPOs = await this.loadAllPOs(fy);
+      const matching = (filters.channel ? allPOs.filter((r) => r.channel === filters.channel) : allPOs).filter(ALL_PO_PREDICATES[kpi]);
+      matching.sort((a, b) => (b.dispatchDate ?? b.poDate).getTime() - (a.dispatchDate ?? a.poDate).getTime());
+      exportRows = matching.map(toExportRow);
+    } else {
+      const rows = await this.loadRows(fy, now);
+      const matching = rowsMatching(rows, activeFiltersOf(filters)).filter(KPI_PREDICATES[kpi]);
+      matching.sort((a, b) => (kpi === 'invoiceValue' ? b.invoiceValue - a.invoiceValue : 0) || b.dispatchDate.getTime() - a.dispatchDate.getTime());
+      exportRows = matching.map(toExportRow);
+    }
 
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet('POs');
@@ -366,31 +570,18 @@ export class DispatchDashboardService {
       { header: 'AWB', key: 'awb', width: 18 },
       { header: 'Status', key: 'status', width: 14 },
       { header: 'GRN', key: 'grn', width: 12 },
+      { header: 'Fulfilment', key: 'fulfilment', width: 14 },
       { header: 'Note', key: 'note', width: 40 },
     ];
     sheet.getRow(1).font = { bold: true };
 
     let totalInvoiceValue = 0;
-    for (const r of matching) {
+    for (const r of exportRows) {
       totalInvoiceValue += r.invoiceValue;
-      sheet.addRow({
-        poNumber: r.poNumber,
-        location: r.location,
-        channel: r.channel,
-        dispatchDate: formatIST(r.dispatchDate),
-        invoiceNumber: r.invoiceNumber || '',
-        invoiceValue: r.invoiceValue,
-        partner: r.partner,
-        awb: r.awb || '',
-        status: r.status,
-        grn: r.grnDone ? (r.grnOutcome ?? 'Done') : r.status === 'Delivered' ? 'Pending' : '-',
-        // Same flag the dashboard shows with a ⚠️ - a GRN recorded while the
-        // status still isn't Delivered means the status cell is stale.
-        note: r.grnDone && r.status !== 'Delivered' ? `GRN recorded but status still "${r.status}" - check the source sheet` : '',
-      });
+      sheet.addRow(r);
     }
 
-    const totalRow = sheet.addRow({ poNumber: 'Grand Total', location: '', channel: '', dispatchDate: '', invoiceNumber: '', invoiceValue: totalInvoiceValue, partner: '', awb: '', status: '', grn: '', note: '' });
+    const totalRow = sheet.addRow({ poNumber: 'Grand Total', location: '', channel: '', dispatchDate: '', invoiceNumber: '', invoiceValue: totalInvoiceValue, partner: '', awb: '', status: '', grn: '', fulfilment: '', note: '' });
     totalRow.font = { bold: true };
     totalRow.eachCell((cell) => (cell.fill = GRAND_TOTAL_FILL));
 

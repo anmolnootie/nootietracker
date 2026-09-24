@@ -45,20 +45,23 @@ export interface DispatchDashboardParams {
   aging?: string;
 }
 
-export type DispatchKpi = 'all' | 'delivered' | 'inTransit' | 'grnDone' | 'grnPending' | 'invoiceValue';
+export type DispatchKpi = 'totalPOs' | 'dispatched' | 'notFulfilled' | 'delivered' | 'inTransit' | 'grnDone' | 'grnPending' | 'invoiceValue';
 
 export interface DispatchDashboardListRow {
   id: string;
   poNumber: string;
   location: string;
   channel: string;
-  dispatchDate: string;
+  // null for a PO the "Total POs"/"Not Fulfilled" lists include that hasn't
+  // been dispatched yet - every other list's rows always have a real date.
+  dispatchDate: string | null;
   invoiceNumber: string | null;
   invoiceValue: number;
   partner: string;
   awb: string | null;
   status: string;
   grn: string;
+  fulfilment: string;
 }
 
 export interface DispatchDashboardList {
@@ -74,7 +77,16 @@ export interface DispatchDashboardData {
   fy: number;
   fyLabel: string;
   fyOptions: number[];
-  kpis: { totalPOs: number; delivered: number; inTransit: number; grnDone: number; grnPending: number; totalInvoiceValue: number };
+  kpis: {
+    totalPOs: number;
+    dispatched: number;
+    notFulfilled: number;
+    delivered: number;
+    inTransit: number;
+    grnDone: number;
+    grnPending: number;
+    totalInvoiceValue: number;
+  };
   slicers: {
     channels: { name: string; count: number }[];
     months: { value: string; label: string; count: number }[];
@@ -98,6 +110,7 @@ export interface DispatchDashboardData {
       status: string;
       grn: string;
       grnStatusMismatch: boolean;
+      fulfilment: string;
     }[];
   };
 }
