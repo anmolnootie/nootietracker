@@ -122,6 +122,12 @@ function deliveryStatusRank(raw: string | null | undefined): number | null {
 @Injectable()
 export class SheetTrackerImportService {
   private readonly logger = new Logger(SheetTrackerImportService.name);
+  // A batch a later request's stale-check just marked FAILED, but whose own
+  // runBatch loop (this same process, still genuinely running - just slow)
+  // hasn't found out yet. Without this, that loop's next flush() overwrites
+  // status back to PROCESSING moments later, since it only knows its own
+  // in-memory copy - undoing the stale-recovery it was supposed to trigger.
+  private readonly externallyStopped = new Set<string>();
 
   constructor(
     @InjectRepository(SheetTrackerUploadBatchEntity)
@@ -176,12 +182,16 @@ export class SheetTrackerImportService {
     // A PROCESSING batch that hasn't moved for 5 minutes died with its server
     // (restart/redeploy) - mark it failed so it can't block the next sync.
     const stale = new Date(Date.now() - 5 * 60 * 1000);
-    await this.batchRepository
+    const staleResult = await this.batchRepository
       .createQueryBuilder()
       .update()
       .set({ status: 'FAILED', errorMessage: 'Interrupted (the server restarted mid-run) - the next sync redoes it' })
       .where("status = 'PROCESSING' AND \"updatedAt\" < :stale", { stale })
+      .returning('id')
       .execute();
+    // If any of those are actually still alive in THIS process (just slow, not
+    // dead), flag them so their own loop stops instead of undoing this.
+    for (const row of staleResult.raw ?? []) this.externallyStopped.add(row.id);
     const running = await this.batchRepository.findOne({ where: { status: 'PROCESSING' }, order: { uploadedAt: 'DESC' } });
     if (running) return { busy: true, batchCode: running.batchCode };
 
@@ -288,7 +298,16 @@ export class SheetTrackerImportService {
         lastFlush = Date.now();
       };
 
+      let stoppedExternally = false;
       for (const { index, r } of candidates) {
+        if (this.externallyStopped.has(batch.id)) {
+          // A stale-check from a later request already marked this FAILED -
+          // stop instead of the next flush() silently reviving it to
+          // PROCESSING. Whatever's already flushed stays; nothing more is
+          // written here so that FAILED status/message stands as the result.
+          stoppedExternally = true;
+          break;
+        }
         const po = poByNumber.get(r.poNumber);
         const result = po
           ? await this.applyRow(r, po, dispatchByPo.get(po.id), appointmentByPo.get(po.id), grnByPo)
@@ -324,6 +343,14 @@ export class SheetTrackerImportService {
 
         if (pending.length >= 50 || Date.now() - lastFlush > 10_000) await flush();
       }
+
+      if (stoppedExternally) {
+        this.externallyStopped.delete(batch.id);
+        // Re-read rather than trust the in-memory copy - it still shows
+        // PROCESSING here, but the stale-check's FAILED write is what's real.
+        return (await this.batchRepository.findOneBy({ id: batch.id })) ?? batch;
+      }
+
       await flush();
 
       batch.totalRows = applied + skipped;
