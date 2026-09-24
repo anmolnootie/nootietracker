@@ -127,7 +127,7 @@ export default function DispatchDashboard() {
       ) : (
         <div className={`transition-opacity ${loading ? 'opacity-60' : ''}`}>
           {/* KPI tiles */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-8 gap-3 bg-gray-100 p-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-7 gap-3 bg-gray-100 p-3">
             <Kpi
               icon="📋"
               label="Total POs"
@@ -142,16 +142,6 @@ export default function DispatchDashboard() {
             <Kpi icon="✅" label="GRN Done" value={data.kpis.grnDone.toLocaleString('en-IN')} hint="Click to list these POs" onClick={() => setListKpi('grnDone')} active={listKpi === 'grnDone'} />
             <Kpi icon="⚠️" label="GRN Pending" value={data.kpis.grnPending.toLocaleString('en-IN')} hint="Delivered, no GRN yet - click to list these POs" onClick={() => setListKpi('grnPending')} active={listKpi === 'grnPending'} />
             <Kpi icon="🛑" label="Not Fulfilled" value={data.kpis.notFulfilled.toLocaleString('en-IN')} hint="Click to list these POs" onClick={() => setListKpi('notFulfilled')} active={listKpi === 'notFulfilled'} />
-            <Kpi
-              icon="💰"
-              label="Invoice Value"
-              // The currency symbol belongs attached to the number, not floating
-              // as a separate icon - a bare number here reads as unformatted.
-              value={`₹${inr(data.kpis.totalInvoiceValue)}`}
-              hint="Click to list these POs"
-              onClick={() => setListKpi('invoiceValue')}
-              active={listKpi === 'invoiceValue'}
-            />
           </div>
 
           {/* Active filters */}
