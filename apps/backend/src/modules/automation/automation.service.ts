@@ -10,11 +10,14 @@ import { DispatchEntity } from '../../database/entities/dispatch.entity';
 import { LogisticsTrackerEntity } from '../../database/entities/logistics-tracker.entity';
 import { GRNTrackerEntity } from '../../database/entities/grn-tracker.entity';
 
-import { POStatus, TaskType } from '@po-control-tower/shared';
+import { NonFulfilmentReason, POStatus, TaskType } from '@po-control-tower/shared';
 import { POService } from '../po/po.service';
 import { TasksService } from '../tasks/tasks.service';
 import { ReturnsService } from '../returns/returns.service';
 import { NotificationsService } from '../notifications/notifications.service';
+
+// Days after a PO's expiry date, with nothing ever dispatched, before it's marked Not Fulfilled.
+const NOT_FULFILLED_GRACE_DAYS = 2;
 
 const TERMINAL_STATUSES = [POStatus.CLOSED, POStatus.CANCELLED, POStatus.RETURNED, POStatus.RECONCILED];
 
@@ -304,6 +307,47 @@ export class AutomationService {
           notes: `GRN pending ${Math.floor(ageHours)}h since delivery - record GRN outcome.`,
         });
       }
+    }
+  }
+
+  /**
+   * A PO that is 2+ days past its expiry and was never dispatched from our end
+   * is marked Not Fulfilled (reason: PO Expired). "Never dispatched" uses the
+   * same evidence as recallCheck - any dispatch date/status/invoice/AWB, a
+   * dispatched quantity, a GRN, or a later PO status counts as dispatched - and
+   * a PO the master tracker sheet lists is skipped, since its dispatch data may
+   * simply not have reached it yet. It never overrides a person: any earlier
+   * fulfilment decision on the PO (including someone marking it Fulfilled again)
+   * is left alone.
+   */
+  @Cron(CronExpression.EVERY_HOUR)
+  async markExpiredUndispatchedNotFulfilled() {
+    const candidates: { id: string; poNumber: string; poExpiryDate: Date }[] = await this.poRepository.query(
+      `SELECT po.id, po."poNumber", po."poExpiryDate"
+         FROM po_master po
+         LEFT JOIN dispatch d ON d."poId" = po.id
+        WHERE po."isDeleted" = false
+          AND po."fulfilmentDecision" = 'FULFILLED'
+          AND po.status IN ('RECEIVED','APPOINTMENT_REQUESTED','APPOINTMENT_CONFIRMED','READY_FOR_DISPATCH','RETURNED')
+          AND po."poExpiryDate" < now() - make_interval(days => $1)
+          AND d."actualDispatchDate" IS NULL
+          AND COALESCE(trim(d."dispatchStatus"), '') = ''
+          AND COALESCE(trim(d."invoiceNumber"), '') = ''
+          AND COALESCE(trim(d."awbNumber"), '') = ''
+          AND NOT EXISTS (SELECT 1 FROM po_line_items li WHERE li."poId" = po.id AND COALESCE(li."dispatchedQuantity", 0) > 0)
+          AND NOT EXISTS (SELECT 1 FROM grn_trackers g WHERE g."poId" = po.id AND g."grnDate" IS NOT NULL)
+          AND NOT EXISTS (SELECT 1 FROM sheet_tracker_rows s WHERE s."poNumber" = po."poNumber")
+          AND NOT EXISTS (SELECT 1 FROM po_change_history h WHERE h."poId" = po.id AND h."changeType" = 'FULFILMENT_DECISION')`,
+      [NOT_FULFILLED_GRACE_DAYS],
+    );
+
+    for (const c of candidates) {
+      await this.poService.markNotFulfilledBySystem(
+        c.id,
+        NonFulfilmentReason.PO_EXPIRED,
+        `Auto-marked: PO expired on ${new Date(c.poExpiryDate).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' })} and had still not been dispatched ${NOT_FULFILLED_GRACE_DAYS} days after expiry.`,
+      );
+      this.logger.log(`Auto-marked PO ${c.poNumber} Not Fulfilled (expired, never dispatched)`);
     }
   }
 

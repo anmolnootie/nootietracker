@@ -230,6 +230,8 @@ export enum NonFulfilmentReason {
   CUSTOMER_PLATFORM_ISSUE = 'CUSTOMER_PLATFORM_ISSUE',
   DUPLICATE_PO = 'DUPLICATE_PO',
   PO_CANCELLED = 'PO_CANCELLED',
+  /** Set only by the system: past expiry by the grace period and never dispatched. Not offered in the manual picker. */
+  PO_EXPIRED = 'PO_EXPIRED',
   MANAGEMENT_DECISION = 'MANAGEMENT_DECISION',
   OTHER = 'OTHER',
 }
@@ -246,6 +248,7 @@ export const NON_FULFILMENT_REASON_LABELS: Record<NonFulfilmentReason, string> =
   [NonFulfilmentReason.CUSTOMER_PLATFORM_ISSUE]: 'Customer / Platform Issue',
   [NonFulfilmentReason.DUPLICATE_PO]: 'Duplicate PO',
   [NonFulfilmentReason.PO_CANCELLED]: 'PO Cancelled',
+  [NonFulfilmentReason.PO_EXPIRED]: 'PO Expired - Never Dispatched',
   [NonFulfilmentReason.MANAGEMENT_DECISION]: 'Management Decision',
   [NonFulfilmentReason.OTHER]: 'Other',
 };

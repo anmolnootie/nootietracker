@@ -765,7 +765,9 @@ export default function PODetail() {
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm mb-4 bg-white"
             >
               <option value="">Select a reason...</option>
-              {Object.values(NonFulfilmentReason).map((r) => (
+              {Object.values(NonFulfilmentReason)
+                .filter((r) => r !== NonFulfilmentReason.PO_EXPIRED) // set automatically by the system, not a manual choice
+                .map((r) => (
                 <option key={r} value={r}>
                   {NON_FULFILMENT_REASON_LABELS[r]}
                 </option>

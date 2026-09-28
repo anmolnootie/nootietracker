@@ -905,6 +905,35 @@ export class POService {
     return saved;
   }
 
+  /**
+   * The system's own non-fulfilment call (no user involved) - same fields and
+   * history trail as markNotFulfilled, with the reason spelled out in the
+   * remarks so it's clear this wasn't a person's decision.
+   */
+  async markNotFulfilledBySystem(poId: string, reason: NonFulfilmentReason, remarks: string): Promise<void> {
+    const po = await this.getPOById(poId);
+    if (po.fulfilmentDecision === FulfilmentDecision.NOT_FULFILLED) return;
+    const oldDecision = po.fulfilmentDecision;
+    po.fulfilmentDecision = FulfilmentDecision.NOT_FULFILLED;
+    po.nonFulfilmentReason = reason;
+    po.nonFulfilmentRemarks = remarks;
+    po.nonFulfilmentSystemRemarks = await this.getNonFulfilmentDiagnosis(poId);
+    po.nonFulfilmentAt = new Date();
+    po.nonFulfilmentByUserId = null;
+    await this.poRepository.save(po);
+
+    await this.changeHistoryRepository.save(
+      this.changeHistoryRepository.create({
+        poId,
+        fieldName: 'fulfilmentDecision',
+        oldValue: oldDecision,
+        newValue: `NOT_FULFILLED (${reason}): ${remarks}`,
+        changeType: 'FULFILMENT_DECISION',
+        changedByUserId: null,
+      }),
+    );
+  }
+
   async markFulfilled(poId: string, userId: string): Promise<POMasterEntity> {
     const po = await this.getPOById(poId);
     const oldDecision = po.fulfilmentDecision;
