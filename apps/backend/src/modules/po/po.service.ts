@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import ExcelJS from 'exceljs';
 import { In, Like, Repository } from 'typeorm';
 
 import { POMasterEntity } from '../../database/entities/po-master.entity';
@@ -33,6 +34,7 @@ import {
   DispatchPlanStatus,
   LOW_PO_VALUE_THRESHOLD,
   POMappingStatus,
+  NON_FULFILMENT_REASON_LABELS,
 } from '@po-control-tower/shared';
 import { StatusEngine } from '../../engines/status.engine';
 import { RiskEngine } from '../../engines/risk.engine';
@@ -991,6 +993,75 @@ export class POService {
       .sort((a, b) => b.value - a.value);
 
     return { totalPOs, totalValue, potentiallyLostValue, breakdown };
+  }
+
+  /**
+   * The Not Fulfilled list as a downloadable .xlsx - every PO on the Not
+   * Fulfilled page, with the reason, both remarks (the person's and the
+   * system's diagnosis snapshot) and how it was marked.
+   */
+  async buildNotFulfilledWorkbook(): Promise<Buffer> {
+    const pos = await this.poRepository.find({
+      where: { isDeleted: false, fulfilmentDecision: FulfilmentDecision.NOT_FULFILLED },
+      order: { nonFulfilmentAt: 'DESC' },
+    });
+
+    // Fixed to IST regardless of the server's own clock/timezone.
+    const ist = (d: Date | null | undefined) => (d ? new Date(d).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) : '');
+    const istDate = (d: Date | null | undefined) => (d ? new Date(d).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' }) : '');
+
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('Not Fulfilled POs');
+    sheet.columns = [
+      { header: 'PO Number', key: 'poNumber', width: 18 },
+      { header: 'Platform', key: 'channel', width: 14 },
+      { header: 'Location/Hub', key: 'location', width: 28 },
+      { header: 'PO Date', key: 'poDate', width: 12 },
+      { header: 'PO Expiry', key: 'expiry', width: 12 },
+      { header: 'PO Value', key: 'poValue', width: 14 },
+      { header: 'Dispatched Value', key: 'dispatchValue', width: 16 },
+      { header: 'Potentially Lost Value', key: 'lost', width: 20 },
+      { header: 'PO Status', key: 'status', width: 16 },
+      { header: 'Risk', key: 'risk', width: 10 },
+      { header: 'Reason', key: 'reason', width: 30 },
+      { header: 'Remarks', key: 'remarks', width: 40 },
+      { header: 'System Diagnosis (at time of marking)', key: 'system', width: 60 },
+      { header: 'Marked At', key: 'markedAt', width: 20 },
+      { header: 'Marked By', key: 'markedBy', width: 18 },
+    ];
+    sheet.getRow(1).font = { bold: true };
+
+    let totalValue = 0;
+    let totalLost = 0;
+    for (const po of pos) {
+      const value = Number(po.poValue) || 0;
+      const lost = Math.max(value - Number(po.dispatchValue || 0), 0);
+      totalValue += value;
+      totalLost += lost;
+      sheet.addRow({
+        poNumber: po.poNumber,
+        channel: po.channelId,
+        location: po.location,
+        poDate: istDate(po.poDate),
+        expiry: istDate(po.poExpiryDate),
+        poValue: value,
+        dispatchValue: Number(po.dispatchValue || 0),
+        lost,
+        status: po.status,
+        risk: po.riskStatus,
+        reason: po.nonFulfilmentReason ? NON_FULFILMENT_REASON_LABELS[po.nonFulfilmentReason] ?? po.nonFulfilmentReason : '',
+        remarks: po.nonFulfilmentRemarks ?? '',
+        system: po.nonFulfilmentSystemRemarks ?? '',
+        markedAt: ist(po.nonFulfilmentAt),
+        markedBy: po.nonFulfilmentByUserId ? 'User' : 'System (automatic)',
+      });
+    }
+
+    const totalRow = sheet.addRow({ poNumber: 'Grand Total', poValue: totalValue, lost: totalLost });
+    totalRow.font = { bold: true };
+    totalRow.eachCell({ includeEmpty: true }, (cell) => (cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF2F2F2' } }));
+
+    return Buffer.from(await workbook.xlsx.writeBuffer());
   }
 
   async getPOLineItems(poId: string): Promise<POLineItemEntity[]> {

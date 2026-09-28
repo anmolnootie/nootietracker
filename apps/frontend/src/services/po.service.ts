@@ -158,6 +158,19 @@ export const poService = {
     window.URL.revokeObjectURL(url);
   },
 
+  /** Downloads every Not Fulfilled PO (with reasons and remarks) as an .xlsx file. */
+  downloadNotFulfilledExcel: async (): Promise<void> => {
+    const response = await api.get('/pos/not-fulfilled/export.xlsx', { responseType: 'blob' });
+    const url = window.URL.createObjectURL(new Blob([response.data]));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'not-fulfilled-pos.xlsx';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+  },
+
   getFilterOptions: async (): Promise<{ channels: string[]; locations: string[]; customers: string[] }> => {
     const response = await api.get('/pos/filter-options');
     return response.data;

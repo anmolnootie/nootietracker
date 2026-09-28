@@ -194,6 +194,14 @@ export class POController {
     return this.poService.getNotFulfilledDashboard();
   }
 
+  @Get('not-fulfilled/export.xlsx')
+  async downloadNotFulfilled(@Res() res: Response) {
+    const buffer = await this.poService.buildNotFulfilledWorkbook();
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename="not-fulfilled-pos.xlsx"');
+    res.send(buffer);
+  }
+
   @Get(':poId')
   async getPOById(@Param('poId') poId: string) {
     return this.poService.getPOById(poId);

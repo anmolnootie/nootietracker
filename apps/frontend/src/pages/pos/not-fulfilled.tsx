@@ -17,6 +17,20 @@ export default function NotFulfilledView() {
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
   const [pos, setPos] = useState<POMaster[]>([]);
   const [loading, setLoading] = useState(true);
+  const [downloading, setDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState('');
+
+  const download = async () => {
+    setDownloading(true);
+    setDownloadError('');
+    try {
+      await poService.downloadNotFulfilledExcel();
+    } catch {
+      setDownloadError('Could not download the file.');
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   useEffect(() => {
     (async () => {
@@ -49,10 +63,20 @@ export default function NotFulfilledView() {
     <MainLayout>
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-2xl font-bold text-gray-800">🔴 Not Fulfilled</h2>
-        <Link href="/pos" className="text-nootie-orange-dark hover:underline text-sm font-medium">
-          ← Back to All POs
-        </Link>
+        <div className="flex items-center gap-4">
+          <button
+            onClick={download}
+            disabled={downloading || pos.length === 0}
+            className="px-3 py-1.5 rounded border border-gray-300 bg-white text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50 whitespace-nowrap"
+          >
+            {downloading ? 'Downloading...' : '⬇ Download Excel'}
+          </button>
+          <Link href="/pos" className="text-nootie-orange-dark hover:underline text-sm font-medium">
+            ← Back to All POs
+          </Link>
+        </div>
       </div>
+      {downloadError && <p className="mb-4 px-4 py-2 text-xs text-red-700 bg-red-50 rounded">{downloadError}</p>}
 
       {/* Summary tiles */}
       <div className="grid grid-cols-3 gap-4 mb-6">
