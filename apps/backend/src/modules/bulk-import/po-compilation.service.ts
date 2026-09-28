@@ -8,6 +8,7 @@ import { AppointmentEntity } from '../../database/entities/appointment.entity';
 import { DispatchEntity } from '../../database/entities/dispatch.entity';
 import { LogisticsTrackerEntity } from '../../database/entities/logistics-tracker.entity';
 import { GRNTrackerEntity } from '../../database/entities/grn-tracker.entity';
+import { ensureGrnPlaceholder } from '../../database/ensure-grn-placeholder';
 import { POChangeHistoryEntity } from '../../database/entities/po-change-history.entity';
 import { BulkPOProcessedRowEntity } from '../../database/entities/bulk-processed-row.entity';
 import { UploadBatchEntity } from '../../database/entities/upload-batch.entity';
@@ -247,10 +248,7 @@ export class POCompilationService {
     }
     await this.logisticsRepository.save(logistics, { transaction: false });
 
-    const existingGrn = await this.grnRepository.findOneBy({ poId });
-    if (!existingGrn) {
-      await this.grnRepository.save(this.grnRepository.create({ poId, slaStatus: 'ON_TIME' }), { transaction: false });
-    }
+    await ensureGrnPlaceholder(this.grnRepository, poId);
   }
 
   // Mutates `po.poValue` in memory too, not just the DB row - compileRow passes

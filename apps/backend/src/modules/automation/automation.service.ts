@@ -9,6 +9,7 @@ import { AppointmentEntity } from '../../database/entities/appointment.entity';
 import { DispatchEntity } from '../../database/entities/dispatch.entity';
 import { LogisticsTrackerEntity } from '../../database/entities/logistics-tracker.entity';
 import { GRNTrackerEntity } from '../../database/entities/grn-tracker.entity';
+import { ensureGrnPlaceholder } from '../../database/ensure-grn-placeholder';
 
 import { NonFulfilmentReason, POStatus, TaskType } from '@po-control-tower/shared';
 import { POService } from '../po/po.service';
@@ -253,9 +254,7 @@ export class AutomationService {
 
     const perOwner = new Map<string, number>();
     for (const po of pending) {
-      if (!(await this.grnRepository.findOneBy({ poId: po.id }))) {
-        await this.grnRepository.save(this.grnRepository.create({ poId: po.id, slaStatus: 'ON_TIME' }));
-      }
+      await ensureGrnPlaceholder(this.grnRepository, po.id);
       const ownerId = po.grnOwnerId || po.overallOwnerId;
       await this.tasksService.create(
         {

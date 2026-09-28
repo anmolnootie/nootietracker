@@ -8,6 +8,7 @@ import { AppointmentEntity } from '../../database/entities/appointment.entity';
 import { DispatchEntity } from '../../database/entities/dispatch.entity';
 import { LogisticsTrackerEntity } from '../../database/entities/logistics-tracker.entity';
 import { GRNTrackerEntity } from '../../database/entities/grn-tracker.entity';
+import { ensureGrnPlaceholder } from '../../database/ensure-grn-placeholder';
 import { ReturnTrackerEntity } from '../../database/entities/return-tracker.entity';
 import { TaskEntity } from '../../database/entities/task.entity';
 import { CustomerMasterEntity } from '../../database/entities/customer-master.entity';
@@ -477,7 +478,8 @@ export class POService {
     if (payload.grn) {
       let grn = await this.grnRepository.findOneBy({ poId });
       if (!grn) {
-        grn = this.grnRepository.create({ poId, slaStatus: 'ON_TIME' });
+        await ensureGrnPlaceholder(this.grnRepository, poId);
+        grn = await this.grnRepository.findOneByOrFail({ poId });
       }
       allHistory.push(...this.diffAndApply(grn, payload.grn as Record<string, any>, { poId, userId }));
       await this.grnRepository.save(grn);
@@ -1095,13 +1097,8 @@ export class POService {
     const saved = await this.logisticsRepository.save(logistics);
 
     if (status === 'DELIVERED') {
-      const existingGrn = await this.grnRepository.findOneBy({ poId });
-      if (!existingGrn) {
-        const grn = new GRNTrackerEntity();
-        grn.poId = poId;
-        grn.slaStatus = 'ON_TIME';
-        await this.grnRepository.save(grn);
-
+      // Only the caller that actually creates the placeholder opens the GRN task.
+      if (await ensureGrnPlaceholder(this.grnRepository, poId)) {
         const po = await this.getPOById(poId);
         await this.tasksService.create({
           poId,
@@ -1145,8 +1142,8 @@ export class POService {
   ): Promise<GRNTrackerEntity> {
     let grn = await this.grnRepository.findOneBy({ poId });
     if (!grn) {
-      grn = new GRNTrackerEntity();
-      grn.poId = poId;
+      await ensureGrnPlaceholder(this.grnRepository, poId);
+      grn = await this.grnRepository.findOneByOrFail({ poId });
     }
 
     if (grnData.outcome !== GRNOutcome.MATCHED && !grnData.discrepancyReason) {
