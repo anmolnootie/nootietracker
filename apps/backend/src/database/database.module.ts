@@ -113,7 +113,20 @@ const ENTITIES = [
           // 5 per service leaves headroom for the Supabase dashboard or a
           // one-off script; override with DATABASE_POOL_MAX if this ever
           // needs to change (e.g. after moving off the Session Pooler).
-          extra: { max: Number(configService.get('DATABASE_POOL_MAX', 5)) },
+          //
+          // Timeouts: with none, a connection that silently dies (the pooler
+          // or a network hop drops it without telling us) leaves the awaiting
+          // query hanging forever - a bulk import sat frozen for hours that
+          // way, and the Stop button couldn't reach it. Now such a call
+          // fails after 2 minutes and the caller's normal error handling
+          // runs; keepAlive stops idle connections being dropped in the first
+          // place. No legitimate query here runs anywhere near 2 minutes.
+          extra: {
+            max: Number(configService.get('DATABASE_POOL_MAX', 5)),
+            keepAlive: true,
+            query_timeout: Number(configService.get('DATABASE_QUERY_TIMEOUT_MS', 120000)),
+            connectionTimeoutMillis: 30000,
+          },
         };
       },
     }),

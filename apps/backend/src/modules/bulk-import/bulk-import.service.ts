@@ -73,6 +73,11 @@ export class BulkImportService {
   // still-queued import even starts), so a cancel is noticed within a row's
   // processing time, or immediately if the batch hasn't started yet.
   private readonly cancelRequested = new Set<string>();
+  // Releases the serial queue past an import that is stuck mid-row (a database
+  // call that never returned) - the Stop flag alone is only read between rows,
+  // so it can never reach a loop that is hung inside one.
+  private readonly forceRelease = new Map<string, () => void>();
+  private readonly forcedCancels = new Set<string>();
 
   constructor(
     @InjectRepository(UploadBatchEntity) private readonly batchRepository: Repository<UploadBatchEntity>,
@@ -107,11 +112,20 @@ export class BulkImportService {
 
     this.inFlight.add(batch.id);
     this.queue = this.queue
-      .then(() => this.runBatch(batch, buffer, fileName, platform, uploadedByUserId))
+      .then(() =>
+        Promise.race([
+          this.runBatch(batch, buffer, fileName, platform, uploadedByUserId),
+          new Promise<void>((release) => this.forceRelease.set(batch.id, release)),
+        ]),
+      )
       .catch((err) => this.logger.error(`Background import ${batch.batchCode} crashed`, err as any))
       .finally(() => {
         this.inFlight.delete(batch.id);
-        this.cancelRequested.delete(batch.id);
+        this.forceRelease.delete(batch.id);
+        // Deliberately NOT clearing cancelRequested for a force-released
+        // import: if its hung call ever wakes up, the loop must still see the
+        // flag and stop rather than carry on writing rows.
+        if (!this.forcedCancels.has(batch.id)) this.cancelRequested.delete(batch.id);
       });
 
     return batch;
@@ -130,7 +144,28 @@ export class BulkImportService {
       throw new BadRequestException(`This import has already finished (${batch.status}) - nothing to stop.`);
     }
     this.cancelRequested.add(batchId);
-    return batch;
+
+    // A healthy import saves progress every few seconds and stops itself at
+    // the next row. If it hasn't saved anything for a minute it is stuck (or
+    // belongs to a server that no longer exists), so nobody is left to read
+    // the flag - mark it stopped here, and free the queue behind it.
+    const [stuck] = await this.batchRepository.query(
+      `UPDATE upload_batches SET status = $2, "errorMessage" = $3
+       WHERE id = $1 AND status::text = ANY($4) AND ("updatedAt" < now() - interval '60 seconds' OR $5::boolean = false)
+       RETURNING id`,
+      [
+        batchId,
+        UploadBatchStatus.CANCELLED,
+        'Stopped - the import had stopped responding, so it was cancelled directly. Rows already imported are kept; upload the file again to finish (existing POs are skipped).',
+        ACTIVE_STATUSES,
+        this.inFlight.has(batchId),
+      ],
+    );
+    if (stuck) {
+      this.forcedCancels.add(batchId);
+      this.forceRelease.get(batchId)?.();
+    }
+    return (await this.batchRepository.findOneBy({ id: batchId })) ?? batch;
   }
 
   // update() rather than save(): one statement instead of four, and it can never
