@@ -125,6 +125,35 @@ function formatIST(date: Date | null | undefined): string {
   return new Date(date).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' });
 }
 
+/**
+ * The dashboard queries LEFT/INNER JOIN dispatch and GRN onto each PO. A PO
+ * with more than one dispatch row or more than one GRN row therefore came back
+ * as several rows and was counted several times - Total POs read 382 when the
+ * database held 284. Collapses the raw rows to exactly one per PO: the dispatch
+ * fields come from its latest row that has a real dispatch date, and the GRN
+ * fields from any row that has a GRN date.
+ */
+function collapseByPo(raw: any[]): any[] {
+  const byId = new Map<string, any>();
+  for (const r of raw) {
+    const cur = byId.get(r.id);
+    if (!cur) {
+      byId.set(r.id, { ...r });
+      continue;
+    }
+    const rTime = r.dispatchDate ? new Date(r.dispatchDate).getTime() : null;
+    const curTime = cur.dispatchDate ? new Date(cur.dispatchDate).getTime() : null;
+    if (rTime !== null && (curTime === null || rTime > curTime)) {
+      for (const k of ['dispatchDate', 'invoiceNumber', 'invoiceValue', 'awb', 'partner', 'dispatchStatus']) cur[k] = r[k];
+    }
+    if (r.grnDate && !cur.grnDate) {
+      cur.grnDate = r.grnDate;
+      cur.grnOutcome = r.grnOutcome;
+    }
+  }
+  return [...byId.values()];
+}
+
 const GRAND_TOTAL_FILL: ExcelJS.Fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF2F2F2' } };
 
 // Shared by both the dispatch-scoped (Row) and all-POs (AllPoRow) export
@@ -292,7 +321,7 @@ export class DispatchDashboardService {
       .andWhere('dsp.actualDispatchDate >= :start AND dsp.actualDispatchDate < :end', { start, end })
       .getRawMany();
 
-    const rows: Row[] = raw.map((r) => {
+    const rows: Row[] = collapseByPo(raw).map((r) => {
       // Dates read from Google-exported sheets can sit 10s before midnight;
       // snap to the minute so a 1 May date never lands in April.
       const dispatchDate = new Date(Math.round(new Date(r.dispatchDate).getTime() / 60000) * 60000);
@@ -376,7 +405,7 @@ export class DispatchDashboardService {
       .andWhere('po.poDate >= :start AND po.poDate < :end', { start, end })
       .getRawMany();
 
-    return raw.map((r) => {
+    return collapseByPo(raw).map((r) => {
       // Same minute-snap as loadRows - Google-exported dates can sit 10s
       // before midnight.
       const dispatchDate = r.dispatchDate ? new Date(Math.round(new Date(r.dispatchDate).getTime() / 60000) * 60000) : null;
