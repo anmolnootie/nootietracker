@@ -25,6 +25,12 @@ export const locationsService = {
   approvePending: async (id: string, data: ApprovePendingLocationInput): Promise<{ location: LocationMaster; resolvedExceptions: number }> =>
     (await api.post(`/locations/pending/${id}/approve`, data)).data,
 
+  approvePendingBulk: async (
+    ids: string[],
+    defaults: Pick<ApprovePendingLocationInput, 'locationType' | 'localTatHours' | 'nonLocalTatMinDays' | 'nonLocalTatMaxDays'>,
+  ): Promise<{ approved: number; resolvedExceptions: number; failed: { id: string; locationName: string; error: string }[] }> =>
+    (await api.post('/locations/pending/approve-bulk', { ids, ...defaults })).data,
+
   rejectPending: async (id: string): Promise<void> => {
     await api.post(`/locations/pending/${id}/reject`);
   },

@@ -51,12 +51,23 @@ export default function Locations() {
   const [approveDraft, setApproveDraft] = useState<EditDraft>(emptyDraft);
   const [approveMessage, setApproveMessage] = useState<string | null>(null);
 
+  // Bulk approval: tick locations, pick one type/TAT for all of them, approve at once.
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkDraft, setBulkDraft] = useState({
+    locationType: LocationType.NON_LOCAL,
+    localTatHours: '48',
+    nonLocalTatMinDays: '10',
+    nonLocalTatMaxDays: '8',
+  });
+
   const load = async () => {
     setLoading(true);
     try {
       const [locs, pend] = await Promise.all([locationsService.list(), locationsService.listPending('PENDING' as any)]);
       setLocations(locs);
       setPending(pend);
+      // Drop ticks for rows that are gone (approved/rejected elsewhere).
+      setSelected((prev) => new Set([...prev].filter((id) => pend.some((p) => p.id === id))));
     } finally {
       setLoading(false);
     }
@@ -190,6 +201,46 @@ export default function Locations() {
     }
   };
 
+  const allSelected = pending.length > 0 && selected.size === pending.length;
+  const toggleOne = (id: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const toggleAll = () => setSelected(allSelected ? new Set() : new Set(pending.map((p) => p.id)));
+
+  const approveSelected = async () => {
+    if (selected.size === 0) return;
+    const tat =
+      bulkDraft.locationType === LocationType.LOCAL
+        ? `LOCAL, ${bulkDraft.localTatHours}h TAT`
+        : `NON_LOCAL, ${bulkDraft.nonLocalTatMaxDays}-${bulkDraft.nonLocalTatMinDays} days before expiry`;
+    if (!window.confirm(`Approve ${selected.size} location${selected.size === 1 ? '' : 's'} as ${tat}?\n\nWarehouse codes are generated from the names. You can edit any of them afterwards in the Location & TAT Master.`)) return;
+    setBusy('bulk');
+    setApproveMessage(null);
+    try {
+      const result = await locationsService.approvePendingBulk([...selected], {
+        locationType: bulkDraft.locationType,
+        localTatHours: Number(bulkDraft.localTatHours),
+        nonLocalTatMinDays: Number(bulkDraft.nonLocalTatMinDays),
+        nonLocalTatMaxDays: Number(bulkDraft.nonLocalTatMaxDays),
+      });
+      setSelected(new Set());
+      setApproveMessage(
+        `✅ ${result.approved} location${result.approved === 1 ? '' : 's'} approved` +
+          (result.resolvedExceptions > 0 ? ` - ${result.resolvedExceptions} related exception(s) resolved` : '') +
+          (result.failed.length > 0 ? `. ⚠️ ${result.failed.length} failed: ${result.failed.map((f) => `${f.locationName} (${f.error})`).join('; ')}` : '.'),
+      );
+      await load();
+    } catch {
+      setApproveMessage('⚠️ Could not approve the selected locations - nothing may have been saved, refresh and check.');
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const rejectPending = async (id: string) => {
     setBusy(id);
     try {
@@ -224,15 +275,75 @@ export default function Locations() {
               Warehouse names seen on incoming POs that don't match the Location Master yet - they're defaulting to NON-LOCAL TAT until approved.
             </p>
           </div>
+          <div className="px-4 py-3 bg-gray-50 border-b flex flex-wrap items-center gap-x-4 gap-y-2">
+            <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+              <input type="checkbox" checked={allSelected} onChange={toggleAll} className="h-4 w-4" />
+              Select all ({pending.length})
+            </label>
+            <span className="text-sm text-gray-500">{selected.size} selected</span>
+            <div className="flex flex-wrap items-center gap-2 ml-auto">
+              <span className="text-xs text-gray-500">Approve as</span>
+              <select
+                className="border rounded px-2 py-1 text-sm"
+                value={bulkDraft.locationType}
+                onChange={(e) => setBulkDraft((d) => ({ ...d, locationType: e.target.value as LocationType }))}
+              >
+                <option value={LocationType.LOCAL}>LOCAL</option>
+                <option value={LocationType.NON_LOCAL}>NON_LOCAL</option>
+              </select>
+              {bulkDraft.locationType === LocationType.LOCAL ? (
+                <label className="text-xs text-gray-500 flex items-center gap-1">
+                  TAT hrs
+                  <input
+                    type="number"
+                    className="w-16 border rounded px-2 py-1 text-sm"
+                    value={bulkDraft.localTatHours}
+                    onChange={(e) => setBulkDraft((d) => ({ ...d, localTatHours: e.target.value }))}
+                  />
+                </label>
+              ) : (
+                <>
+                  <label className="text-xs text-gray-500 flex items-center gap-1">
+                    Max days
+                    <input
+                      type="number"
+                      className="w-16 border rounded px-2 py-1 text-sm"
+                      value={bulkDraft.nonLocalTatMaxDays}
+                      onChange={(e) => setBulkDraft((d) => ({ ...d, nonLocalTatMaxDays: e.target.value }))}
+                    />
+                  </label>
+                  <label className="text-xs text-gray-500 flex items-center gap-1">
+                    Min days
+                    <input
+                      type="number"
+                      className="w-16 border rounded px-2 py-1 text-sm"
+                      value={bulkDraft.nonLocalTatMinDays}
+                      onChange={(e) => setBulkDraft((d) => ({ ...d, nonLocalTatMinDays: e.target.value }))}
+                    />
+                  </label>
+                </>
+              )}
+              <button
+                disabled={selected.size === 0 || busy === 'bulk'}
+                onClick={approveSelected}
+                className="bg-green-600 hover:bg-green-700 text-white rounded px-4 py-1.5 text-sm font-medium disabled:opacity-50"
+              >
+                {busy === 'bulk' ? 'Approving...' : `Approve selected (${selected.size})`}
+              </button>
+            </div>
+          </div>
           <div className="divide-y">
             {pending.map((p) => (
               <div key={p.id} className="p-4">
                 <div className="flex items-center justify-between">
-                  <div>
+                  <div className="flex items-center gap-3">
+                    <input type="checkbox" checked={selected.has(p.id)} onChange={() => toggleOne(p.id)} className="h-4 w-4" aria-label={`Select ${p.locationName}`} />
+                    <div>
                     <p className="font-medium text-gray-800">{p.locationName}</p>
                     <p className="text-xs text-gray-500 mt-0.5">
                       Seen {p.occurrenceCount}x - platform: {p.platform || 'unknown'} - e.g. PO {p.examplePoNumber || '-'}
                     </p>
+                    </div>
                   </div>
                   {approvingId !== p.id && (
                     <div className="flex gap-3">

@@ -1,6 +1,6 @@
 import { Controller, Get, Post, Put, Param, Query, Body, UseGuards, Request } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
-import { PendingLocationStatus } from '@po-control-tower/shared';
+import { LocationType, PendingLocationStatus } from '@po-control-tower/shared';
 import { LocationsService, ApprovePendingLocationInput } from './locations.service';
 
 @Controller('locations')
@@ -21,6 +21,16 @@ export class LocationsController {
   @Get('pending')
   listPending(@Query('status') status?: PendingLocationStatus) {
     return this.locationsService.listPendingLocations(status);
+  }
+
+  // Declared before 'pending/:id/...' so 'approve-bulk' is never read as an :id.
+  @Post('pending/approve-bulk')
+  approvePendingBulk(
+    @Body() body: { ids: string[]; locationType: LocationType; localTatHours?: number; nonLocalTatMinDays?: number; nonLocalTatMaxDays?: number },
+    @Request() req: any,
+  ) {
+    const { ids, ...defaults } = body;
+    return this.locationsService.approvePendingLocationsBulk(Array.isArray(ids) ? ids : [], req.user.userId, defaults);
   }
 
   @Post('pending/:id/approve')

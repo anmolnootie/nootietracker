@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { LocationMasterEntity } from '../../database/entities/location-master.entity';
 import { PendingLocationEntity } from '../../database/entities/pending-location.entity';
 import { ExceptionType, LocationType, PendingLocationStatus } from '@po-control-tower/shared';
@@ -186,6 +186,41 @@ export class LocationsService {
     );
 
     return { location, resolvedExceptions };
+  }
+
+  /**
+   * Approves many pending locations at once, all with the same type/TAT. The
+   * Warehouse Code (unique in the master) is derived from each name the same
+   * way the single-approve form pre-fills it, with a numeric suffix when it
+   * would collide with an existing code or another one in this same batch.
+   * One failing item never stops the rest - each is reported back.
+   */
+  async approvePendingLocationsBulk(
+    ids: string[],
+    userId: string,
+    defaults: Pick<ApprovePendingLocationInput, 'locationType' | 'localTatHours' | 'nonLocalTatMinDays' | 'nonLocalTatMaxDays'>,
+  ): Promise<{ approved: number; resolvedExceptions: number; failed: { id: string; locationName: string; error: string }[] }> {
+    const pendings = ids.length ? await this.pendingLocationRepository.find({ where: { id: In(ids), status: PendingLocationStatus.PENDING } }) : [];
+    const takenCodes = new Set((await this.locationRepository.find({ select: ['warehouseCode'] })).map((l) => l.warehouseCode.toUpperCase()));
+
+    let approved = 0;
+    let resolvedExceptions = 0;
+    const failed: { id: string; locationName: string; error: string }[] = [];
+
+    for (const pending of pendings) {
+      const base = pending.locationName.toUpperCase().replace(/[^A-Z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'LOCATION';
+      let code = base;
+      for (let n = 2; takenCodes.has(code); n++) code = `${base}-${n}`;
+      try {
+        const result = await this.approvePendingLocation(pending.id, userId, { ...defaults, warehouseCode: code });
+        takenCodes.add(code);
+        approved++;
+        resolvedExceptions += result.resolvedExceptions;
+      } catch (err) {
+        failed.push({ id: pending.id, locationName: pending.locationName, error: (err as Error).message });
+      }
+    }
+    return { approved, resolvedExceptions, failed };
   }
 
   /**
