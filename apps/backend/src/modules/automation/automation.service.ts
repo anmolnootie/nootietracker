@@ -333,6 +333,18 @@ export class AutomationService {
         !!dispatch?.awbNumber?.trim();
       if (wasDispatched) continue;
 
+      // A PO the master tracker sheet lists is being tracked there - its
+      // dispatch/delivery data just hasn't reached this PO yet (the PO was
+      // imported after the sheet row, or the row is still waiting to be
+      // re-applied). Recalling it now is permanent: RETURNED is terminal, so
+      // the sheet's later "Delivered" could never bring it back. That is how
+      // ~120 delivered September POs ended up shown as Returned.
+      const [{ listed }] = await this.poRepository.query(
+        `SELECT EXISTS (SELECT 1 FROM sheet_tracker_rows WHERE "poNumber" = $1) AS listed`,
+        [po.poNumber],
+      );
+      if (listed) continue;
+
       const appointment = await this.appointmentRepository.findOneBy({ poId: po.id });
       if (appointment?.extensionGranted && appointment.newExpiryDate && appointment.newExpiryDate > new Date()) {
         continue; // extension covers this PO for now
