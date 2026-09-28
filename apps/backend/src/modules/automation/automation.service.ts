@@ -351,8 +351,17 @@ export class AutomationService {
   }
 
   /**
-   * Recall + CN Rule: PO expired with no successful delivery and no granted
-   * extension -> auto-flag as Recall, open a Return Tracker row, and raise a CN task.
+   * Recall + CN Rule, for a PO that has passed its expiry date:
+   *
+   *  - never dispatched  -> NOT recalled and NOT marked Returned. Nothing left
+   *    our hands, so nothing came back; markExpiredUndispatchedNotFulfilled
+   *    marks it Not Fulfilled once the grace period after expiry has passed.
+   *  - dispatched, not delivered (in transit, RTO...) -> auto-flag as Recall:
+   *    open a Return Tracker row (Returned), and raise a CN task.
+   *  - delivered (or GRN recorded) -> left alone.
+   *
+   * A return that is *actually received back* is a person recording it in the
+   * Returns section, which is unchanged.
    */
   @Cron(CronExpression.EVERY_5_MINUTES)
   async recallCheck() {
@@ -364,29 +373,22 @@ export class AutomationService {
       const dispatch = await this.dispatchRepository.findOneBy({ poId: po.id });
       // actualDispatchDate alone under-detects a real dispatch: the master
       // tracker sheet's "Dispatch Date" column is sparsely filled even for
-      // POs it clearly did dispatch (it also carries a status/invoice/AWB),
-      // and that sheet data often arrives *after* this job has already run
-      // for a PO past its expiry - recalling something that, per the sheet,
-      // was already on its way or delivered. Any of these signals means it
-      // wasn't actually undelivered, whatever the date field says.
+      // POs it clearly did dispatch (it also carries a status/invoice/AWB).
+      // Any of these signals means it was dispatched, whatever the date says.
       const wasDispatched =
         !!dispatch?.actualDispatchDate ||
         !!dispatch?.dispatchStatus?.trim() ||
         !!dispatch?.invoiceNumber?.trim() ||
         !!dispatch?.awbNumber?.trim();
-      if (wasDispatched) continue;
+      if (!wasDispatched) continue; // expired + never dispatched: handled by the Not Fulfilled rule, never "Returned"
 
-      // A PO the master tracker sheet lists is being tracked there - its
-      // dispatch/delivery data just hasn't reached this PO yet (the PO was
-      // imported after the sheet row, or the row is still waiting to be
-      // re-applied). Recalling it now is permanent: RETURNED is terminal, so
-      // the sheet's later "Delivered" could never bring it back. That is how
-      // ~120 delivered September POs ended up shown as Returned.
-      const [{ listed }] = await this.poRepository.query(
-        `SELECT EXISTS (SELECT 1 FROM sheet_tracker_rows WHERE "poNumber" = $1) AS listed`,
-        [po.poNumber],
-      );
-      if (listed) continue;
+      const statusText = (dispatch?.dispatchStatus ?? '').trim().toUpperCase();
+      if (statusText.includes('CANCEL')) continue; // cancelled, not a recall
+      if (statusText === 'DELIVERED' || [POStatus.DELIVERED, POStatus.GRN_PENDING].includes(po.status)) continue;
+      const logistics = await this.logisticsRepository.findOneBy({ poId: po.id });
+      if (logistics?.lastTrackedStatus === 'DELIVERED') continue;
+      const grn = await this.grnRepository.findOneBy({ poId: po.id });
+      if (grn?.grnDate) continue; // goods were received
 
       const appointment = await this.appointmentRepository.findOneBy({ poId: po.id });
       if (appointment?.extensionGranted && appointment.newExpiryDate && appointment.newExpiryDate > new Date()) {
@@ -400,9 +402,9 @@ export class AutomationService {
         ownerId: po.overallOwnerId,
         status: 'OPEN',
         slaDueAt: new Date(),
-        notes: 'PO expired without delivery - confirm recall and raise Credit Note.',
+        notes: 'PO expired before delivery (dispatched, not delivered) - confirm recall and raise Credit Note.',
       });
-      this.logger.log(`Auto-recalled expired undelivered PO ${po.poNumber}`);
+      this.logger.log(`Auto-recalled expired dispatched-but-undelivered PO ${po.poNumber}`);
     }
   }
 }
