@@ -17,15 +17,21 @@ const DEFAULT_ALIASES: Record<StandardBulkField, string[]> = {
   po_date: ['po date', 'order date', 'purchase order date', 'date'],
   appointment_date: ['appointment date', 'appt date', 'slot date', 'delivery appointment date'],
   appointment_time: ['appointment time', 'appt time', 'slot time'],
-  warehouse: ['warehouse', 'fc', 'warehouse/fc', 'warehouse / fc', 'destination', 'facility', 'delivery location', 'warehouse name', 'delivered to'],
-  sku_code: ['sku', 'sku code', 'item code', 'product code', 'sku id', '#itemcode'],
+  warehouse: ['warehouse', 'fc', 'warehouse/fc', 'warehouse / fc', 'destination', 'facility', 'delivery location', 'del location', 'warehouse name', 'delivered to'],
+  // "SKU Code" must win over the bare "SKU" alias when a file has both (Zepto's
+  // export does: "SKU" holds a random per-row GUID, "SKU Code" the real,
+  // stable product code) - listed first so it's tried before the generic one.
+  sku_code: ['sku code', 'sku', 'item code', 'product code', 'sku id', '#itemcode'],
   upc: ['upc', 'product upc', 'barcode', 'ean', 'gtin', 'ean/upc'],
-  product_name: ['product name', 'item name', 'product description', 'description', 'sku name', 'name'],
+  product_name: ['product name', 'item name', 'product description', 'description', 'sku name', 'sku desc', 'name'],
   mrp: ['mrp', 'maximum retail price', 'm.r.p'],
   ordered_qty: ['ordered qty', 'ordered quantity', 'order qty', 'po qty', 'quantity', 'qty', 'units_ordered', 'units ordered'],
   accepted_qty: ['accepted qty', 'accepted quantity'],
-  dispatched_qty: ['dispatched qty', 'dispatched quantity', 'shipped qty'],
-  delivered_qty: ['delivered qty', 'delivered quantity', 'received qty'],
+  // "ASN Quantity" (Advance Shipping Notice - what was shipped) and "GRN
+  // Quantity" (Goods Receipt Note - what the platform's warehouse actually
+  // received) are Zepto's names for dispatched/delivered.
+  dispatched_qty: ['dispatched qty', 'dispatched quantity', 'shipped qty', 'asn quantity', 'asn qty'],
+  delivered_qty: ['delivered qty', 'delivered quantity', 'received qty', 'grn quantity', 'grn qty'],
   rejected_qty: ['rejected qty', 'rejected quantity', 'returned qty'],
   pending_qty: ['pending qty', 'pending quantity', 'balance qty', 'open qty'],
   // "Landing Rate" (post-tax, what's actually paid per unit) must win over
@@ -33,7 +39,7 @@ const DEFAULT_ALIASES: Record<StandardBulkField, string[]> = {
   // po_value/total_amount is computed from the landing rate - picking cost
   // price instead makes every taxed line look like a value mismatch by
   // exactly the tax amount. Listed first so it's tried before the others.
-  unit_price: ['landing rate', 'landing price', 'unit price', 'price', 'rate', 'cost price', 'basic cost price'],
+  unit_price: ['landing rate', 'landing price', 'landing cost', 'unit price', 'price', 'rate', 'cost price', 'basic cost price'],
   po_value: ['po value', 'total value', 'order value', 'total amount', 'net amount'],
   appointment_status: ['appointment status', 'appt status', 'slot status'],
   delivery_status: ['delivery status', 'shipment status'],
