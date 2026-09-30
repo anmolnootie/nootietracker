@@ -395,7 +395,12 @@ export class AutomationService {
         continue; // extension covers this PO for now
       }
 
-      await this.returnsService.create(po.id, { returnType: 'RECALL_NOT_DELIVERED' });
+      // Only the caller that actually creates the Recall row raises the CN
+      // task - a caller that found one already there (another overlapping
+      // pass beat it to the per-PO lock inside createIfMissing) must not
+      // raise a second task for the same recall.
+      const { created } = await this.returnsService.createIfMissing(po.id, { returnType: 'RECALL_NOT_DELIVERED' });
+      if (!created) continue;
       await this.tasksService.create({
         poId: po.id,
         taskType: TaskType.RETURN_CN,

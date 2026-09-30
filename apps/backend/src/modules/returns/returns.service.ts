@@ -62,17 +62,41 @@ export class ReturnsService {
     poId: string,
     data: { returnType: ReturnTrackerEntity['returnType']; rootCause?: string; lossAmount?: number },
   ): Promise<ReturnTrackerEntity> {
-    const existing = await this.returnRepository.findOneBy({ poId });
-    if (existing) return existing;
+    return (await this.createIfMissing(poId, data)).record;
+  }
 
-    const record = this.returnRepository.create({
-      poId,
-      returnDate: new Date(),
-      returnType: data.returnType,
-      rootCause: data.rootCause,
-      lossAmount: data.lossAmount,
+  /**
+   * Same as create(), but also reports whether THIS call is the one that
+   * actually made the row (vs. finding one already there). The check and the
+   * insert happen inside one transaction, behind a per-PO advisory lock -
+   * without that, two callers reaching the same PO together (recallCheck
+   * running overlapping, slow passes) could each see "none yet" and both
+   * insert, which is exactly how 12 live POs ended up with two Recall rows
+   * and two duplicate credit-note tasks apiece. automation.service.ts uses
+   * the `created` flag to raise the credit-note task only once.
+   */
+  async createIfMissing(
+    poId: string,
+    data: { returnType: ReturnTrackerEntity['returnType']; rootCause?: string; lossAmount?: number },
+  ): Promise<{ record: ReturnTrackerEntity; created: boolean }> {
+    const { record, created } = await this.returnRepository.manager.transaction(async (tx) => {
+      await tx.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`return:${poId}`]);
+      const existing = await tx.findOneBy(ReturnTrackerEntity, { poId });
+      if (existing) return { record: existing, created: false };
+
+      const saved = await tx.save(
+        tx.create(ReturnTrackerEntity, {
+          poId,
+          returnDate: new Date(),
+          returnType: data.returnType,
+          rootCause: data.rootCause,
+          lossAmount: data.lossAmount,
+        }),
+      );
+      return { record: saved, created: true };
     });
-    const saved = await this.returnRepository.save(record);
+
+    if (!created) return { record, created };
 
     const po = await this.poRepository.findOneBy({ id: poId });
     if (po) {
@@ -91,7 +115,7 @@ export class ReturnsService {
       await this.lineItemRepository.update({ poId }, { dispatchedQuantity: 0 });
     }
 
-    return saved;
+    return { record, created };
   }
 
   async close(
