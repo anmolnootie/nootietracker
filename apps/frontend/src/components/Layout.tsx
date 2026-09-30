@@ -53,6 +53,7 @@ export const MainLayout: React.FC<LayoutProps> = ({ children }) => {
     { title: 'Purchase Orders', items: [
       { label: '📦 All POs', href: '/pos' },
       { label: '🔴 Not Fulfilled', href: '/pos/not-fulfilled' },
+      { label: '⏱ Expired - Not Delivered', href: '/pos/expired-undelivered' },
       { label: '🗑 PO Bin', href: '/pos/bin' },
       { label: '✅ My Tasks', href: '/tasks' },
       { label: '⚠ Exceptions', href: '/exceptions' },

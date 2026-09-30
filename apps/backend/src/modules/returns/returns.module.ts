@@ -3,11 +3,13 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { ReturnTrackerEntity } from '../../database/entities/return-tracker.entity';
 import { POMasterEntity } from '../../database/entities/po-master.entity';
 import { POLineItemEntity } from '../../database/entities/po-line-item.entity';
+import { DispatchEntity } from '../../database/entities/dispatch.entity';
+import { TaskEntity } from '../../database/entities/task.entity';
 import { ReturnsService } from './returns.service';
 import { ReturnsController } from './returns.controller';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([ReturnTrackerEntity, POMasterEntity, POLineItemEntity])],
+  imports: [TypeOrmModule.forFeature([ReturnTrackerEntity, POMasterEntity, POLineItemEntity, DispatchEntity, TaskEntity])],
   providers: [ReturnsService],
   controllers: [ReturnsController],
   exports: [ReturnsService],
