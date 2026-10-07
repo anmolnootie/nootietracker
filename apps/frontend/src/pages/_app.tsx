@@ -20,9 +20,12 @@ function App({ Component, pageProps }: AppProps) {
   useEffect(() => {
     if (!hydrated) return;
     const isAuthPage = router.pathname === '/login';
+    // Field staff open this from a shared link on their phones - they don't
+    // have (and shouldn't need) an app login just to tap through to a form.
+    const isPublicPage = router.pathname === '/field-forms';
     const isAuthenticated = !!user;
 
-    if (!isAuthenticated && !isAuthPage) {
+    if (!isAuthenticated && !isAuthPage && !isPublicPage) {
       router.push('/login');
     } else if (isAuthenticated && isAuthPage) {
       router.push('/dashboard');
