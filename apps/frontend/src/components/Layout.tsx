@@ -71,6 +71,7 @@ export const MainLayout: React.FC<LayoutProps> = ({ children }) => {
       { label: '🗂 Saved Compilations', href: '/compilations' },
     ] },
     { title: 'Operations', items: [
+      { label: '📝 Field Forms', href: '/field-forms' },
       { label: '📅 Appointments', href: '/appointments' },
       { label: '🚚 Dispatch', href: '/dispatch' },
       { label: '📍 Logistics', href: '/logistics' },
@@ -190,6 +191,7 @@ export const MainLayout: React.FC<LayoutProps> = ({ children }) => {
 function getPageTitle(pathname: string): string {
   const titles: Record<string, string> = {
     '/dashboard': 'Dashboard',
+    '/field-forms': 'Field Forms',
     '/pos': 'Purchase Orders',
     '/pos/bin': 'PO Bin',
     '/pos/not-fulfilled': 'Not Fulfilled',
