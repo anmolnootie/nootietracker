@@ -20,9 +20,11 @@ function App({ Component, pageProps }: AppProps) {
   useEffect(() => {
     if (!hydrated) return;
     const isAuthPage = router.pathname === '/login';
-    // Field staff open this from a shared link on their phones - they don't
+    // Field staff open these from a shared link on their phones - they don't
     // have (and shouldn't need) an app login just to tap through to a form.
-    const isPublicPage = router.pathname === '/field-forms';
+    // /store-team is The Pet Point's own page, unrelated to Nootie's app -
+    // it's hosted here only because it's a separate, no-login page like this one.
+    const isPublicPage = router.pathname === '/field-forms' || router.pathname === '/store-team';
     const isAuthenticated = !!user;
 
     if (!isAuthenticated && !isAuthPage && !isPublicPage) {
