@@ -25,6 +25,13 @@ export default function StoreTeam() {
       <Head>
         <title>The Pet Point – Store Team</title>
         <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cellipse cx='32' cy='40' rx='16' ry='13' fill='%23C8161E'/%3E%3Cellipse cx='14' cy='22' rx='7' ry='9' fill='%23C8161E'/%3E%3Cellipse cx='32' cy='14' rx='7.5' ry='9.5' fill='%23C8161E'/%3E%3Cellipse cx='50' cy='22' rx='7' ry='9' fill='%23C8161E'/%3E%3Cellipse cx='54' cy='40' rx='6' ry='7.5' fill='%23C8161E' transform='rotate(18 54 40)'/%3E%3C/svg%3E" />
+        <link rel="manifest" href="/pet-point-manifest.json" />
+        <meta name="theme-color" content="#C8161E" />
+        <meta name="mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+        <meta name="apple-mobile-web-app-title" content="Pet Point" />
+        <link rel="apple-touch-icon" href="/pet-point-apple-touch-icon.png" />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800;900&display=swap" rel="stylesheet" />

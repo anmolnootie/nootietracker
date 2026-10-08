@@ -1,0 +1,31 @@
+{
+  "name": "The Pet Point - Store Team",
+  "short_name": "Pet Point",
+  "description": "The Pet Point store team links - reviews, daily checklist, demand PO, store issues.",
+  "start_url": "/store-team",
+  "scope": "/store-team",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#C8161E",
+  "theme_color": "#C8161E",
+  "icons": [
+    {
+      "src": "/pet-point-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pet-point-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pet-point-icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
