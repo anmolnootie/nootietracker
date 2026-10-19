@@ -67,9 +67,14 @@ export default function PrnImport() {
       <div className="bg-white rounded-lg shadow p-8 mb-6">
         <div className="flex items-center justify-between mb-2">
           <h2 className="text-2xl font-bold text-gray-800">Bulk PRN Upload</h2>
-          <a href="/invoice-import" className="text-sm text-nootie-orange-dark hover:underline">
-            ← Invoice Bulk Upload
-          </a>
+          <div className="flex gap-4 text-sm">
+            <a href="/invoice-import" className="text-nootie-orange-dark hover:underline">
+              ← Invoice Bulk Upload
+            </a>
+            <a href="/dn-import" className="text-nootie-orange-dark hover:underline">
+              Bulk DN Upload →
+            </a>
+          </div>
         </div>
         <p className="text-gray-500 text-sm mb-6">
           Upload the Purchase Return Note (PRN) export from the quick-commerce portal - debit notes and purchase

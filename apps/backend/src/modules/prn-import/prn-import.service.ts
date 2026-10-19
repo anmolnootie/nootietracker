@@ -6,6 +6,7 @@ import { format } from 'date-fns';
 import { PrnUploadBatchEntity } from '../../database/entities/prn-upload-batch.entity';
 import { PrnImportRowEntity } from '../../database/entities/prn-import-row.entity';
 import { FileReaderService } from '../bulk-import/file-reader.service';
+import { parseIstTimestamp } from '../../common/ist-timestamp.util';
 
 // One alias per PRN export column. This is a fixed-format vendor export
 // (Blink Commerce/Zepto's PRN sheet), so unlike invoice-import's multi-alias
@@ -92,38 +93,6 @@ function parseInt10(v: any): number | null {
   return n === null ? null : Math.trunc(n);
 }
 
-const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
-
-/** Reinterprets naive y/mo/d/h/mi/s components as IST (Indian quick-commerce
- * data), independent of server timezone. */
-function istToUtc(y: number, mo: number, d: number, h: number, mi: number, s: number): Date {
-  return new Date(Date.UTC(y, mo - 1, d, h, mi, s) - IST_OFFSET_MS);
-}
-
-function parseTimestamp(value: any): Date | null {
-  // The export's timestamp carries no timezone marker (Indian quick-commerce
-  // data, meant as IST). For a CSV upload, FileReaderService's cellDates
-  // option has SheetJS auto-parse "YYYY-MM-DD HH:mm:ss" text into a Date via
-  // an ambiguous, server-local-timezone-dependent parse - verified empirically
-  // that its LOCAL getters still round-trip the exact naive components
-  // regardless of system TZ (the ambiguous parse and these getters are each
-  // other's inverse), so re-deriving from local getters and re-applying our
-  // own explicit IST interpretation makes the result deterministic.
-  if (value instanceof Date && !Number.isNaN(value.getTime())) {
-    return istToUtc(value.getFullYear(), value.getMonth() + 1, value.getDate(), value.getHours(), value.getMinutes(), value.getSeconds());
-  }
-
-  const str = String(value ?? '').trim();
-  if (!str) return null;
-  const m = str.match(/^(\d{4})-(\d{1,2})-(\d{1,2})[ T](\d{1,2}):(\d{1,2})(?::(\d{1,2}))?/);
-  if (m) {
-    const [, y, mo, d, h, mi, s] = m;
-    return istToUtc(Number(y), Number(mo), Number(d), Number(h), Number(mi), Number(s || 0));
-  }
-
-  const native = new Date(str);
-  return Number.isNaN(native.getTime()) ? null : native;
-}
 
 @Injectable()
 export class PrnImportService {
@@ -198,7 +167,7 @@ export class PrnImportService {
         invoiceId: text('invoiceId'),
         invoiceTypeId: parseInt10(get('invoiceTypeId')),
         invoiceDescription: text('invoiceDescription'),
-        posTimestamp: parseTimestamp(get('posTimestamp')),
+        posTimestamp: parseIstTimestamp(get('posTimestamp')),
         itemId: text('itemId'),
         manufacturerId: text('manufacturerId'),
         manufacturer: text('manufacturer'),
