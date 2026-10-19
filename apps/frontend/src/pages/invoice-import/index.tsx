@@ -65,7 +65,12 @@ export default function InvoiceImport() {
   return (
     <MainLayout>
       <div className="bg-white rounded-lg shadow p-8 mb-6">
-        <h2 className="text-2xl font-bold mb-2 text-gray-800">Invoice Bulk Upload</h2>
+        <div className="flex items-center justify-between mb-2">
+          <h2 className="text-2xl font-bold text-gray-800">Invoice Bulk Upload</h2>
+          <a href="/prn-import" className="text-sm text-nootie-orange-dark hover:underline">
+            Bulk PRN Upload →
+          </a>
+        </div>
         <p className="text-gray-500 text-sm mb-6">
           Upload the invoice sheet as exported (Invoice No., Invoice Date, Customer Name, Net Amount). The sheet
           carries no PO Number, so each invoice is linked to its PO through the Daily Dispatch Report - upload
