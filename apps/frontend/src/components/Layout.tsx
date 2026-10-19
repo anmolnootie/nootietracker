@@ -61,6 +61,7 @@ export const MainLayout: React.FC<LayoutProps> = ({ children }) => {
     { title: 'Import', items: [
       { label: '⇪ Upload / Bulk Import', href: '/bulk-import' },
       { label: '📊 Compilation Reports', href: '/bulk-import/reports' },
+      { label: '📅 Day-wise Dispatch Report', href: '/dispatch-date-report' },
       { label: '🧾 Invoice Bulk Upload', href: '/invoice-import' },
       { label: '🧾 Bulk PRN Upload', href: '/prn-import' },
       { label: '🧾 Bulk DN Upload', href: '/dn-import' },
@@ -211,6 +212,7 @@ function getPageTitle(pathname: string): string {
     '/users': 'Users',
     '/bulk-import': 'Bulk Import',
     '/bulk-import/reports': 'Compilation Reports',
+    '/dispatch-date-report': 'Day-wise Dispatch Report',
     '/invoice-import': 'Invoice Bulk Upload',
     '/prn-import': 'Bulk PRN Upload',
     '/dn-import': 'Bulk DN Upload',

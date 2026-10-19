@@ -7,6 +7,7 @@ import { POMasterEntity } from '../../database/entities/po-master.entity';
 import { POLineItemEntity } from '../../database/entities/po-line-item.entity';
 import { DispatchEntity } from '../../database/entities/dispatch.entity';
 import { BulkPOProcessedRowEntity } from '../../database/entities/bulk-processed-row.entity';
+import { istDayRangeUtc } from '../../common/ist-timestamp.util';
 
 // Formats a date for the exported spreadsheet fixed to IST, independent of the
 // server's own clock/timezone - `toLocaleDateString` without an explicit
@@ -70,6 +71,24 @@ export class POReportsService {
     // the most recent batch and would go stale after a later re-upload.
     const rows = await this.processedRepository.find({ where: { batchId: filters.batchId } });
     return [...new Set(rows.map((r) => r.matchedPoId).filter((id): id is string => !!id))];
+  }
+
+  /**
+   * POs whose effective dispatch date (manual plannedDispatchDate override,
+   * else the system's recommendedDispatchDate) falls on the given IST
+   * calendar day and haven't actually dispatched yet - "what's due to go
+   * out that day", not a history of what already went.
+   */
+  async resolvePoIdsForDispatchDate(dateStr: string): Promise<string[]> {
+    const { start, end } = istDayRangeUtc(dateStr);
+    const dispatches = await this.dispatchRepository
+      .createQueryBuilder('d')
+      .select('d.poId', 'poId')
+      .where('d.actualDispatchDate IS NULL')
+      .andWhere('COALESCE(d.plannedDispatchDate, d.recommendedDispatchDate) >= :start', { start })
+      .andWhere('COALESCE(d.plannedDispatchDate, d.recommendedDispatchDate) < :end', { end })
+      .getRawMany();
+    return dispatches.map((d) => d.poId);
   }
 
   async getSkuSummary(filters: ReportFilters): Promise<{ rows: SkuSummaryRow[]; grandTotal: { unitsOrdered: number; totalAmount: number } }> {

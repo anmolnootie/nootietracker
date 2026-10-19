@@ -130,4 +130,35 @@ export class BulkImportController {
     res.setHeader('Content-Disposition', 'attachment; filename="po-summary.xlsx"');
     res.send(buffer);
   }
+
+  @Get('reports/by-dispatch-date')
+  async getByDispatchDate(@Query('date') date: string) {
+    if (!date) throw new BadRequestException('date is required (YYYY-MM-DD)');
+    const poIds = await this.poReportsService.resolvePoIdsForDispatchDate(date);
+    const [skuSummary, poSummary] = await Promise.all([
+      this.poReportsService.getSkuSummary({ poIds }),
+      this.poReportsService.getPoSummary({ poIds }),
+    ]);
+    return { date, poCount: poIds.length, skuSummary, poSummary };
+  }
+
+  @Get('reports/by-dispatch-date/sku-summary.xlsx')
+  async downloadByDispatchDateSku(@Query('date') date: string, @Res() res: Response) {
+    if (!date) throw new BadRequestException('date is required (YYYY-MM-DD)');
+    const poIds = await this.poReportsService.resolvePoIdsForDispatchDate(date);
+    const buffer = await this.poReportsService.buildSkuSummaryWorkbook({ poIds });
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="sku-summary-${date}.xlsx"`);
+    res.send(buffer);
+  }
+
+  @Get('reports/by-dispatch-date/po-summary.xlsx')
+  async downloadByDispatchDatePo(@Query('date') date: string, @Res() res: Response) {
+    if (!date) throw new BadRequestException('date is required (YYYY-MM-DD)');
+    const poIds = await this.poReportsService.resolvePoIdsForDispatchDate(date);
+    const buffer = await this.poReportsService.buildPoSummaryWorkbook({ poIds });
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="po-summary-${date}.xlsx"`);
+    res.send(buffer);
+  }
 }

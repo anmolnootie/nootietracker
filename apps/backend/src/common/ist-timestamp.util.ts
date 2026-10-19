@@ -34,3 +34,17 @@ export function parseIstTimestamp(value: any): Date | null {
   const native = new Date(str);
   return Number.isNaN(native.getTime()) ? null : native;
 }
+
+/**
+ * The [start, end) UTC instants bounding one IST calendar day, for a
+ * "YYYY-MM-DD" date picker value - so filtering `WHERE col >= start AND col
+ * < end` matches "that day" correctly regardless of server timezone.
+ */
+export function istDayRangeUtc(dateStr: string): { start: Date; end: Date } {
+  const m = dateStr.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (!m) throw new Error(`Invalid date "${dateStr}" - expected YYYY-MM-DD`);
+  const [, y, mo, d] = m;
+  const start = istToUtc(Number(y), Number(mo), Number(d), 0, 0, 0);
+  const end = istToUtc(Number(y), Number(mo), Number(d) + 1, 0, 0, 0);
+  return { start, end };
+}

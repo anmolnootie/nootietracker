@@ -52,4 +52,19 @@ export const bulkImportService = {
     link.remove();
     window.URL.revokeObjectURL(url);
   },
+
+  getByDispatchDate: async (date: string): Promise<any> =>
+    (await api.get('/bulk-import/reports/by-dispatch-date', { params: { date } })).data,
+
+  downloadByDispatchDate: async (report: 'sku-summary' | 'po-summary', date: string) => {
+    const response = await api.get(`/bulk-import/reports/by-dispatch-date/${report}.xlsx`, { params: { date }, responseType: 'blob' });
+    const url = window.URL.createObjectURL(new Blob([response.data]));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${report}-${date}.xlsx`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+  },
 };
