@@ -204,6 +204,15 @@ export class BulkImportService {
         cleanedRows.map((c) => c.cleaned.poNumber).filter((n): n is string => !!n),
       );
 
+      // One bulk INSERT instead of one per row - the audit trail doesn't
+      // depend on anything computed per-row, so there's no reason to write
+      // it one row at a time. TypeORM's save() on an array returns entities
+      // in the same order as given, so savedRawRows[i] matches rows[i].
+      const savedRawRows = await this.rawRepository.save(
+        rows.map((r, i) => this.rawRepository.create({ batchId: batch.id, rowIndex: i, rawData: r })),
+        { transaction: false, chunk: 200 },
+      );
+
       const poNumbers = new Set<string>();
       const skuCodes = new Set<string>();
       let minDate: Date | null = null;
@@ -214,34 +223,59 @@ export class BulkImportService {
       let updatedCount = 0;
       let dupCount = 0;
       let failedCount = 0;
+      let processedCount = 0;
 
       // Saving progress bumps updatedAt, which is how a stalled import (server
       // restarted mid-run) is told apart from a merely slow one - so it must
-      // happen at least every few seconds even when rows are slow.
+      // happen at least every few seconds even when rows are slow. Guarded
+      // against overlapping calls (several concurrent PO groups can cross a
+      // flush threshold around the same moment) - a skipped flush here just
+      // means the next one, moments later, carries the up-to-date totals.
       let lastFlush = Date.now();
-      const flushProgress = async (processed: number) => {
-        batch = await this.updateBatch(batch, {
-          processedRows: processed,
-          newRecords: newCount,
-          updatedRecords: updatedCount,
-          duplicateRecords: dupCount,
-          failedRecords: failedCount,
-        });
-        lastFlush = Date.now();
+      let flushing = false;
+      const flushProgress = async () => {
+        if (flushing) return;
+        flushing = true;
+        try {
+          batch = await this.updateBatch(batch, {
+            processedRows: processedCount,
+            newRecords: newCount,
+            updatedRecords: updatedCount,
+            duplicateRecords: dupCount,
+            failedRecords: failedCount,
+          });
+          lastFlush = Date.now();
+        } finally {
+          flushing = false;
+        }
       };
 
-      let cancelledAt: number | null = null;
-      for (let i = 0; i < rows.length; i++) {
-        if (this.cancelRequested.has(batch.id)) {
-          cancelledAt = i;
-          break;
-        }
-        if (i > 0 && (i % 25 === 0 || Date.now() - lastFlush > 5000)) await flushProgress(i);
+      let cancelled = false;
 
-        const rawRow = await this.rawRepository.save(this.rawRepository.create({ batchId: batch.id, rowIndex: i, rawData: rows[i] }), { transaction: false });
+      // Rows sharing a PO number must stay in file order relative to each
+      // other (each one may depend on a PO/line/appointment the previous one
+      // just wrote) - but rows for DIFFERENT PO numbers touch completely
+      // disjoint database rows and have always been safe to run at the same
+      // time. Grouping by PO number and running several groups concurrently
+      // (capped well under the connection pool size - see database.module.ts)
+      // is what turns a bulk import's per-row network latency from additive
+      // into overlapped, without changing a single classification/compile
+      // decision from the strictly-serial version.
+      const groups = new Map<string, number[]>();
+      let anonymousGroups = 0;
+      for (let i = 0; i < cleanedRows.length; i++) {
+        const poNumber = cleanedRows[i].cleaned.poNumber;
+        const key = poNumber ? `po:${poNumber}` : `row:${anonymousGroups++}`;
+        const list = groups.get(key);
+        if (list) list.push(i);
+        else groups.set(key, [i]);
+      }
+      const groupList = [...groups.values()];
 
+      const processRow = async (i: number) => {
+        const rawRow = savedRawRows[i];
         const cleaning = cleanedRows[i];
-        if (cleaning.isBlank) continue; // RAW row is preserved above; nothing further to process
+        if (cleaning.isBlank) return; // RAW row is preserved above; nothing further to process
 
         if (cleaning.cleaned.poNumber) poNumbers.add(cleaning.cleaned.poNumber);
         if (cleaning.cleaned.skuCode) skuCodes.add(cleaning.cleaned.skuCode);
@@ -320,12 +354,12 @@ export class BulkImportService {
 
         if (cleaning.status === 'INVALID') {
           failedCount++;
-          continue; // RAW -> EXCEPTION QUEUE only; never touches the master
+          return; // RAW -> EXCEPTION QUEUE only; never touches the master
         }
 
         if (dedup.classification === DedupClassification.EXACT_DUPLICATE) {
           dupCount++;
-          continue;
+          return;
         }
 
         if (dedup.classification === DedupClassification.POSSIBLE_DUPLICATE) {
@@ -340,7 +374,7 @@ export class BulkImportService {
             severity: ExceptionSeverity.MEDIUM,
             recommendedAction: 'Missing PO Number or SKU means this cannot be confidently matched - review manually.',
           });
-          continue;
+          return;
         }
 
         try {
@@ -354,7 +388,31 @@ export class BulkImportService {
           this.logger.error(`Failed to compile row ${i} of batch ${batch.batchCode}`, err as any);
           failedCount++;
         }
-      }
+      };
+
+      // Rows within a group run strictly in order (preserves every same-PO
+      // dependency above); different groups run on their own concurrent
+      // "lane". CONCURRENCY stays well under the connection pool's max (see
+      // database.module.ts) so this never risks exhausting it even with
+      // other requests hitting the backend during a long import.
+      const CONCURRENCY = 6;
+      let nextGroupIndex = 0;
+      const runLane = async () => {
+        while (nextGroupIndex < groupList.length) {
+          if (cancelled) return;
+          const group = groupList[nextGroupIndex++];
+          for (const i of group) {
+            if (this.cancelRequested.has(batch.id)) {
+              cancelled = true;
+              return;
+            }
+            await processRow(i);
+            processedCount++;
+            if (processedCount % 25 === 0 || Date.now() - lastFlush > 5000) await flushProgress();
+          }
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(CONCURRENCY, groupList.length) }, () => runLane()));
 
       // Authoritative count from the exceptions table itself - the in-loop
       // exceptionCount above only tracks rows flagged during cleaning, and misses
@@ -362,7 +420,7 @@ export class BulkImportService {
       const totalExceptions = await this.exceptionsService.countByBatch(batch.id);
 
       batch = await this.updateBatch(batch, {
-        processedRows: cancelledAt ?? rows.length,
+        processedRows: cancelled ? processedCount : rows.length,
         poCount: poNumbers.size,
         skuCount: skuCodes.size,
         dateRangeStart: minDate,
@@ -372,13 +430,15 @@ export class BulkImportService {
         duplicateRecords: dupCount,
         exceptionRecords: totalExceptions,
         failedRecords: failedCount,
-        status:
-          cancelledAt != null
-            ? UploadBatchStatus.CANCELLED
-            : totalExceptions > 0 || failedCount > 0
-              ? UploadBatchStatus.COMPLETED_WITH_EXCEPTIONS
-              : UploadBatchStatus.COMPLETED,
-        errorMessage: cancelledAt != null ? `Stopped at row ${cancelledAt} of ${rows.length} - everything up to there was kept.` : undefined,
+        status: cancelled
+          ? UploadBatchStatus.CANCELLED
+          : totalExceptions > 0 || failedCount > 0
+            ? UploadBatchStatus.COMPLETED_WITH_EXCEPTIONS
+            : UploadBatchStatus.COMPLETED,
+        // Several PO groups run concurrently, so "stopped at row X" no longer
+        // names one clean boundary the way a single serial loop did - this
+        // names how many of the file's rows were actually processed instead.
+        errorMessage: cancelled ? `Stopped after ${processedCount} of ${rows.length} rows - everything up to there was kept.` : undefined,
       });
     } catch (err) {
       this.logger.error(`Bulk import failed for batch ${batch.batchCode}`, err as any);

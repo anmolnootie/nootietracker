@@ -110,9 +110,12 @@ const ENTITIES = [
           // two unbounded pools of 10 can add up to 20 and get refused,
           // which is exactly what killed a bulk import partway through
           // ("(EMAXCONNSESSION) max clients reached ... pool_size: 15").
-          // 5 per service leaves headroom for the Supabase dashboard or a
-          // one-off script; override with DATABASE_POOL_MAX if this ever
-          // needs to change (e.g. after moving off the Session Pooler).
+          // 8 for this service + worker's 5 = 13, leaving 2 of the 15 free
+          // for the Supabase dashboard or a one-off script. Raised from 5 to
+          // let bulk-import process several POs concurrently (grouped by PO
+          // number, see bulk-import.service.ts) instead of strictly one row
+          // at a time - override with DATABASE_POOL_MAX if this ever needs
+          // to change (e.g. after moving off the Session Pooler).
           //
           // Timeouts: with none, a connection that silently dies (the pooler
           // or a network hop drops it without telling us) leaves the awaiting
@@ -122,7 +125,7 @@ const ENTITIES = [
           // runs; keepAlive stops idle connections being dropped in the first
           // place. No legitimate query here runs anywhere near 2 minutes.
           extra: {
-            max: Number(configService.get('DATABASE_POOL_MAX', 5)),
+            max: Number(configService.get('DATABASE_POOL_MAX', 8)),
             keepAlive: true,
             query_timeout: Number(configService.get('DATABASE_QUERY_TIMEOUT_MS', 120000)),
             connectionTimeoutMillis: 30000,
