@@ -14,7 +14,7 @@ export class DispatchReportImportController {
     if (!file) {
       throw new BadRequestException('A file is required');
     }
-    return this.dispatchReportImportService.processFile(file.buffer, file.originalname, req.user.userId);
+    return this.dispatchReportImportService.startFile(file.buffer, file.originalname, req.user.userId);
   }
 
   @Get('batches')

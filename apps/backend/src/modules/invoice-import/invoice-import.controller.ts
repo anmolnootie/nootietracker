@@ -14,7 +14,7 @@ export class InvoiceImportController {
     if (!file) {
       throw new BadRequestException('A file is required');
     }
-    return this.invoiceImportService.processFile(file.buffer, file.originalname, req.user.userId);
+    return this.invoiceImportService.startFile(file.buffer, file.originalname, req.user.userId);
   }
 
   @Get('batches')

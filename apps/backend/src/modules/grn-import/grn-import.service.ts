@@ -12,6 +12,9 @@ import { GRNOutcome } from '@po-control-tower/shared';
 import { FileReaderService } from '../bulk-import/file-reader.service';
 import { POService } from '../po/po.service';
 import { InvoiceImportService } from '../invoice-import/invoice-import.service';
+import { BackgroundImportRunner, failStalledBatches } from '../../common/background-import-runner';
+
+const ACTIVE_STATUSES = ['PROCESSING'];
 
 // Deliberately a small, self-contained alias set - same rationale as
 // invoice-import.service.ts. GRN sheets vary a lot in wording for the
@@ -65,6 +68,10 @@ function parseNumber(v: any): number | null {
 @Injectable()
 export class GrnImportService {
   private readonly logger = new Logger(GrnImportService.name);
+  // Both processFile() and processInvoiceSheet() share this one queue -
+  // they both ultimately call poService.recordGRN() against the same PO
+  // rows, so two imports of either kind must still never run at once.
+  private readonly runner = new BackgroundImportRunner();
 
   constructor(
     @InjectRepository(GrnUploadBatchEntity)
@@ -82,18 +89,33 @@ export class GrnImportService {
     private readonly invoiceImportService: InvoiceImportService,
   ) {}
 
-  async processFile(buffer: Buffer, fileName: string, uploadedByUserId: string): Promise<GrnUploadBatchEntity> {
+  /**
+   * Registers the upload and returns right away; the import itself runs in
+   * the background (queued behind any other GRN import already running -
+   * see the runner field above). Each row runs poService.recordGRN(), which
+   * triggers stuck-stock recovery, task completion, and auto-created
+   * returns - real side effects, not just a row insert, so this was never
+   * fast enough to make a browser tab wait on synchronously. Progress and
+   * the outcome show on the batch (status, totalRows/matchedCount/
+   * unmatchedCount), polled the same way bulk-import's own upload is.
+   */
+  async startFile(buffer: Buffer, fileName: string, uploadedByUserId: string): Promise<GrnUploadBatchEntity> {
     const batchCode = await this.generateBatchCode('GRN');
-    let batch = await this.batchRepository.save(
+    const batch = await this.batchRepository.save(
       this.batchRepository.create({ batchCode, fileName, uploadedByUserId, status: 'PROCESSING' }),
     );
+    this.runner.enqueue(batch.id, () => this.runImport(batch, buffer, fileName));
+    return batch;
+  }
 
+  private async runImport(batch: GrnUploadBatchEntity, buffer: Buffer, fileName: string): Promise<void> {
     try {
       const { headers, rows } = this.fileReaderService.read(buffer, fileName);
       const mapping = this.mapHeaders(headers);
 
       let matchedCount = 0;
       let unmatchedCount = 0;
+      let lastFlush = Date.now();
 
       for (let i = 0; i < rows.length; i++) {
         const row = rows[i];
@@ -134,21 +156,27 @@ export class GrnImportService {
 
         if (result.matchStatus === 'MATCHED') matchedCount++;
         else unmatchedCount++;
+
+        // Saving progress bumps updatedAt, which is how failStalledBatches()
+        // tells a stalled import (server restarted mid-run) apart from a
+        // merely slow one - so it must happen at least every few seconds
+        // even when rows are slow, not just at the very end.
+        if (i > 0 && (i % 25 === 0 || Date.now() - lastFlush > 5000)) {
+          await this.batchRepository.update(batch.id, { totalRows: i + 1, matchedCount, unmatchedCount });
+          lastFlush = Date.now();
+        }
       }
 
-      batch.totalRows = rows.length;
-      batch.matchedCount = matchedCount;
-      batch.unmatchedCount = unmatchedCount;
-      batch.status = 'COMPLETED';
-      batch = await this.batchRepository.save(batch);
+      await this.batchRepository.update(batch.id, {
+        totalRows: rows.length,
+        matchedCount,
+        unmatchedCount,
+        status: 'COMPLETED',
+      });
     } catch (err) {
       this.logger.error(`GRN import failed for batch ${batch.batchCode}`, err as any);
-      batch.status = 'FAILED';
-      batch.errorMessage = (err as Error).message;
-      batch = await this.batchRepository.save(batch);
+      await this.batchRepository.update(batch.id, { status: 'FAILED', errorMessage: (err as Error).message });
     }
-
-    return batch;
   }
 
   /**
@@ -161,18 +189,25 @@ export class GrnImportService {
    * Report), and each row goes through recordGRN() like every other GRN
    * path. A PO that already has a real GRN is never overwritten.
    */
-  async processInvoiceSheet(buffer: Buffer, fileName: string, uploadedByUserId: string): Promise<GrnUploadBatchEntity> {
+  /** Same background-queued, progress-flushed shape as startFile() above - see its comment. */
+  async startInvoiceSheet(buffer: Buffer, fileName: string, uploadedByUserId: string): Promise<GrnUploadBatchEntity> {
     const batchCode = await this.generateBatchCode('GRI');
-    let batch = await this.batchRepository.save(
+    const batch = await this.batchRepository.save(
       this.batchRepository.create({ batchCode, fileName, uploadedByUserId, status: 'PROCESSING' }),
     );
+    this.runner.enqueue(batch.id, () => this.runInvoiceSheetImport(batch, buffer, fileName));
+    return batch;
+  }
 
+  private async runInvoiceSheetImport(batch: GrnUploadBatchEntity, buffer: Buffer, fileName: string): Promise<void> {
     try {
       const parsed = this.invoiceImportService.parseSheet(buffer, fileName);
       let matchedCount = 0;
       let unmatchedCount = 0;
+      let lastFlush = Date.now();
 
-      for (const r of parsed) {
+      for (let i = 0; i < parsed.length; i++) {
+        const r = parsed[i];
         const result = await this.recordFromInvoice(r.poNumber, r.invoiceNumber, r.invoiceValue);
 
         await this.rowRepository.save(
@@ -194,21 +229,23 @@ export class GrnImportService {
 
         if (result.matchStatus === 'MATCHED') matchedCount++;
         else unmatchedCount++;
+
+        if (i > 0 && (i % 25 === 0 || Date.now() - lastFlush > 5000)) {
+          await this.batchRepository.update(batch.id, { totalRows: matchedCount + unmatchedCount, matchedCount, unmatchedCount });
+          lastFlush = Date.now();
+        }
       }
 
-      batch.totalRows = matchedCount + unmatchedCount;
-      batch.matchedCount = matchedCount;
-      batch.unmatchedCount = unmatchedCount;
-      batch.status = 'COMPLETED';
-      batch = await this.batchRepository.save(batch);
+      await this.batchRepository.update(batch.id, {
+        totalRows: matchedCount + unmatchedCount,
+        matchedCount,
+        unmatchedCount,
+        status: 'COMPLETED',
+      });
     } catch (err) {
       this.logger.error(`GRN-from-invoices import failed for batch ${batch.batchCode}`, err as any);
-      batch.status = 'FAILED';
-      batch.errorMessage = (err as Error).message;
-      batch = await this.batchRepository.save(batch);
+      await this.batchRepository.update(batch.id, { status: 'FAILED', errorMessage: (err as Error).message });
     }
-
-    return batch;
   }
 
   private async recordFromInvoice(
@@ -342,10 +379,12 @@ export class GrnImportService {
   }
 
   async listBatches(): Promise<GrnUploadBatchEntity[]> {
+    await failStalledBatches(this.batchRepository, this.runner.getInFlightIds(), ACTIVE_STATUSES);
     return this.batchRepository.find({ order: { uploadedAt: 'DESC' } });
   }
 
   async getBatch(id: string): Promise<GrnUploadBatchEntity> {
+    await failStalledBatches(this.batchRepository, this.runner.getInFlightIds(), ACTIVE_STATUSES);
     return this.batchRepository.findOneByOrFail({ id });
   }
 

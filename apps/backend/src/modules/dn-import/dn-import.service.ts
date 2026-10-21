@@ -7,6 +7,9 @@ import { DnUploadBatchEntity } from '../../database/entities/dn-upload-batch.ent
 import { DnImportRowEntity } from '../../database/entities/dn-import-row.entity';
 import { FileReaderService } from '../bulk-import/file-reader.service';
 import { parseIstTimestamp } from '../../common/ist-timestamp.util';
+import { BackgroundImportRunner, failStalledBatches } from '../../common/background-import-runner';
+
+const ACTIVE_STATUSES = ['PROCESSING'];
 
 // One alias per DN export column. Fixed-format vendor export, same
 // rationale as prn-import.service.ts's PRN_FIELD_ALIASES.
@@ -66,6 +69,7 @@ function parseInt10(v: any): number | null {
 @Injectable()
 export class DnImportService {
   private readonly logger = new Logger(DnImportService.name);
+  private readonly runner = new BackgroundImportRunner();
 
   constructor(
     @InjectRepository(DnUploadBatchEntity)
@@ -75,30 +79,36 @@ export class DnImportService {
     private readonly fileReaderService: FileReaderService,
   ) {}
 
-  async processFile(buffer: Buffer, fileName: string, uploadedByUserId: string): Promise<DnUploadBatchEntity> {
+  /**
+   * Registers the upload and returns right away; the import itself runs in
+   * the background (queued behind any other DN import already running -
+   * see the runner field above). Every row is an independent insert with no
+   * per-row lookup, so they're all written in one bulk INSERT instead of
+   * one at a time.
+   */
+  async startFile(buffer: Buffer, fileName: string, uploadedByUserId: string): Promise<DnUploadBatchEntity> {
     const batchCode = await this.generateBatchCode();
-    let batch = await this.batchRepository.save(
+    const batch = await this.batchRepository.save(
       this.batchRepository.create({ batchCode, fileName, uploadedByUserId, status: 'PROCESSING' }),
     );
+    this.runner.enqueue(batch.id, () => this.runImport(batch, buffer, fileName));
+    return batch;
+  }
 
+  private async runImport(batch: DnUploadBatchEntity, buffer: Buffer, fileName: string): Promise<void> {
     try {
       const parsed = this.parseSheet(buffer, fileName);
 
-      for (const row of parsed) {
-        await this.rowRepository.save(this.rowRepository.create({ batchId: batch.id, ...row }));
-      }
+      await this.rowRepository.save(
+        parsed.map((row) => this.rowRepository.create({ batchId: batch.id, ...row })),
+        { chunk: 200 },
+      );
 
-      batch.totalRows = parsed.length;
-      batch.status = 'COMPLETED';
-      batch = await this.batchRepository.save(batch);
+      await this.batchRepository.update(batch.id, { totalRows: parsed.length, status: 'COMPLETED' });
     } catch (err) {
       this.logger.error(`DN import failed for batch ${batch.batchCode}`, err as any);
-      batch.status = 'FAILED';
-      batch.errorMessage = (err as Error).message;
-      batch = await this.batchRepository.save(batch);
+      await this.batchRepository.update(batch.id, { status: 'FAILED', errorMessage: (err as Error).message });
     }
-
-    return batch;
   }
 
   /** Reads a DN sheet into typed rows, skipping fully-blank lines. */
@@ -171,10 +181,12 @@ export class DnImportService {
   }
 
   async listBatches(): Promise<DnUploadBatchEntity[]> {
+    await failStalledBatches(this.batchRepository, this.runner.getInFlightIds(), ACTIVE_STATUSES);
     return this.batchRepository.find({ order: { uploadedAt: 'DESC' } });
   }
 
   async getBatch(id: string): Promise<DnUploadBatchEntity> {
+    await failStalledBatches(this.batchRepository, this.runner.getInFlightIds(), ACTIVE_STATUSES);
     return this.batchRepository.findOneByOrFail({ id });
   }
 

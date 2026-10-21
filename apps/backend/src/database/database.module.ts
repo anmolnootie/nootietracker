@@ -38,6 +38,10 @@ import { DispatchReportUploadBatchEntity } from './entities/dispatch-report-uplo
 import { DispatchReportRowEntity } from './entities/dispatch-report-row.entity';
 import { SheetTrackerUploadBatchEntity } from './entities/sheet-tracker-upload-batch.entity';
 import { SheetTrackerRowEntity } from './entities/sheet-tracker-row.entity';
+import { PrnUploadBatchEntity } from './entities/prn-upload-batch.entity';
+import { PrnImportRowEntity } from './entities/prn-import-row.entity';
+import { DnUploadBatchEntity } from './entities/dn-upload-batch.entity';
+import { DnImportRowEntity } from './entities/dn-import-row.entity';
 
 const ENTITIES = [
   UserEntity,
@@ -76,6 +80,10 @@ const ENTITIES = [
   DispatchReportRowEntity,
   SheetTrackerUploadBatchEntity,
   SheetTrackerRowEntity,
+  PrnUploadBatchEntity,
+  PrnImportRowEntity,
+  DnUploadBatchEntity,
+  DnImportRowEntity,
 ];
 
 @Module({

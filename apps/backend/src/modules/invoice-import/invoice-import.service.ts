@@ -10,6 +10,9 @@ import { DispatchEntity } from '../../database/entities/dispatch.entity';
 import { DispatchReportRowEntity } from '../../database/entities/dispatch-report-row.entity';
 import { FileReaderService } from '../bulk-import/file-reader.service';
 import { POService } from '../po/po.service';
+import { BackgroundImportRunner, failStalledBatches } from '../../common/background-import-runner';
+
+const ACTIVE_STATUSES = ['PROCESSING'];
 
 // Deliberately a small, self-contained alias set, same rationale as
 // po-import.service.ts's GENERIC_EXCEL_ALIASES: kept independent of the
@@ -63,6 +66,7 @@ function parseFlexibleDate(value: any): Date | null {
 @Injectable()
 export class InvoiceImportService {
   private readonly logger = new Logger(InvoiceImportService.name);
+  private readonly runner = new BackgroundImportRunner();
 
   constructor(
     @InjectRepository(InvoiceUploadBatchEntity)
@@ -79,19 +83,32 @@ export class InvoiceImportService {
     private readonly poService: POService,
   ) {}
 
-  async processFile(buffer: Buffer, fileName: string, uploadedByUserId: string): Promise<InvoiceUploadBatchEntity> {
+  /**
+   * Registers the upload and returns right away; the import itself runs in
+   * the background (queued behind any other invoice import already running
+   * - see the runner field above). Progress and the outcome show on the
+   * batch (status, totalRows/matchedCount/unmatchedCount), polled the same
+   * way bulk-import's own upload is.
+   */
+  async startFile(buffer: Buffer, fileName: string, uploadedByUserId: string): Promise<InvoiceUploadBatchEntity> {
     const batchCode = await this.generateBatchCode();
-    let batch = await this.batchRepository.save(
+    const batch = await this.batchRepository.save(
       this.batchRepository.create({ batchCode, fileName, uploadedByUserId, status: 'PROCESSING' }),
     );
+    this.runner.enqueue(batch.id, () => this.runImport(batch, buffer, fileName));
+    return batch;
+  }
 
+  private async runImport(batch: InvoiceUploadBatchEntity, buffer: Buffer, fileName: string): Promise<void> {
     try {
       const parsed = this.parseSheet(buffer, fileName);
 
       let matchedCount = 0;
       let unmatchedCount = 0;
+      let lastFlush = Date.now();
 
-      for (const { rowIndex: i, poNumber, invoiceNumber, invoiceValue, invoiceDate, awbNumber, customerName } of parsed) {
+      for (let i = 0; i < parsed.length; i++) {
+        const { rowIndex, poNumber, invoiceNumber, invoiceValue, invoiceDate, awbNumber, customerName } = parsed[i];
         const result = await this.matchAndApply(poNumber, { invoiceNumber, invoiceValue, invoiceDate, awbNumber });
 
         // Show the PO this row resolved to even though the sheet itself has no PO column.
@@ -101,7 +118,7 @@ export class InvoiceImportService {
         await this.rowRepository.save(
           this.rowRepository.create({
             batchId: batch.id,
-            rowIndex: i,
+            rowIndex,
             poNumber: linkedPoNumber,
             invoiceNumber,
             invoiceValue,
@@ -116,21 +133,27 @@ export class InvoiceImportService {
 
         if (result.matchStatus === 'MATCHED') matchedCount++;
         else unmatchedCount++;
+
+        // Saving progress bumps updatedAt, which is how failStalledBatches()
+        // tells a stalled import (server restarted mid-run) apart from a
+        // merely slow one - so it must happen at least every few seconds
+        // even when rows are slow, not just at the very end.
+        if (i > 0 && (i % 25 === 0 || Date.now() - lastFlush > 5000)) {
+          await this.batchRepository.update(batch.id, { totalRows: matchedCount + unmatchedCount, matchedCount, unmatchedCount });
+          lastFlush = Date.now();
+        }
       }
 
-      batch.totalRows = matchedCount + unmatchedCount;
-      batch.matchedCount = matchedCount;
-      batch.unmatchedCount = unmatchedCount;
-      batch.status = 'COMPLETED';
-      batch = await this.batchRepository.save(batch);
+      await this.batchRepository.update(batch.id, {
+        totalRows: matchedCount + unmatchedCount,
+        matchedCount,
+        unmatchedCount,
+        status: 'COMPLETED',
+      });
     } catch (err) {
       this.logger.error(`Invoice import failed for batch ${batch.batchCode}`, err as any);
-      batch.status = 'FAILED';
-      batch.errorMessage = (err as Error).message;
-      batch = await this.batchRepository.save(batch);
+      await this.batchRepository.update(batch.id, { status: 'FAILED', errorMessage: (err as Error).message });
     }
-
-    return batch;
   }
 
   /**
@@ -280,10 +303,12 @@ export class InvoiceImportService {
   }
 
   async listBatches(): Promise<InvoiceUploadBatchEntity[]> {
+    await failStalledBatches(this.batchRepository, this.runner.getInFlightIds(), ACTIVE_STATUSES);
     return this.batchRepository.find({ order: { uploadedAt: 'DESC' } });
   }
 
   async getBatch(id: string): Promise<InvoiceUploadBatchEntity> {
+    await failStalledBatches(this.batchRepository, this.runner.getInFlightIds(), ACTIVE_STATUSES);
     return this.batchRepository.findOneByOrFail({ id });
   }
 

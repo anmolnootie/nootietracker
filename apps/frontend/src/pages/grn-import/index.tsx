@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { MainLayout } from '@/components/Layout';
 import { grnImportService, GrnUploadBatch } from '@/services/grn-import.service';
+import { useBatchProgress } from '@/hooks/useBatchProgress';
 import { format } from 'date-fns';
 
 const STATUS_STYLES: Record<string, string> = {
@@ -119,13 +120,18 @@ const UploadCard: React.FC<{
   const [file, setFile] = useState<File | null>(null);
   const [dragging, setDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [result, setResult] = useState<GrnUploadBatch | null>(null);
+  const [activeBatchId, setActiveBatchId] = useState<string | null>(null);
   const [error, setError] = useState('');
+
+  // The upload call itself returns almost instantly now (the import runs in
+  // the background) - this polls the batch so the page shows live progress
+  // instead of a static "Processing..." button with no feedback.
+  const liveBatch = useBatchProgress(activeBatchId, grnImportService.getBatch, () => onDone());
 
   const handleFile = (fileList: FileList | null) => {
     if (!fileList || fileList.length === 0) return;
     setFile(fileList[0]);
-    setResult(null);
+    setActiveBatchId(null);
     setError('');
   };
 
@@ -137,7 +143,8 @@ const UploadCard: React.FC<{
     setUploading(true);
     setError('');
     try {
-      setResult(await onUpload(file));
+      const batch = await onUpload(file);
+      setActiveBatchId(batch.id);
       setFile(null);
       await onDone();
     } catch (err: any) {
@@ -146,6 +153,8 @@ const UploadCard: React.FC<{
       setUploading(false);
     }
   };
+
+  const isRunning = liveBatch?.status === 'PROCESSING';
 
   return (
     <div className="bg-white rounded-lg shadow p-8 mb-6">
@@ -176,30 +185,37 @@ const UploadCard: React.FC<{
       {error && <div className="mt-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded text-sm">{error}</div>}
 
       <button
-        disabled={uploading || !file}
+        disabled={uploading || isRunning || !file}
         onClick={upload}
         className="mt-6 bg-nootie-orange-dark hover:bg-nootie-orange text-white font-medium py-2 px-6 rounded-lg transition-colors disabled:opacity-50"
       >
-        {uploading ? 'Processing...' : buttonLabel}
+        {uploading ? 'Starting...' : buttonLabel}
       </button>
 
-      {result && (
+      {liveBatch && (
         <div className="mt-8 border rounded-lg p-5 bg-nootie-cream">
           <div className="flex items-center justify-between mb-3">
             <div>
-              <p className="font-semibold text-gray-800">{result.fileName}</p>
-              <p className="text-xs text-gray-500">{result.batchCode}</p>
+              <p className="font-semibold text-gray-800">{liveBatch.fileName}</p>
+              <p className="text-xs text-gray-500">{liveBatch.batchCode}</p>
             </div>
-            <span className={`px-2 py-1 rounded text-xs font-medium ${STATUS_STYLES[result.status]}`}>{result.status}</span>
+            <span className={`px-2 py-1 rounded text-xs font-medium ${STATUS_STYLES[liveBatch.status]}`}>
+              {isRunning && <span className="inline-block w-2 h-2 rounded-full bg-blue-600 animate-pulse mr-1.5 align-middle" />}
+              {isRunning ? 'Processing' : liveBatch.status}
+            </span>
           </div>
           <div className="grid grid-cols-3 gap-4 text-center">
-            <Stat label="Rows" value={result.totalRows} />
-            <Stat label="Recorded" value={result.matchedCount} accent="text-green-600" />
-            <Stat label="Failed / Unmatched" value={result.unmatchedCount} accent="text-nootie-orange-dark" />
+            <Stat label="Rows So Far" value={liveBatch.totalRows} />
+            <Stat label="Recorded" value={liveBatch.matchedCount} accent="text-green-600" />
+            <Stat label="Failed / Unmatched" value={liveBatch.unmatchedCount} accent="text-nootie-orange-dark" />
           </div>
-          <a href={`/grn-import/${result.id}`} className="text-sm text-nootie-orange-dark hover:underline mt-4 inline-block">
-            View Results →
-          </a>
+          {isRunning ? (
+            <p className="text-xs text-gray-500 mt-4 text-center">Running in the background - this updates automatically, feel free to navigate away.</p>
+          ) : (
+            <a href={`/grn-import/${liveBatch.id}`} className="text-sm text-nootie-orange-dark hover:underline mt-4 inline-block">
+              View Results →
+            </a>
+          )}
         </div>
       )}
     </div>

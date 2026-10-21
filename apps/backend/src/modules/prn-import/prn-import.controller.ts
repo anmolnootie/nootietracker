@@ -14,7 +14,7 @@ export class PrnImportController {
     if (!file) {
       throw new BadRequestException('A file is required');
     }
-    return this.prnImportService.processFile(file.buffer, file.originalname, req.user.userId);
+    return this.prnImportService.startFile(file.buffer, file.originalname, req.user.userId);
   }
 
   @Get('batches')

@@ -7,6 +7,9 @@ import { PrnUploadBatchEntity } from '../../database/entities/prn-upload-batch.e
 import { PrnImportRowEntity } from '../../database/entities/prn-import-row.entity';
 import { FileReaderService } from '../bulk-import/file-reader.service';
 import { parseIstTimestamp } from '../../common/ist-timestamp.util';
+import { BackgroundImportRunner, failStalledBatches } from '../../common/background-import-runner';
+
+const ACTIVE_STATUSES = ['PROCESSING'];
 
 // One alias per PRN export column. This is a fixed-format vendor export
 // (Blink Commerce/Zepto's PRN sheet), so unlike invoice-import's multi-alias
@@ -97,6 +100,7 @@ function parseInt10(v: any): number | null {
 @Injectable()
 export class PrnImportService {
   private readonly logger = new Logger(PrnImportService.name);
+  private readonly runner = new BackgroundImportRunner();
 
   constructor(
     @InjectRepository(PrnUploadBatchEntity)
@@ -106,30 +110,36 @@ export class PrnImportService {
     private readonly fileReaderService: FileReaderService,
   ) {}
 
-  async processFile(buffer: Buffer, fileName: string, uploadedByUserId: string): Promise<PrnUploadBatchEntity> {
+  /**
+   * Registers the upload and returns right away; the import itself runs in
+   * the background (queued behind any other PRN import already running -
+   * see the runner field above). Every row is an independent insert with no
+   * per-row lookup, so they're all written in one bulk INSERT instead of
+   * one at a time.
+   */
+  async startFile(buffer: Buffer, fileName: string, uploadedByUserId: string): Promise<PrnUploadBatchEntity> {
     const batchCode = await this.generateBatchCode();
-    let batch = await this.batchRepository.save(
+    const batch = await this.batchRepository.save(
       this.batchRepository.create({ batchCode, fileName, uploadedByUserId, status: 'PROCESSING' }),
     );
+    this.runner.enqueue(batch.id, () => this.runImport(batch, buffer, fileName));
+    return batch;
+  }
 
+  private async runImport(batch: PrnUploadBatchEntity, buffer: Buffer, fileName: string): Promise<void> {
     try {
       const parsed = this.parseSheet(buffer, fileName);
 
-      for (const row of parsed) {
-        await this.rowRepository.save(this.rowRepository.create({ batchId: batch.id, ...row }));
-      }
+      await this.rowRepository.save(
+        parsed.map((row) => this.rowRepository.create({ batchId: batch.id, ...row })),
+        { chunk: 200 },
+      );
 
-      batch.totalRows = parsed.length;
-      batch.status = 'COMPLETED';
-      batch = await this.batchRepository.save(batch);
+      await this.batchRepository.update(batch.id, { totalRows: parsed.length, status: 'COMPLETED' });
     } catch (err) {
       this.logger.error(`PRN import failed for batch ${batch.batchCode}`, err as any);
-      batch.status = 'FAILED';
-      batch.errorMessage = (err as Error).message;
-      batch = await this.batchRepository.save(batch);
+      await this.batchRepository.update(batch.id, { status: 'FAILED', errorMessage: (err as Error).message });
     }
-
-    return batch;
   }
 
   /** Reads a PRN sheet into typed rows, skipping fully-blank lines. */
@@ -216,10 +226,12 @@ export class PrnImportService {
   }
 
   async listBatches(): Promise<PrnUploadBatchEntity[]> {
+    await failStalledBatches(this.batchRepository, this.runner.getInFlightIds(), ACTIVE_STATUSES);
     return this.batchRepository.find({ order: { uploadedAt: 'DESC' } });
   }
 
   async getBatch(id: string): Promise<PrnUploadBatchEntity> {
+    await failStalledBatches(this.batchRepository, this.runner.getInFlightIds(), ACTIVE_STATUSES);
     return this.batchRepository.findOneByOrFail({ id });
   }
 

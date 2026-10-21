@@ -14,7 +14,7 @@ export class GrnImportController {
     if (!file) {
       throw new BadRequestException('A file is required');
     }
-    return this.grnImportService.processFile(file.buffer, file.originalname, req.user.userId);
+    return this.grnImportService.startFile(file.buffer, file.originalname, req.user.userId);
   }
 
   @Post('upload-from-invoices')
@@ -23,7 +23,7 @@ export class GrnImportController {
     if (!file) {
       throw new BadRequestException('A file is required');
     }
-    return this.grnImportService.processInvoiceSheet(file.buffer, file.originalname, req.user.userId);
+    return this.grnImportService.startInvoiceSheet(file.buffer, file.originalname, req.user.userId);
   }
 
   @Get('batches')

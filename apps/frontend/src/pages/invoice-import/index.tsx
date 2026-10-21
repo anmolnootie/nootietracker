@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { MainLayout } from '@/components/Layout';
 import { invoiceImportService, InvoiceUploadBatch } from '@/services/invoice-import.service';
+import { useBatchProgress } from '@/hooks/useBatchProgress';
 import { format } from 'date-fns';
 
 const STATUS_STYLES: Record<string, string> = {
@@ -14,12 +15,18 @@ export default function InvoiceImport() {
   const [file, setFile] = useState<File | null>(null);
   const [dragging, setDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [result, setResult] = useState<InvoiceUploadBatch | null>(null);
+  const [activeBatchId, setActiveBatchId] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [batches, setBatches] = useState<InvoiceUploadBatch[]>([]);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const loadBatches = async () => setBatches(await invoiceImportService.listBatches());
+
+  // The upload call itself returns almost instantly now (the import runs in
+  // the background) - this polls the batch so the page shows live progress
+  // instead of a static "Processing..." button with no feedback.
+  const liveBatch = useBatchProgress(activeBatchId, invoiceImportService.getBatch, () => loadBatches());
+  const isRunning = liveBatch?.status === 'PROCESSING';
 
   const handleDelete = async (batch: InvoiceUploadBatch) => {
     if (!window.confirm(`Delete upload history for ${batch.batchCode}? This only removes the upload record - it does not undo any invoice data already written to POs.`)) return;
@@ -39,7 +46,7 @@ export default function InvoiceImport() {
   const handleFile = (fileList: FileList | null) => {
     if (!fileList || fileList.length === 0) return;
     setFile(fileList[0]);
-    setResult(null);
+    setActiveBatchId(null);
     setError('');
   };
 
@@ -51,8 +58,8 @@ export default function InvoiceImport() {
     setUploading(true);
     setError('');
     try {
-      const res = await invoiceImportService.upload(file);
-      setResult(res);
+      const batch = await invoiceImportService.upload(file);
+      setActiveBatchId(batch.id);
       setFile(null);
       await loadBatches();
     } catch (err: any) {
@@ -113,30 +120,37 @@ export default function InvoiceImport() {
         {error && <div className="mt-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded text-sm">{error}</div>}
 
         <button
-          disabled={uploading || !file}
+          disabled={uploading || isRunning || !file}
           onClick={upload}
           className="mt-6 bg-nootie-orange-dark hover:bg-nootie-orange text-white font-medium py-2 px-6 rounded-lg transition-colors disabled:opacity-50"
         >
-          {uploading ? 'Processing...' : 'Upload Invoices'}
+          {uploading ? 'Starting...' : 'Upload Invoices'}
         </button>
 
-        {result && (
+        {liveBatch && (
           <div className="mt-8 border rounded-lg p-5 bg-nootie-cream">
             <div className="flex items-center justify-between mb-3">
               <div>
-                <p className="font-semibold text-gray-800">{result.fileName}</p>
-                <p className="text-xs text-gray-500">{result.batchCode}</p>
+                <p className="font-semibold text-gray-800">{liveBatch.fileName}</p>
+                <p className="text-xs text-gray-500">{liveBatch.batchCode}</p>
               </div>
-              <span className={`px-2 py-1 rounded text-xs font-medium ${STATUS_STYLES[result.status]}`}>{result.status}</span>
+              <span className={`px-2 py-1 rounded text-xs font-medium ${STATUS_STYLES[liveBatch.status]}`}>
+                {isRunning && <span className="inline-block w-2 h-2 rounded-full bg-blue-600 animate-pulse mr-1.5 align-middle" />}
+                {isRunning ? 'Processing' : liveBatch.status}
+              </span>
             </div>
             <div className="grid grid-cols-3 gap-4 text-center">
-              <Stat label="Rows" value={result.totalRows} />
-              <Stat label="Matched" value={result.matchedCount} accent="text-green-600" />
-              <Stat label="Unmatched" value={result.unmatchedCount} accent="text-nootie-orange-dark" />
+              <Stat label="Rows So Far" value={liveBatch.totalRows} />
+              <Stat label="Matched" value={liveBatch.matchedCount} accent="text-green-600" />
+              <Stat label="Unmatched" value={liveBatch.unmatchedCount} accent="text-nootie-orange-dark" />
             </div>
-            <a href={`/invoice-import/${result.id}`} className="text-sm text-nootie-orange-dark hover:underline mt-4 inline-block">
-              View Results →
-            </a>
+            {isRunning ? (
+              <p className="text-xs text-gray-500 mt-4 text-center">Running in the background - this updates automatically, feel free to navigate away.</p>
+            ) : (
+              <a href={`/invoice-import/${liveBatch.id}`} className="text-sm text-nootie-orange-dark hover:underline mt-4 inline-block">
+                View Results →
+              </a>
+            )}
           </div>
         )}
       </div>

@@ -8,6 +8,9 @@ import { DispatchReportRowEntity } from '../../database/entities/dispatch-report
 import { DispatchEntity } from '../../database/entities/dispatch.entity';
 import { POMasterEntity } from '../../database/entities/po-master.entity';
 import { FileReaderService } from '../bulk-import/file-reader.service';
+import { BackgroundImportRunner, failStalledBatches } from '../../common/background-import-runner';
+
+const ACTIVE_STATUSES = ['PROCESSING'];
 
 // Deliberately a small, self-contained alias set - same rationale as
 // invoice-import.service.ts. Real channel dispatch reports are one
@@ -88,6 +91,7 @@ function parsePercent(v: any): number | null {
 @Injectable()
 export class DispatchReportImportService {
   private readonly logger = new Logger(DispatchReportImportService.name);
+  private readonly runner = new BackgroundImportRunner();
 
   constructor(
     @InjectRepository(DispatchReportUploadBatchEntity)
@@ -101,18 +105,28 @@ export class DispatchReportImportService {
     private readonly fileReaderService: FileReaderService,
   ) {}
 
-  async processFile(buffer: Buffer, fileName: string, uploadedByUserId: string): Promise<DispatchReportUploadBatchEntity> {
+  /**
+   * Registers the upload and returns right away; the import itself runs in
+   * the background (queued behind any other dispatch-report import already
+   * running - see the runner field above).
+   */
+  async startFile(buffer: Buffer, fileName: string, uploadedByUserId: string): Promise<DispatchReportUploadBatchEntity> {
     const batchCode = await this.generateBatchCode();
-    let batch = await this.batchRepository.save(
+    const batch = await this.batchRepository.save(
       this.batchRepository.create({ batchCode, fileName, uploadedByUserId, status: 'PROCESSING' }),
     );
+    this.runner.enqueue(batch.id, () => this.runImport(batch, buffer, fileName));
+    return batch;
+  }
 
+  private async runImport(batch: DispatchReportUploadBatchEntity, buffer: Buffer, fileName: string): Promise<void> {
     try {
       const { headers, rows } = this.fileReaderService.read(buffer, fileName);
       const mapping = this.mapHeaders(headers);
 
       let reconciledCount = 0;
       let mismatchCount = 0;
+      let lastFlush = Date.now();
 
       for (let i = 0; i < rows.length; i++) {
         const row = rows[i];
@@ -155,25 +169,31 @@ export class DispatchReportImportService {
 
         if (result.matchStatus === 'RECONCILED') reconciledCount++;
         else mismatchCount++;
+
+        // Saving progress bumps updatedAt, which is how failStalledBatches()
+        // tells a stalled import (server restarted mid-run) apart from a
+        // merely slow one - so it must happen at least every few seconds
+        // even when rows are slow, not just at the very end.
+        if (i > 0 && (i % 25 === 0 || Date.now() - lastFlush > 5000)) {
+          await this.batchRepository.update(batch.id, { totalRows: reconciledCount + mismatchCount, reconciledCount, mismatchCount });
+          lastFlush = Date.now();
+        }
       }
 
       // Counts only rows actually processed (skipped totals/spacer rows
       // excluded) so this always equals reconciledCount + mismatchCount -
       // rows.length here would silently disagree with that sum by however
       // many trailing "Total" rows the file happened to carry.
-      batch.totalRows = reconciledCount + mismatchCount;
-      batch.reconciledCount = reconciledCount;
-      batch.mismatchCount = mismatchCount;
-      batch.status = 'COMPLETED';
-      batch = await this.batchRepository.save(batch);
+      await this.batchRepository.update(batch.id, {
+        totalRows: reconciledCount + mismatchCount,
+        reconciledCount,
+        mismatchCount,
+        status: 'COMPLETED',
+      });
     } catch (err) {
       this.logger.error(`Dispatch report reconciliation failed for batch ${batch.batchCode}`, err as any);
-      batch.status = 'FAILED';
-      batch.errorMessage = (err as Error).message;
-      batch = await this.batchRepository.save(batch);
+      await this.batchRepository.update(batch.id, { status: 'FAILED', errorMessage: (err as Error).message });
     }
-
-    return batch;
   }
 
   private async reconcile(
@@ -249,10 +269,12 @@ export class DispatchReportImportService {
   }
 
   async listBatches(): Promise<DispatchReportUploadBatchEntity[]> {
+    await failStalledBatches(this.batchRepository, this.runner.getInFlightIds(), ACTIVE_STATUSES);
     return this.batchRepository.find({ order: { uploadedAt: 'DESC' } });
   }
 
   async getBatch(id: string): Promise<DispatchReportUploadBatchEntity> {
+    await failStalledBatches(this.batchRepository, this.runner.getInFlightIds(), ACTIVE_STATUSES);
     return this.batchRepository.findOneByOrFail({ id });
   }
 

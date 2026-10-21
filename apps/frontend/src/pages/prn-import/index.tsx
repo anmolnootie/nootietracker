@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { MainLayout } from '@/components/Layout';
 import { prnImportService, PrnUploadBatch } from '@/services/prn-import.service';
+import { useBatchProgress } from '@/hooks/useBatchProgress';
 import { format } from 'date-fns';
 
 const STATUS_STYLES: Record<string, string> = {
@@ -14,12 +15,18 @@ export default function PrnImport() {
   const [file, setFile] = useState<File | null>(null);
   const [dragging, setDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [result, setResult] = useState<PrnUploadBatch | null>(null);
+  const [activeBatchId, setActiveBatchId] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [batches, setBatches] = useState<PrnUploadBatch[]>([]);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const loadBatches = async () => setBatches(await prnImportService.listBatches());
+
+  // The upload call itself returns almost instantly now (the import runs in
+  // the background) - this polls the batch so the page shows live progress
+  // instead of a static "Processing..." button with no feedback.
+  const liveBatch = useBatchProgress(activeBatchId, prnImportService.getBatch, () => loadBatches());
+  const isRunning = liveBatch?.status === 'PROCESSING';
 
   const handleDelete = async (batch: PrnUploadBatch) => {
     if (!window.confirm(`Delete upload history for ${batch.batchCode}? This only removes the upload record - the rows it already saved stay as they are.`)) return;
@@ -39,7 +46,7 @@ export default function PrnImport() {
   const handleFile = (fileList: FileList | null) => {
     if (!fileList || fileList.length === 0) return;
     setFile(fileList[0]);
-    setResult(null);
+    setActiveBatchId(null);
     setError('');
   };
 
@@ -51,8 +58,8 @@ export default function PrnImport() {
     setUploading(true);
     setError('');
     try {
-      const res = await prnImportService.upload(file);
-      setResult(res);
+      const batch = await prnImportService.upload(file);
+      setActiveBatchId(batch.id);
       setFile(null);
       await loadBatches();
     } catch (err: any) {
@@ -112,29 +119,36 @@ export default function PrnImport() {
         {error && <div className="mt-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded text-sm">{error}</div>}
 
         <button
-          disabled={uploading || !file}
+          disabled={uploading || isRunning || !file}
           onClick={upload}
           className="mt-6 bg-nootie-orange-dark hover:bg-nootie-orange text-white font-medium py-2 px-6 rounded-lg transition-colors disabled:opacity-50"
         >
-          {uploading ? 'Processing...' : 'Upload PRN File'}
+          {uploading ? 'Starting...' : 'Upload PRN File'}
         </button>
 
-        {result && (
+        {liveBatch && (
           <div className="mt-8 border rounded-lg p-5 bg-nootie-cream">
             <div className="flex items-center justify-between mb-3">
               <div>
-                <p className="font-semibold text-gray-800">{result.fileName}</p>
-                <p className="text-xs text-gray-500">{result.batchCode}</p>
+                <p className="font-semibold text-gray-800">{liveBatch.fileName}</p>
+                <p className="text-xs text-gray-500">{liveBatch.batchCode}</p>
               </div>
-              <span className={`px-2 py-1 rounded text-xs font-medium ${STATUS_STYLES[result.status]}`}>{result.status}</span>
+              <span className={`px-2 py-1 rounded text-xs font-medium ${STATUS_STYLES[liveBatch.status]}`}>
+                {isRunning && <span className="inline-block w-2 h-2 rounded-full bg-blue-600 animate-pulse mr-1.5 align-middle" />}
+                {isRunning ? 'Processing' : liveBatch.status}
+              </span>
             </div>
             <div className="text-center">
-              <p className="text-2xl font-bold text-gray-800">{result.totalRows}</p>
+              <p className="text-2xl font-bold text-gray-800">{liveBatch.totalRows}</p>
               <p className="text-xs text-gray-500 mt-1">Rows saved</p>
             </div>
-            <a href={`/prn-import/${result.id}`} className="text-sm text-nootie-orange-dark hover:underline mt-4 inline-block">
-              View Rows →
-            </a>
+            {isRunning ? (
+              <p className="text-xs text-gray-500 mt-4 text-center">Running in the background - this updates automatically, feel free to navigate away.</p>
+            ) : (
+              <a href={`/prn-import/${liveBatch.id}`} className="text-sm text-nootie-orange-dark hover:underline mt-4 inline-block">
+                View Rows →
+              </a>
+            )}
           </div>
         )}
       </div>

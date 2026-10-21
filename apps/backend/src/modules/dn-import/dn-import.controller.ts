@@ -14,7 +14,7 @@ export class DnImportController {
     if (!file) {
       throw new BadRequestException('A file is required');
     }
-    return this.dnImportService.processFile(file.buffer, file.originalname, req.user.userId);
+    return this.dnImportService.startFile(file.buffer, file.originalname, req.user.userId);
   }
 
   @Get('batches')

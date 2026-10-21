@@ -13,6 +13,9 @@ import { GRNTrackerEntity } from '../../database/entities/grn-tracker.entity';
 import { GRNOutcome } from '@po-control-tower/shared';
 import { FileReaderService, ParsedFile } from '../bulk-import/file-reader.service';
 import { POService } from '../po/po.service';
+import { BackgroundImportRunner, failStalledBatches } from '../../common/background-import-runner';
+
+const ACTIVE_STATUSES = ['PROCESSING'];
 
 // The "Master Dispatch & GRN Tracker" sheet: one row per PO carrying its
 // dispatch details, delivery dates, and GRN reconciliation. Headers are
@@ -128,6 +131,10 @@ export class SheetTrackerImportService {
   // status back to PROCESSING moments later, since it only knows its own
   // in-memory copy - undoing the stale-recovery it was supposed to trigger.
   private readonly externallyStopped = new Set<string>();
+  // Tracks the manual-upload path's in-flight batches only (for
+  // failStalledBatches() below) - the webhook sync path already has its own
+  // staleness handling inline in syncFromGrid(), untouched here.
+  private readonly runner = new BackgroundImportRunner();
 
   constructor(
     @InjectRepository(SheetTrackerUploadBatchEntity)
@@ -146,6 +153,12 @@ export class SheetTrackerImportService {
     private readonly poService: POService,
   ) {}
 
+  /**
+   * Registers the upload and returns right away; the import itself runs in
+   * the background, the same way syncFromGrid() (the Google Sheet webhook
+   * path) already does - this manual-upload path used to be the one entry
+   * point that still awaited runBatch() fully before responding.
+   */
   async processFile(buffer: Buffer, fileName: string, uploadedByUserId: string): Promise<SheetTrackerUploadBatchEntity> {
     return this.processParsed(this.fileReaderService.read(buffer, fileName), fileName, uploadedByUserId, null);
   }
@@ -216,7 +229,13 @@ export class SheetTrackerImportService {
     uploadedByUserId: string | null,
     payloadHash: string | null,
   ): Promise<SheetTrackerUploadBatchEntity> {
-    return this.runBatch(await this.createBatch(fileName, uploadedByUserId, payloadHash), parsed);
+    const batch = await this.createBatch(fileName, uploadedByUserId, payloadHash);
+    this.runner.enqueue(batch.id, () =>
+      this.runBatch(batch, parsed)
+        .then(() => undefined)
+        .catch((err) => this.logger.error(`Background sync ${batch.batchCode} crashed`, err as any)),
+    );
+    return batch;
   }
 
   private async createBatch(fileName: string, uploadedByUserId: string | null, payloadHash: string | null) {
@@ -579,10 +598,12 @@ export class SheetTrackerImportService {
   }
 
   async listBatches() {
+    await failStalledBatches(this.batchRepository, this.runner.getInFlightIds(), ACTIVE_STATUSES);
     return this.batchRepository.find({ order: { uploadedAt: 'DESC' } });
   }
 
   async getBatch(id: string) {
+    await failStalledBatches(this.batchRepository, this.runner.getInFlightIds(), ACTIVE_STATUSES);
     return this.batchRepository.findOneByOrFail({ id });
   }
 
