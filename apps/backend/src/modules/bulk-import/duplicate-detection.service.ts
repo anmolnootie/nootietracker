@@ -1,6 +1,4 @@
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
 import { startOfDay } from 'date-fns';
 import { DedupClassification } from '@po-control-tower/shared';
 import { POMasterEntity } from '../../database/entities/po-master.entity';
@@ -21,21 +19,24 @@ function numEq(a: any, b: any): boolean {
 
 @Injectable()
 export class DuplicateDetectionService {
-  constructor(
-    @InjectRepository(POMasterEntity) private readonly poRepository: Repository<POMasterEntity>,
-    @InjectRepository(POLineItemEntity) private readonly lineRepository: Repository<POLineItemEntity>,
-    @InjectRepository(AppointmentEntity) private readonly appointmentRepository: Repository<AppointmentEntity>,
-  ) {}
-
   /**
    * Identity = Platform + PO Number + SKU + Warehouse. Once the identity
    * resolves to an existing line item, compare quantities/status/appointment to
    * tell an EXACT_DUPLICATE (nothing changed) from an UPDATED PO (something did).
    */
-  // `po` is looked up once by the caller and reused for compileRow right after -
-  // this and compileRow used to each do their own identical findOne(), doubling
-  // that round trip on every single row.
-  async classify(cleaned: CleanedRow, seenInBatch: Set<string>, po: POMasterEntity | null): Promise<DedupResult> {
+  // `po`, `line`, `appointment` are all looked up once by the caller (the
+  // batch-wide cache in bulk-import.service.ts) and reused here AND for
+  // compileRow right after - this used to do its own identical line/
+  // appointment lookups, doubling those round trips on every single row.
+  // Pure/no DB calls now, so it's synchronous - kept as an async signature
+  // so call sites don't need to change if a real lookup is ever reintroduced.
+  async classify(
+    cleaned: CleanedRow,
+    seenInBatch: Set<string>,
+    po: POMasterEntity | null,
+    line: POLineItemEntity | null,
+    appointment: AppointmentEntity | null,
+  ): Promise<DedupResult> {
     if (!cleaned.poNumber || !cleaned.skuCode) {
       return { classification: DedupClassification.POSSIBLE_DUPLICATE };
     }
@@ -47,13 +48,11 @@ export class DuplicateDetectionService {
       return { classification: DedupClassification.NEW };
     }
 
-    const line = await this.lineRepository.findOne({ where: { poId: po.id, skuCode: cleaned.skuCode } });
     if (!line) {
       seenInBatch.add(key);
       return { classification: DedupClassification.NEW, matchedPoId: po.id };
     }
 
-    const appointment = await this.appointmentRepository.findOneBy({ poId: po.id });
     const apptChanged =
       !!cleaned.appointmentDate &&
       (!appointment?.appointmentDate ||

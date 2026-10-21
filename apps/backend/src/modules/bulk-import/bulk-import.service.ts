@@ -16,7 +16,7 @@ import { FileReaderService } from './file-reader.service';
 import { ColumnMappingService } from './column-mapping.service';
 import { DataCleaningService } from './data-cleaning.service';
 import { DuplicateDetectionService } from './duplicate-detection.service';
-import { POCompilationService } from './po-compilation.service';
+import { POCompilationService, poKey } from './po-compilation.service';
 import { ReconciliationEngine } from '../../engines/reconciliation.engine';
 import { ExceptionsService } from '../exceptions/exceptions.service';
 import { LocationsService } from '../locations/locations.service';
@@ -194,6 +194,16 @@ export class BulkImportService {
 
       const mapping = await this.columnMapping.buildMapping(headers, platform);
 
+      // Pure/in-memory (data-cleaning.service.ts makes no DB calls), so cleaning
+      // every row upfront costs nothing extra and lets the PO/line/appointment/
+      // dispatch/logistics/GRN cache below be preloaded in a handful of WHERE-IN
+      // queries instead of per-row lookups - this and that cache are what used
+      // to cost a bulk import most of its per-row database round trips.
+      const cleanedRows = rows.map((r) => this.dataCleaning.clean(r, mapping, platform));
+      const cache = await this.compilation.preloadCache(
+        cleanedRows.map((c) => c.cleaned.poNumber).filter((n): n is string => !!n),
+      );
+
       const poNumbers = new Set<string>();
       const skuCodes = new Set<string>();
       let minDate: Date | null = null;
@@ -230,7 +240,7 @@ export class BulkImportService {
 
         const rawRow = await this.rawRepository.save(this.rawRepository.create({ batchId: batch.id, rowIndex: i, rawData: rows[i] }), { transaction: false });
 
-        const cleaning = this.dataCleaning.clean(rows[i], mapping, platform);
+        const cleaning = cleanedRows[i];
         if (cleaning.isBlank) continue; // RAW row is preserved above; nothing further to process
 
         if (cleaning.cleaned.poNumber) poNumbers.add(cleaning.cleaned.poNumber);
@@ -240,16 +250,22 @@ export class BulkImportService {
           if (!maxDate || cleaning.cleaned.poDate > maxDate) maxDate = cleaning.cleaned.poDate;
         }
 
-        // Looked up once here, reused by both classify() and compileRow() right
-        // below - they used to each look this exact PO up separately.
+        // Read from the batch-wide cache instead of a fresh findOne() - kept
+        // current by every write compileRow() makes, so a PO/line/appointment
+        // created or updated earlier in this same file is already visible here
+        // with no round trip. Looked up once here, reused by both classify()
+        // and compileRow() right below - they used to each look these up separately.
         const existingPo =
           cleaning.status !== 'INVALID' && cleaning.cleaned.poNumber
-            ? await this.poRepository.findOne({ where: { poNumber: cleaning.cleaned.poNumber, channelId: cleaning.cleaned.platform } })
+            ? cache.poByKey.get(poKey(cleaning.cleaned.platform, cleaning.cleaned.poNumber)) ?? null
             : null;
+        const existingLine =
+          existingPo && cleaning.cleaned.skuCode ? cache.linesByPoId.get(existingPo.id)?.get(cleaning.cleaned.skuCode) ?? null : null;
+        const existingAppointment = existingPo ? cache.appointmentByPoId.get(existingPo.id) ?? null : null;
 
         let dedup: { classification: DedupClassification; matchedPoId?: string } = { classification: DedupClassification.NEW };
         if (cleaning.status !== 'INVALID') {
-          dedup = await this.duplicateDetection.classify(cleaning.cleaned, seenInBatch, existingPo);
+          dedup = await this.duplicateDetection.classify(cleaning.cleaned, seenInBatch, existingPo, existingLine, existingAppointment);
         }
 
         const processedRow = await this.processedRepository.save(
@@ -328,7 +344,7 @@ export class BulkImportService {
         }
 
         try {
-          const { poId, created } = await this.compilation.compileRow(processedRow, batch, uploadedByUserId, existingPo);
+          const { poId, created } = await this.compilation.compileRow(processedRow, batch, uploadedByUserId, existingPo, cache);
           processedRow.matchedPoId = poId; // always set post-compile, so every master record traces back to its rows
           await this.processedRepository.save(processedRow, { transaction: false });
           if (created) newCount++;
@@ -566,10 +582,19 @@ export class BulkImportService {
       };
     }
 
+    // A single-row reprocess, not a batch loop, so there's no file-wide cache
+    // to build in advance - preloadCache() scoped to just this one PO gives
+    // compileRow() the same correctly-populated line/appointment/dispatch/
+    // logistics/GRN lookups a batch row would have, not an empty cache that
+    // would misread an existing line item as brand new.
+    const cache = await this.compilation.preloadCache(cleaning.cleaned.poNumber ? [cleaning.cleaned.poNumber] : []);
     const existingPo = cleaning.cleaned.poNumber
-      ? await this.poRepository.findOne({ where: { poNumber: cleaning.cleaned.poNumber, channelId: cleaning.cleaned.platform } })
+      ? cache.poByKey.get(poKey(cleaning.cleaned.platform, cleaning.cleaned.poNumber)) ?? null
       : null;
-    const dedup = await this.duplicateDetection.classify(cleaning.cleaned, new Set(), existingPo);
+    const existingLine =
+      existingPo && cleaning.cleaned.skuCode ? cache.linesByPoId.get(existingPo.id)?.get(cleaning.cleaned.skuCode) ?? null : null;
+    const existingAppointment = existingPo ? cache.appointmentByPoId.get(existingPo.id) ?? null : null;
+    const dedup = await this.duplicateDetection.classify(cleaning.cleaned, new Set(), existingPo, existingLine, existingAppointment);
     processedRow.dedupClassification = dedup.classification;
 
     if (dedup.classification === DedupClassification.EXACT_DUPLICATE) {
@@ -578,7 +603,7 @@ export class BulkImportService {
       return { success: true, message: 'This now matches existing data exactly - nothing new was compiled.', processedRow };
     }
 
-    const { poId } = await this.compilation.compileRow(processedRow, batch, userId, existingPo);
+    const { poId } = await this.compilation.compileRow(processedRow, batch, userId, existingPo, cache);
     processedRow.matchedPoId = poId;
     await this.processedRepository.save(processedRow);
     await this.reconciliation.reconcileRow(processedRow, batch.id);

@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 
 import { POMasterEntity } from '../../database/entities/po-master.entity';
 import { POLineItemEntity } from '../../database/entities/po-line-item.entity';
@@ -19,6 +19,28 @@ import { FulfilmentStatusEngine } from '../../engines/fulfilment-status.engine';
 import { LocationsService } from '../locations/locations.service';
 import { ExceptionsService } from '../exceptions/exceptions.service';
 
+export function poKey(channelId: string | null | undefined, poNumber: string): string {
+  return `${channelId || ''}::${poNumber}`;
+}
+
+/**
+ * In-memory, whole-batch lookup cache for every row's "does this already
+ * exist" reads (PO, line item, appointment, dispatch, logistics, GRN) -
+ * preloaded once via preloadCache() before the row loop starts, then kept in
+ * sync as compileRow() writes, so a PO/SKU repeated later in the same file
+ * never needs a fresh database round trip to see its own prior row's writes.
+ * This is what used to cost a bulk import most of its per-row database round
+ * trips against a remote database.
+ */
+export interface BulkImportCache {
+  poByKey: Map<string, POMasterEntity>;
+  linesByPoId: Map<string, Map<string, POLineItemEntity>>;
+  appointmentByPoId: Map<string, AppointmentEntity>;
+  dispatchByPoId: Map<string, DispatchEntity>;
+  logisticsByPoId: Map<string, LogisticsTrackerEntity>;
+  grnByPoId: Map<string, GRNTrackerEntity>;
+}
+
 @Injectable()
 export class POCompilationService {
   constructor(
@@ -35,6 +57,47 @@ export class POCompilationService {
     private readonly exceptionsService: ExceptionsService,
   ) {}
 
+  /**
+   * Bulk-fetches every PO (by number) this file's rows could touch, plus all
+   * of those POs' line items/appointment/dispatch/logistics/GRN rows, in a
+   * handful of WHERE-IN queries instead of per-row lookups. A PO number that
+   * doesn't exist yet (brand new this run) simply has no cache entry until
+   * compileRow() creates and registers it.
+   */
+  async preloadCache(poNumbers: string[]): Promise<BulkImportCache> {
+    const uniqueNumbers = [...new Set(poNumbers.filter(Boolean))];
+    const pos = uniqueNumbers.length ? await this.poRepository.find({ where: { poNumber: In(uniqueNumbers) } }) : [];
+
+    const poByKey = new Map<string, POMasterEntity>();
+    for (const po of pos) poByKey.set(poKey(po.channelId, po.poNumber), po);
+
+    const poIds = pos.map((p) => p.id);
+    const [lines, appointments, dispatches, logisticsRows, grnRows] = poIds.length
+      ? await Promise.all([
+          this.lineRepository.find({ where: { poId: In(poIds) } }),
+          this.appointmentRepository.find({ where: { poId: In(poIds) } }),
+          this.dispatchRepository.find({ where: { poId: In(poIds) } }),
+          this.logisticsRepository.find({ where: { poId: In(poIds) } }),
+          this.grnRepository.find({ where: { poId: In(poIds) } }),
+        ])
+      : [[], [], [], [], []];
+
+    const linesByPoId = new Map<string, Map<string, POLineItemEntity>>();
+    for (const line of lines as POLineItemEntity[]) {
+      if (!linesByPoId.has(line.poId)) linesByPoId.set(line.poId, new Map());
+      linesByPoId.get(line.poId)!.set(line.skuCode, line);
+    }
+
+    return {
+      poByKey,
+      linesByPoId,
+      appointmentByPoId: new Map((appointments as AppointmentEntity[]).map((a) => [a.poId, a])),
+      dispatchByPoId: new Map((dispatches as DispatchEntity[]).map((d) => [d.poId, d])),
+      logisticsByPoId: new Map((logisticsRows as LogisticsTrackerEntity[]).map((l) => [l.poId, l])),
+      grnByPoId: new Map((grnRows as GRNTrackerEntity[]).map((g) => [g.poId, g])),
+    };
+  }
+
   // `existingPo` is looked up once by the caller (bulk-import.service.ts, right
   // before it also needs the same PO for duplicate-detection) and reused here -
   // this used to redo that exact lookup itself on every single row.
@@ -43,6 +106,7 @@ export class POCompilationService {
     batch: UploadBatchEntity,
     uploadedByUserId: string,
     existingPo: POMasterEntity | null,
+    cache: BulkImportCache,
   ): Promise<{ poId: string; created: boolean }> {
     let po = existingPo;
     let created = false;
@@ -73,9 +137,12 @@ export class POCompilationService {
       // nothing. Applied throughout this file's hot path for the same reason.
       po = await this.poRepository.save(po, { transaction: false });
       created = true;
+      cache.poByKey.set(poKey(po.channelId, po.poNumber), po);
 
-      await this.appointmentRepository.save(this.appointmentRepository.create({ poId: po.id, slaStatus: 'ON_TIME' }), { transaction: false });
-      await this.dispatchRepository.save(
+      const appt = await this.appointmentRepository.save(this.appointmentRepository.create({ poId: po.id, slaStatus: 'ON_TIME' }), { transaction: false });
+      cache.appointmentByPoId.set(po.id, appt);
+
+      const dispatch = await this.dispatchRepository.save(
         this.dispatchRepository.create({
           poId: po.id,
           idealDispatchDate: row.poDate || new Date(),
@@ -83,12 +150,14 @@ export class POCompilationService {
         }),
         { transaction: false },
       );
+      cache.dispatchByPoId.set(po.id, dispatch);
     } else {
       po.lastBulkBatchId = batch.id;
       if (row.appointmentStatus) po.appointmentStatusRaw = row.appointmentStatus;
       if (row.deliveryStatus) po.deliveryStatusRaw = row.deliveryStatus;
       if (row.poStatus) po.poStatusRaw = row.poStatus;
-      await this.poRepository.save(po, { transaction: false });
+      po = await this.poRepository.save(po, { transaction: false });
+      cache.poByKey.set(poKey(po.channelId, po.poNumber), po);
     }
 
     // Location Master traceability - an unmatched warehouse defaults to NON_LOCAL
@@ -111,23 +180,21 @@ export class POCompilationService {
       });
     }
 
-    const line = await this.upsertLineItem(po.id, row, batch, uploadedByUserId);
+    const line = await this.upsertLineItem(po.id, row, batch, uploadedByUserId, cache);
 
-    await this.upsertAppointment(po.id, row, batch, uploadedByUserId);
-    await this.applyDispatchSignal(po.id, row);
-    await this.applyDeliverySignal(po.id, row, line);
+    await this.upsertAppointment(po.id, row, batch, uploadedByUserId, cache);
+    await this.applyDispatchSignal(po.id, row, cache);
+    await this.applyDeliverySignal(po.id, row, line, cache);
 
-    await this.recalculatePoValue(po.id, po);
+    await this.recalculatePoValue(po.id, po, cache);
 
-    // Loaded once and reused across every recompute below, instead of each of
-    // them separately re-fetching the same PO/appointment/dispatch/logistics/GRN
-    // rows - against a remote database this was most of a bulk import's cost.
-    const [appointment, dispatch, logistics, grn] = await Promise.all([
-      this.appointmentRepository.findOneBy({ poId: po.id }),
-      this.dispatchRepository.findOneBy({ poId: po.id }),
-      this.logisticsRepository.findOneBy({ poId: po.id }),
-      this.grnRepository.findOneBy({ poId: po.id }),
-    ]);
+    // Read from the batch-wide cache instead of re-fetching - these are kept
+    // current by every write above, so this is free (no round trip at all)
+    // instead of the 4 concurrent findOneBy calls this used to make per row.
+    const appointment = cache.appointmentByPoId.get(po.id) ?? null;
+    const dispatch = cache.dispatchByPoId.get(po.id) ?? null;
+    const logistics = cache.logisticsByPoId.get(po.id) ?? null;
+    const grn = cache.grnByPoId.get(po.id) ?? null;
     const preloaded = { po, appointment, dispatch, logistics, grn };
 
     await this.poService.recomputeStatus(po.id, preloaded);
@@ -143,8 +210,9 @@ export class POCompilationService {
     row: BulkPOProcessedRowEntity,
     batch: UploadBatchEntity,
     userId: string,
+    cache: BulkImportCache,
   ): Promise<POLineItemEntity> {
-    let line = await this.lineRepository.findOne({ where: { poId, skuCode: row.skuCode } });
+    let line = cache.linesByPoId.get(poId)?.get(row.skuCode) ?? null;
     const isNew = !line;
     if (!line) {
       line = this.lineRepository.create({
@@ -193,12 +261,15 @@ export class POCompilationService {
       line.availability = delivered >= ordered ? 'AVAILABLE' : delivered > 0 ? 'SHORT' : line.availability;
     }
 
-    return this.lineRepository.save(line, { transaction: false });
+    const saved = await this.lineRepository.save(line, { transaction: false });
+    if (!cache.linesByPoId.has(poId)) cache.linesByPoId.set(poId, new Map());
+    cache.linesByPoId.get(poId)!.set(row.skuCode, saved);
+    return saved;
   }
 
-  private async upsertAppointment(poId: string, row: BulkPOProcessedRowEntity, batch: UploadBatchEntity, userId: string) {
+  private async upsertAppointment(poId: string, row: BulkPOProcessedRowEntity, batch: UploadBatchEntity, userId: string, cache: BulkImportCache) {
     if (!row.appointmentDate) return;
-    let appt = await this.appointmentRepository.findOneBy({ poId });
+    let appt = cache.appointmentByPoId.get(poId) ?? null;
     if (!appt) appt = this.appointmentRepository.create({ poId, slaStatus: 'ON_TIME' });
 
     const changed = !appt.appointmentDate || appt.appointmentDate.getTime() !== row.appointmentDate.getTime();
@@ -215,24 +286,26 @@ export class POCompilationService {
     }
     appt.appointmentDate = row.appointmentDate;
     appt.confirmedAt = appt.confirmedAt || new Date();
-    await this.appointmentRepository.save(appt, { transaction: false });
+    const saved = await this.appointmentRepository.save(appt, { transaction: false });
+    cache.appointmentByPoId.set(poId, saved);
   }
 
-  private async applyDispatchSignal(poId: string, row: BulkPOProcessedRowEntity) {
+  private async applyDispatchSignal(poId: string, row: BulkPOProcessedRowEntity, cache: BulkImportCache) {
     if (!row.dispatchedQty || row.dispatchedQty <= 0) return;
-    const dispatch = await this.dispatchRepository.findOneBy({ poId });
+    const dispatch = cache.dispatchByPoId.get(poId) ?? null;
     if (dispatch && !dispatch.actualDispatchDate) {
       dispatch.actualDispatchDate = row.poDate || new Date();
-      await this.dispatchRepository.save(dispatch, { transaction: false });
+      const saved = await this.dispatchRepository.save(dispatch, { transaction: false });
+      cache.dispatchByPoId.set(poId, saved);
     }
   }
 
-  private async applyDeliverySignal(poId: string, row: BulkPOProcessedRowEntity, line: POLineItemEntity) {
+  private async applyDeliverySignal(poId: string, row: BulkPOProcessedRowEntity, line: POLineItemEntity, cache: BulkImportCache) {
     const ordered = Number(line.quantity) || 0;
     const delivered = Number(line.deliveredQuantity) || 0;
     if (!(delivered > 0 && ordered > 0 && delivered >= ordered)) return;
 
-    let logistics = await this.logisticsRepository.findOneBy({ poId });
+    let logistics = cache.logisticsByPoId.get(poId) ?? null;
     if (!logistics) {
       logistics = this.logisticsRepository.create({
         poId,
@@ -246,17 +319,25 @@ export class POCompilationService {
       logistics.lastTrackedStatus = 'DELIVERED';
       logistics.lastUpdateTime = new Date();
     }
-    await this.logisticsRepository.save(logistics, { transaction: false });
+    const savedLogistics = await this.logisticsRepository.save(logistics, { transaction: false });
+    cache.logisticsByPoId.set(poId, savedLogistics);
 
     await ensureGrnPlaceholder(this.grnRepository, poId);
+    // ensureGrnPlaceholder only reports whether it created one, not the row
+    // itself (and does its own race-safe transaction internally - never
+    // short-circuited by the cache, since it must stay correct against the
+    // separate 5-minute "awaiting GRN" sweep too) - refresh the cache entry
+    // so the preloaded-read right after compileRow's helpers sees it.
+    const grn = await this.grnRepository.findOneBy({ poId });
+    if (grn) cache.grnByPoId.set(poId, grn);
   }
 
   // Mutates `po.poValue` in memory too, not just the DB row - compileRow passes
   // this same po object into recomputeStatus/recomputeRisk right after, which
   // save() the whole entity back; without this they'd overwrite the total just
   // written here with the stale value po was holding before this ran.
-  private async recalculatePoValue(poId: string, po: POMasterEntity) {
-    const lines = await this.lineRepository.find({ where: { poId } });
+  private async recalculatePoValue(poId: string, po: POMasterEntity, cache: BulkImportCache) {
+    const lines = [...(cache.linesByPoId.get(poId)?.values() ?? [])];
     const total = lines.reduce((sum, l) => sum + (Number(l.lineValue) || 0), 0);
     if (total > 0) {
       await this.poRepository.update(poId, { poValue: total });
