@@ -168,6 +168,7 @@ export default function CompilationReports() {
                   <th className="px-4 py-2 text-left">Facility</th>
                   <th className="px-4 py-2 text-left">Order Date</th>
                   <th className="px-4 py-2 text-left">Expiry Date</th>
+                  <th className="px-4 py-2 text-right">Sum of Quantity</th>
                   <th className="px-4 py-2 text-right">Sum of Total Amount</th>
                   <th className="px-4 py-2 text-left">Dispatch Date</th>
                 </tr>
@@ -186,12 +187,16 @@ export default function CompilationReports() {
                     </td>
                     <td className="px-4 py-2">{format(new Date(r.orderDate), 'dd MMM yyyy')}</td>
                     <td className="px-4 py-2">{format(new Date(r.expiryDate), 'dd MMM yyyy')}</td>
+                    <td className="px-4 py-2 text-right">{r.totalQuantity.toLocaleString()}</td>
                     <td className="px-4 py-2 text-right">₹{r.totalAmount.toLocaleString()}</td>
                     <td className="px-4 py-2">{r.dispatchDate ? format(new Date(r.dispatchDate), 'dd MMM yyyy') : '-'}</td>
                   </tr>
                 ))}
                 <tr className="bg-nootie-cream font-semibold">
                   <td className="px-4 py-2" colSpan={4}>Grand Total</td>
+                  <td className="px-4 py-2 text-right">
+                    {(poSummary?.rows.reduce((s: number, r: any) => s + r.totalQuantity, 0) ?? 0).toLocaleString()}
+                  </td>
                   <td className="px-4 py-2 text-right">₹{poSummary?.grandTotal.toLocaleString()}</td>
                   <td className="px-4 py-2"></td>
                 </tr>

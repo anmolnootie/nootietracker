@@ -42,6 +42,7 @@ export interface PoSummaryRow {
   facilityName: string;
   orderDate: Date;
   expiryDate: Date;
+  totalQuantity: number;
   totalAmount: number;
   dispatchDate: Date | null;
   locationType: string | null;
@@ -217,6 +218,17 @@ export class POReportsService {
       : [];
     const dispatchByPoId = new Map(dispatches.map((d) => [d.poId, d]));
 
+    const quantityRows = pos.length
+      ? await this.lineRepository
+          .createQueryBuilder('li')
+          .select('li.poId', 'poId')
+          .addSelect('SUM(li.quantity)', 'totalQuantity')
+          .where('li.poId IN (:...poIds)', { poIds: pos.map((p) => p.id) })
+          .groupBy('li.poId')
+          .getRawMany()
+      : [];
+    const quantityByPoId = new Map(quantityRows.map((r) => [r.poId, Number(r.totalQuantity) || 0]));
+
     const rows: PoSummaryRow[] = pos.map((po) => {
       const dispatch = dispatchByPoId.get(po.id);
       return {
@@ -224,6 +236,7 @@ export class POReportsService {
         facilityName: po.location,
         orderDate: po.poDate,
         expiryDate: po.poExpiryDate,
+        totalQuantity: quantityByPoId.get(po.id) ?? 0,
         totalAmount: Number(po.poValue) || 0,
         dispatchDate: dispatch?.recommendedDispatchDate ?? null,
         locationType: dispatch?.locationType ?? null,
@@ -271,6 +284,7 @@ export class POReportsService {
       { header: 'facility_name', key: 'facilityName', width: 28 },
       { header: 'order_date', key: 'orderDate', width: 14 },
       { header: 'expiry_date', key: 'expiryDate', width: 14 },
+      { header: 'Sum of quantity', key: 'totalQuantity', width: 16 },
       { header: 'Sum of total_amount', key: 'totalAmount', width: 20 },
       { header: 'DISPATCH DATE', key: 'dispatchDate', width: 16 },
     ];
@@ -282,12 +296,22 @@ export class POReportsService {
         facilityName: r.facilityName,
         orderDate: formatIST(r.orderDate),
         expiryDate: formatIST(r.expiryDate),
+        totalQuantity: r.totalQuantity,
         totalAmount: r.totalAmount,
         dispatchDate: r.dispatchDate ? formatIST(r.dispatchDate) : '-',
       });
     }
 
-    const totalRow = sheet.addRow({ poNumber: 'Grand Total', facilityName: '', orderDate: '', expiryDate: '', totalAmount: grandTotal, dispatchDate: '' });
+    const quantityGrandTotal = rows.reduce((s, r) => s + r.totalQuantity, 0);
+    const totalRow = sheet.addRow({
+      poNumber: 'Grand Total',
+      facilityName: '',
+      orderDate: '',
+      expiryDate: '',
+      totalQuantity: quantityGrandTotal,
+      totalAmount: grandTotal,
+      dispatchDate: '',
+    });
     totalRow.font = { bold: true };
     totalRow.eachCell((cell) => (cell.fill = GRAND_TOTAL_FILL));
 
