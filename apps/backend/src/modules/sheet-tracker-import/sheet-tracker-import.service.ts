@@ -7,9 +7,11 @@ import { format } from 'date-fns';
 import { SheetTrackerUploadBatchEntity } from '../../database/entities/sheet-tracker-upload-batch.entity';
 import { SheetTrackerRowEntity } from '../../database/entities/sheet-tracker-row.entity';
 import { POMasterEntity } from '../../database/entities/po-master.entity';
+import { POLineItemEntity } from '../../database/entities/po-line-item.entity';
 import { DispatchEntity } from '../../database/entities/dispatch.entity';
 import { AppointmentEntity } from '../../database/entities/appointment.entity';
 import { GRNTrackerEntity } from '../../database/entities/grn-tracker.entity';
+import { LogisticsTrackerEntity } from '../../database/entities/logistics-tracker.entity';
 import { GRNOutcome } from '@po-control-tower/shared';
 import { FileReaderService, ParsedFile } from '../bulk-import/file-reader.service';
 import { POService } from '../po/po.service';
@@ -26,7 +28,7 @@ type Field =
   | 'dispatchDate' | 'poNumber' | 'invoiceNumber' | 'channel' | 'location' | 'invoiceValue'
   | 'docketAwb' | 'deliveryPartner' | 'deliveryStatus' | 'comment' | 'expiryDate' | 'appointmentDate'
   | 'grnStatus' | 'shortageQty' | 'shortageValue' | 'damageQty' | 'damageValue' | 'excessQty'
-  | 'excessValue' | 'netDiscrepancy' | 'creditNoteNumber' | 'creditNoteValue';
+  | 'excessValue' | 'netDiscrepancy' | 'creditNoteNumber' | 'creditNoteValue' | 'deliveryDate';
 
 const ALIASES: Record<Field, string[]> = {
   dispatchDate: ['dispatch date'],
@@ -52,7 +54,19 @@ const ALIASES: Record<Field, string[]> = {
   netDiscrepancy: ['net discrepancy'],
   creditNoteNumber: ['credit note #', 'credit note number', 'credit note no'],
   creditNoteValue: ['credit note value'],
+  // Distinct from dispatchDate (which is when it left the warehouse) - when it
+  // actually reached the customer/location. Lives on LogisticsTrackerEntity,
+  // not DispatchEntity.
+  deliveryDate: ['delivery date'],
 };
+
+// yyyy-MM-dd on the IST calendar day, matching exactly what the Apps Script
+// sends back on the pull side (see `date()` below) so a round-tripped date
+// reads identically to what was pushed.
+function formatSheetDate(d: Date | null | undefined): string {
+  if (!d) return '';
+  return new Date(d).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+}
 
 function text(v: any): string | null {
   if (v === undefined || v === null || v === '') return null;
@@ -143,12 +157,16 @@ export class SheetTrackerImportService {
     private readonly rowRepository: Repository<SheetTrackerRowEntity>,
     @InjectRepository(POMasterEntity)
     private readonly poRepository: Repository<POMasterEntity>,
+    @InjectRepository(POLineItemEntity)
+    private readonly lineRepository: Repository<POLineItemEntity>,
     @InjectRepository(DispatchEntity)
     private readonly dispatchRepository: Repository<DispatchEntity>,
     @InjectRepository(AppointmentEntity)
     private readonly appointmentRepository: Repository<AppointmentEntity>,
     @InjectRepository(GRNTrackerEntity)
     private readonly grnRepository: Repository<GRNTrackerEntity>,
+    @InjectRepository(LogisticsTrackerEntity)
+    private readonly logisticsRepository: Repository<LogisticsTrackerEntity>,
     private readonly fileReaderService: FileReaderService,
     private readonly poService: POService,
   ) {}
@@ -265,6 +283,7 @@ export class SheetTrackerImportService {
             channel: text(get('channel')),
             location: text(get('location')),
             dispatchDate: date(get('dispatchDate')),
+            deliveryDate: date(get('deliveryDate')),
             invoiceValue: num(get('invoiceValue')),
             docketAwb: text(get('docketAwb')),
             deliveryPartner: text(get('deliveryPartner')),
@@ -300,6 +319,7 @@ export class SheetTrackerImportService {
       const dispatchByPo = new Map((await this.loadInChunks(poIds, (c) => this.dispatchRepository.find({ where: { poId: In(c) } }))).map((d) => [d.poId, d]));
       const appointmentByPo = new Map((await this.loadInChunks(poIds, (c) => this.appointmentRepository.find({ where: { poId: In(c) } }))).map((a) => [a.poId, a]));
       const grnByPo = new Map((await this.loadInChunks(poIds, (c) => this.grnRepository.find({ where: { poId: In(c) } }))).map((g) => [g.poId, g]));
+      const logisticsByPo = new Map((await this.loadInChunks(poIds, (c) => this.logisticsRepository.find({ where: { poId: In(c) } }))).map((l) => [l.poId, l]));
 
       let applied = 0;
       let skipped = 0;
@@ -329,7 +349,7 @@ export class SheetTrackerImportService {
         }
         const po = poByNumber.get(r.poNumber);
         const result = po
-          ? await this.applyRow(r, po, dispatchByPo.get(po.id), appointmentByPo.get(po.id), grnByPo)
+          ? await this.applyRow(r, po, dispatchByPo.get(po.id), appointmentByPo.get(po.id), grnByPo, logisticsByPo.get(po.id))
           : { matchStatus: 'PO_NOT_FOUND' as const, matchedPoId: null, netDiscrepancy: r.netDiscrepancy, actions: null, errorMessage: `No PO found with number ${r.poNumber}` };
 
         pending.push(
@@ -407,6 +427,7 @@ export class SheetTrackerImportService {
     dispatch: DispatchEntity | undefined,
     appointment: AppointmentEntity | undefined,
     grnByPo: Map<string, GRNTrackerEntity>,
+    logistics: LogisticsTrackerEntity | undefined,
   ): Promise<{
     matchStatus: SheetTrackerRowEntity['matchStatus'];
     matchedPoId: string | null;
@@ -458,6 +479,14 @@ export class SheetTrackerImportService {
       po.poExpiryDate = r.expiryDate;
       await this.poRepository.save(po);
       actions.push('Expiry date set');
+    }
+
+    // ---- Delivery date (only onto an existing logistics row - there's no
+    // docket/transporter here to create one from scratch with)
+    if (logistics && r.deliveryDate && !sameDay(logistics.actualDeliveryDate, r.deliveryDate)) {
+      logistics.actualDeliveryDate = r.deliveryDate;
+      await this.logisticsRepository.save(logistics);
+      actions.push('Delivery date set');
     }
 
     // ---- GRN reconciliation (only once the sheet says the GRN is done)
@@ -609,6 +638,111 @@ export class SheetTrackerImportService {
 
   async getRows(batchId: string) {
     return this.rowRepository.find({ where: { batchId }, order: { rowIndex: 'ASC' } });
+  }
+
+  /**
+   * The push-back half of the two-way "All PO Data" sheet sync: every PO with
+   * its full current state, as a ready-to-write grid, grouped into
+   * contiguous categories (PO Info / Dispatch & Logistics / Appointment /
+   * GRN Reconciliation) so the sheet can band them visually. Column order is
+   * purely cosmetic - syncFromGrid()'s mapHeaders() matches by header text,
+   * not position - but every header that's also a writable Tracker field
+   * (Dispatch Date, Invoice Number, Channel, Location / Hub, Invoice Value,
+   * Docket / AWB Number, Delivery Partner, Status, Akshay's Comment, Expriy
+   * Date, Appointment Date, GRN Status + its breakdown fields, Delivery
+   * Date) keeps the Tracker's exact spelling so it round-trips through that
+   * same apply logic. The rest are read-only, app-computed, named distinctly
+   * so none collide with a writable alias and get misread as that field.
+   */
+  async getFullPoDataForSheet(): Promise<{ categories: { name: string; span: number }[]; headers: string[]; rows: (string | number)[][] }> {
+    const pos = await this.poRepository.find({ where: { isDeleted: false }, order: { poNumber: 'ASC' } });
+    const poIds = pos.map((p) => p.id);
+    const dispatchByPo = new Map((await this.loadInChunks(poIds, (c) => this.dispatchRepository.find({ where: { poId: In(c) } }))).map((d) => [d.poId, d]));
+    const appointmentByPo = new Map((await this.loadInChunks(poIds, (c) => this.appointmentRepository.find({ where: { poId: In(c) } }))).map((a) => [a.poId, a]));
+    const grnByPo = new Map((await this.loadInChunks(poIds, (c) => this.grnRepository.find({ where: { poId: In(c) } }))).map((g) => [g.poId, g]));
+    const logisticsByPo = new Map((await this.loadInChunks(poIds, (c) => this.logisticsRepository.find({ where: { poId: In(c) } }))).map((l) => [l.poId, l]));
+    const quantityRows = poIds.length
+      ? await this.loadInChunks(poIds, (c) =>
+          this.lineRepository.createQueryBuilder('li').select('li.poId', 'poId').addSelect('SUM(li.quantity)', 'totalQuantity').where('li.poId IN (:...ids)', { ids: c }).groupBy('li.poId').getRawMany(),
+        )
+      : [];
+    const quantityByPo = new Map(quantityRows.map((r) => [r.poId, Number(r.totalQuantity) || 0]));
+
+    const categories = [
+      { name: 'PO INFO', span: 11 },
+      { name: 'DISPATCH & LOGISTICS', span: 12 },
+      { name: 'APPOINTMENT', span: 1 },
+      { name: 'GRN RECONCILIATION', span: 12 },
+    ];
+    const headers = [
+      // ---- PO Info (11)
+      'PO Number', 'Channel', 'Location / Hub', 'PO Status', 'Risk Status', 'PO Value', 'Total Quantity',
+      'Fulfilment %', 'Fill Rate %', 'Order Date', 'Expriy Date',
+      // ---- Dispatch & Logistics (12)
+      'Dispatch Date', 'Recommended Dispatch Date', 'Planned Dispatch Date', 'Dispatch Plan Status', 'Location Type',
+      'Invoice Number', 'Invoice Value (₹)', 'Docket / AWB Number', 'Delivery Partner', 'Status', 'Delivery Date',
+      "Akshay's Comment",
+      // ---- Appointment (1)
+      'Appointment Date',
+      // ---- GRN Reconciliation (12)
+      'GRN Status', 'Shortage Qty', 'Shortage Value (₹)', 'Damage Qty', 'Damage Value (₹)', 'Excess Qty',
+      'Excess Value (₹)', 'Net Discrepancy (₹)', 'Credit Note #', 'Credit Note Value (₹)', 'GRN Outcome', 'GRN Recorded Date',
+    ];
+
+    const rows = pos.map((po) => {
+      const d = dispatchByPo.get(po.id);
+      const a = appointmentByPo.get(po.id);
+      const g = grnByPo.get(po.id);
+      const l = logisticsByPo.get(po.id);
+      return [
+        // ---- PO Info
+        po.poNumber,
+        po.channelId,
+        po.location,
+        po.status,
+        po.riskStatus,
+        Number(po.poValue) || 0,
+        quantityByPo.get(po.id) ?? 0,
+        po.fulfilmentPercent ?? '',
+        po.fillRatePercent ?? '',
+        formatSheetDate(po.poDate),
+        formatSheetDate(po.poExpiryDate),
+        // ---- Dispatch & Logistics
+        formatSheetDate(d?.actualDispatchDate),
+        formatSheetDate(d?.recommendedDispatchDate),
+        formatSheetDate(d?.plannedDispatchDate),
+        d?.dispatchPlanStatus ?? '',
+        d?.locationType ?? '',
+        d?.invoiceNumber ?? '',
+        d?.invoiceValue != null ? Number(d.invoiceValue) : '',
+        d?.awbNumber ?? '',
+        d?.transporterId ?? '',
+        d?.dispatchStatus ?? '',
+        formatSheetDate(l?.actualDeliveryDate),
+        d?.remarks ?? '',
+        // ---- Appointment
+        formatSheetDate(a?.appointmentDate),
+        // ---- GRN Reconciliation
+        g?.grnDate ? 'Completed' : '',
+        g?.shortQuantity ?? '',
+        // Shortage/damage/excess *values* and the credit note value aren't kept
+        // as their own columns in grn_trackers (only the quantities and the net
+        // discrepancy are) - these stay blank after a sync rather than guess,
+        // same as a form field that's been consumed once submitted.
+        '',
+        g?.rejectedQuantity ?? '',
+        '',
+        '',
+        '',
+        g?.discrepancyAmount != null ? Number(g.discrepancyAmount) : '',
+        g?.creditNoteNumber ?? '',
+        '',
+        g?.outcome ?? '',
+        formatSheetDate(g?.grnDate),
+      ];
+    });
+
+    return { categories, headers, rows };
   }
 
   /** Removes the upload record only - never undoes what was applied to POs. */

@@ -21,9 +21,13 @@ export default function GoogleSheetsUpload() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const [copied, setCopied] = useState(false);
-  const endpoint = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001'}/webhooks/google-sheets/tracker`;
+  const [copiedAll, setCopiedAll] = useState(false);
+  const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001';
+  const endpoint = `${apiBase}/webhooks/google-sheets/tracker`;
+  const poDataEndpoint = `${apiBase}/webhooks/google-sheets/po-data`;
   const lastSync = batches.find((b) => b.fileName === 'Google Sheet sync');
   const script = APPS_SCRIPT.replace('__ENDPOINT__', endpoint);
+  const allPoDataScript = APPS_SCRIPT_ALL_PO_DATA.replace('__ENDPOINT_PULL__', endpoint).replace('__ENDPOINT_PUSH__', poDataEndpoint);
 
   const endpointIsBroken = endpoint.includes('localhost');
 
@@ -33,6 +37,17 @@ export default function GoogleSheetsUpload() {
       await navigator.clipboard.writeText(script);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
+    } catch {
+      /* clipboard blocked - the script is selectable in the box */
+    }
+  };
+
+  const copyAllPoDataScript = async () => {
+    if (endpointIsBroken) return;
+    try {
+      await navigator.clipboard.writeText(allPoDataScript);
+      setCopiedAll(true);
+      setTimeout(() => setCopiedAll(false), 2000);
     } catch {
       /* clipboard blocked - the script is selectable in the box */
     }
@@ -226,6 +241,52 @@ export default function GoogleSheetsUpload() {
         </details>
       </div>
 
+      <div className="bg-white rounded-lg shadow p-8 mb-6">
+        <h2 className="text-xl font-bold mb-1 text-gray-800">All PO Data (one sheet, every PO, two-way)</h2>
+        <p className="text-gray-500 text-sm mb-4">
+          A separate tab that mirrors every PO - not just the ones on the Dispatch &amp; GRN Tracker - with all the same
+          fields you can edit there, plus read-only columns (PO Status, Risk Status, PO Value, Fulfilment %, Total
+          Quantity, ...) the app itself computes. Its script applies any edits first, then overwrites the tab with the
+          fresh result, so it always ends up showing current data.
+        </p>
+        <ul className="text-sm text-gray-600 list-disc pl-5 mb-4 space-y-1">
+          <li><b>Editable from the sheet</b> - the same columns as the Tracker above, same names: Dispatch Date, Invoice Number, Channel, Location / Hub, Invoice Value, Docket / AWB Number, Delivery Partner, Status, Akshay&apos;s Comment, Expriy Date, Appointment Date, GRN Status + its shortage/damage/excess/credit-note fields, and Delivery Date.</li>
+          <li><b>Read-only, refreshed every sync</b> - PO Status, Risk Status, Fulfilment %, Fill Rate %, PO Value, Total Quantity, Location Type, Recommended/Planned Dispatch Date, Dispatch Plan Status, GRN Outcome, GRN Recorded Date.</li>
+        </ul>
+        <p className="text-xs text-gray-500 mb-4">
+          Doesn&apos;t include <b>S.No</b> or <b>GRN Alert</b> from the real Tracker sheet - those aren&apos;t backed by any app field (they look like manual/formula columns), so there's nothing to sync for them here.
+        </p>
+        <details>
+          <summary className="cursor-pointer text-sm font-medium text-nootie-orange-dark">Set it up (about 5 minutes)</summary>
+          <ol className="list-decimal pl-5 mt-3 space-y-2 text-sm text-gray-700">
+            <li>Uses the same <code className="bg-gray-100 px-1 rounded">SHEET_SYNC_KEY</code> as the Tracker sync above - set that up first if you haven&apos;t.</li>
+            <li>In the same Google Sheet (or a new one, your choice): add a tab named exactly <code className="bg-gray-100 px-1 rounded">ALL PO DATA</code>. Leave it empty - the first sync fills it in.</li>
+            <li>
+              <b>Extensions → Apps Script</b>. Paste the script below <i>alongside</i> the Tracker script (don&apos;t delete that one) - they're independent functions in the same project.
+              Replace <code className="bg-gray-100 px-1 rounded">PASTE_YOUR_SYNC_KEY_HERE</code> with your secret. Click <b>Run</b> once, with <code className="bg-gray-100 px-1 rounded">syncAllPoData</code> selected, and approve the permissions prompt.
+            </li>
+            <li>
+              <b>Triggers</b> → <b>Add Trigger</b> → function <code className="bg-gray-100 px-1 rounded">syncAllPoData</code> → time-driven → every 15-30 minutes.
+            </li>
+          </ol>
+          <p className="text-xs text-gray-500 mt-3">
+            Each sync clears and rewrites the whole tab, so anything typed into it right before a sync runs is sent first and reflected in the same refresh.
+            Don&apos;t add other columns or formulas to this tab - they&apos;ll be wiped on the next sync.
+          </p>
+          <div className="relative mt-4">
+            <button
+              onClick={copyAllPoDataScript}
+              disabled={endpointIsBroken}
+              title={endpointIsBroken ? 'Fix NEXT_PUBLIC_API_URL first - see the warning above' : undefined}
+              className="absolute top-2 right-2 text-xs px-2 py-1 rounded bg-white border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white"
+            >
+              {copiedAll ? 'Copied' : 'Copy script'}
+            </button>
+            <pre className="bg-gray-50 border rounded-lg p-4 text-xs overflow-x-auto text-gray-800 whitespace-pre">{allPoDataScript}</pre>
+          </div>
+        </details>
+      </div>
+
       <div className="bg-white rounded-lg shadow">
         <div className="p-6 border-b">
           <h3 className="text-lg font-semibold text-gray-800">Upload History</h3>
@@ -302,6 +363,108 @@ function syncTracker() {
     muteHttpExceptions: true,
   });
   Logger.log(res.getResponseCode() + ' ' + res.getContentText());
+}
+`;
+
+const APPS_SCRIPT_ALL_PO_DATA = `// Nootie Control Tower - two-way sync for the "ALL PO DATA" tab: sends this
+// tab's edits in, then overwrites it with the fresh, full result.
+const ENDPOINT_PULL = '__ENDPOINT_PULL__'; // applies edits (same endpoint as the Tracker sync)
+const ENDPOINT_PUSH = '__ENDPOINT_PUSH__'; // returns the current full PO dataset
+const SYNC_KEY = 'PASTE_YOUR_SYNC_KEY_HERE';
+const TAB_NAME = 'ALL PO DATA';
+
+// Row 1 of the tab is a colored category band (PO INFO / DISPATCH &
+// LOGISTICS / ...), row 2 is the real column headers, data starts at row 3.
+// A category band color per group name - add one here if a new category
+// name ever appears in the pushed data.
+const CATEGORY_COLORS = {
+  'PO INFO': '#1E3A8A',
+  'DISPATCH & LOGISTICS': '#B45309',
+  APPOINTMENT: '#6D28D9',
+  'GRN RECONCILIATION': '#047857',
+};
+
+function syncAllPoData() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(TAB_NAME);
+  if (!sheet) throw new Error('Tab not found: ' + TAB_NAME);
+  const tz = ss.getSpreadsheetTimeZone();
+
+  // 1) Send whatever's in the tab right now (including edits since the last
+  // sync) so they get applied before the refresh below overwrites anything.
+  // The backend finds the real header row on its own even with the band row
+  // above it, so the whole sheet (as-is) is sent unchanged.
+  if (sheet.getLastRow() > 2) {
+    const rows = sheet.getDataRange().getValues().map(function (row) {
+      return row.map(function (v) {
+        return v instanceof Date ? Utilities.formatDate(v, tz, 'yyyy-MM-dd') : v;
+      });
+    });
+    const applyRes = UrlFetchApp.fetch(ENDPOINT_PULL, {
+      method: 'post',
+      contentType: 'application/json',
+      headers: { 'x-sync-key': SYNC_KEY },
+      payload: JSON.stringify({ rows: rows }),
+      muteHttpExceptions: true,
+    });
+    Logger.log('Apply: ' + applyRes.getResponseCode() + ' ' + applyRes.getContentText());
+    // Give a small sheet's background apply a moment to finish before pulling
+    // the refreshed data below. A very large sheet may still be applying when
+    // this runs - any edits still mid-apply land on the NEXT sync instead.
+    Utilities.sleep(5000);
+  }
+
+  // 2) Pull the full, current dataset and overwrite the tab with it.
+  const refreshRes = UrlFetchApp.fetch(ENDPOINT_PUSH, {
+    method: 'get',
+    headers: { 'x-sync-key': SYNC_KEY },
+    muteHttpExceptions: true,
+  });
+  if (refreshRes.getResponseCode() !== 200) {
+    Logger.log('Refresh failed: ' + refreshRes.getResponseCode() + ' ' + refreshRes.getContentText());
+    return;
+  }
+  const data = JSON.parse(refreshRes.getContentText());
+  const colCount = data.headers.length;
+
+  sheet.clear();
+
+  // Band row: category name in its first column, blank cells for the rest of
+  // its span (about to be merged) - this low non-empty-cell count is exactly
+  // what lets the backend's header-row detector skip past it automatically.
+  const bandRow = [];
+  data.categories.forEach(function (cat) {
+    bandRow.push(cat.name);
+    for (var i = 1; i < cat.span; i++) bandRow.push('');
+  });
+  sheet.getRange(1, 1, 1, colCount).setValues([bandRow]);
+  sheet.getRange(2, 1, 1, colCount).setValues([data.headers]);
+  if (data.rows.length) sheet.getRange(3, 1, data.rows.length, colCount).setValues(data.rows);
+
+  // Style the band: merge each category's span, color it, white bold
+  // centered text.
+  var col = 1;
+  data.categories.forEach(function (cat) {
+    const range = sheet.getRange(1, col, 1, cat.span);
+    if (cat.span > 1) range.merge();
+    range.setBackground(CATEGORY_COLORS[cat.name] || '#374151').setFontColor('#FFFFFF').setFontWeight('bold').setHorizontalAlignment('center');
+    col += cat.span;
+  });
+
+  // Header row: light grey, bold, bordered.
+  sheet.getRange(2, 1, 1, colCount).setFontWeight('bold').setBackground('#F3F4F6').setBorder(true, true, true, true, true, true);
+
+  // Zebra striping on the data rows, freeze the band + header rows and the
+  // PO Number column, and size columns to fit.
+  sheet.getBandings().forEach(function (b) {
+    b.remove();
+  });
+  if (data.rows.length) sheet.getRange(3, 1, data.rows.length, colCount).applyRowBanding(SpreadsheetApp.BandingTheme.LIGHT_GREY, false, false);
+  sheet.setFrozenRows(2);
+  sheet.setFrozenColumns(1);
+  sheet.autoResizeColumns(1, colCount);
+
+  Logger.log('Refreshed ' + data.rows.length + ' POs');
 }
 `;
 

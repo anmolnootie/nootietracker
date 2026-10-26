@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Headers, HttpCode, UnauthorizedException, BadRequestException } from '@nestjs/common';
+import { Controller, Get, Post, Body, Headers, HttpCode, UnauthorizedException, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { timingSafeEqual } from 'crypto';
 import { SheetTrackerImportService } from './sheet-tracker-import.service';
@@ -32,5 +32,23 @@ export class SheetTrackerWebhookController {
     if ('unchanged' in result) return { status: 'UNCHANGED', message: 'Sheet is identical to the last sync - nothing applied' };
     if ('busy' in result) return { status: 'BUSY', message: `Sync ${result.batchCode} is still running - skipped this one` };
     return { status: 'STARTED', batchCode: result.batchCode, message: 'Received - applying in the background. Results appear on the Google Sheets Upload page.' };
+  }
+
+  /**
+   * The push half of the two-way "All PO Data" sheet: every PO's current
+   * state, ready for the same Apps Script to write back into its sheet right
+   * after it posts that sheet's edits above - so one timer-driven run both
+   * applies edits and refreshes the view with the result. Same key auth as
+   * the write side.
+   */
+  @Get('po-data')
+  async getPoData(@Headers('x-sync-key') key: string | undefined) {
+    const expected = this.config.get<string>('SHEET_SYNC_KEY');
+    if (!expected) throw new UnauthorizedException('Google Sheets sync is not configured (SHEET_SYNC_KEY not set)');
+    const a = Buffer.from(key ?? '');
+    const b = Buffer.from(expected);
+    if (a.length !== b.length || !timingSafeEqual(a, b)) throw new UnauthorizedException('Invalid sync key');
+
+    return this.service.getFullPoDataForSheet();
   }
 }
