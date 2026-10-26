@@ -245,13 +245,13 @@ export default function GoogleSheetsUpload() {
         <h2 className="text-xl font-bold mb-1 text-gray-800">All PO Data (one sheet, every PO, two-way)</h2>
         <p className="text-gray-500 text-sm mb-4">
           A separate tab that mirrors every PO - not just the ones on the Dispatch &amp; GRN Tracker - with all the same
-          fields you can edit there, plus read-only columns (PO Status, Risk Status, PO Value, Fulfilment %, Total
+          fields you can edit there, plus read-only columns (PO Status, PO Value, Fulfilment %, Total
           Quantity, ...) the app itself computes. Its script applies any edits first, then overwrites the tab with the
           fresh result, so it always ends up showing current data.
         </p>
         <ul className="text-sm text-gray-600 list-disc pl-5 mb-4 space-y-1">
           <li><b>Editable from the sheet</b> - the same columns as the Tracker above, same names: Dispatch Date, Invoice Number, Channel, Location / Hub, Invoice Value, Docket / AWB Number, Delivery Partner, Status, Akshay&apos;s Comment, Expriy Date, Appointment Date, GRN Status + its shortage/damage/excess/credit-note fields, and Delivery Date.</li>
-          <li><b>Read-only, refreshed every sync</b> - PO Status, Risk Status, Fulfilment %, Fill Rate %, PO Value, Total Quantity, Location Type, Recommended/Planned Dispatch Date, Dispatch Plan Status, GRN Outcome, GRN Recorded Date.</li>
+          <li><b>Read-only, refreshed every sync</b> - PO Status, Fulfilment %, Fill Rate %, PO Value, Total Quantity, Location Type, Recommended/Planned Dispatch Date, Dispatch Plan Status, GRN Outcome, GRN Recorded Date.</li>
         </ul>
         <p className="text-xs text-gray-500 mb-4">
           Doesn&apos;t include <b>S.No</b> or <b>GRN Alert</b> from the real Tracker sheet - those aren&apos;t backed by any app field (they look like manual/formula columns), so there's nothing to sync for them here.
@@ -384,6 +384,15 @@ const CATEGORY_COLORS = {
   APPOINTMENT: '#DB8F13',
   'GRN RECONCILIATION': '#047857',
 };
+// Light tint of each category's color, used on the header row so every
+// column visibly belongs to its group without needing to look back up at
+// the band row.
+const CATEGORY_LIGHT_COLORS = {
+  'PO INFO': '#E2E8F0',
+  'DISPATCH & LOGISTICS': '#FDE9DC',
+  APPOINTMENT: '#FDF0D5',
+  'GRN RECONCILIATION': '#D1FAE5',
+};
 
 // Columns to force to plain text so Google Sheets never "smart"-converts a
 // date-shaped or long numeric string inconsistently across rows (seen live:
@@ -403,7 +412,7 @@ const CURRENCY_COLUMNS = ['PO Value', 'Invoice Value (â‚¹)', 'Shortage Value (â‚
 const PERCENT_COLUMNS = ['Fulfilment %', 'Fill Rate %'];
 const QTY_COLUMNS = ['Total Quantity', 'Shortage Qty', 'Damage Qty', 'Excess Qty'];
 // Status-like columns read better centered than left-aligned.
-const CENTER_COLUMNS = ['PO Status', 'Risk Status', 'GRN Outcome', 'Dispatch Plan Status', 'Location Type', 'GRN Status', 'Status'];
+const CENTER_COLUMNS = ['PO Status', 'GRN Outcome', 'Dispatch Plan Status', 'Location Type', 'GRN Status', 'Status'];
 // Dropdowns for the columns ops actually choose a value from when editing
 // the sheet (everything else here is free text or a date).
 const DROPDOWN_COLUMNS = {
@@ -411,16 +420,8 @@ const DROPDOWN_COLUMNS = {
   Status: ['', 'Dispatched', 'Invoiced', 'In Transit', 'Delivered', 'RTO', 'Returned', 'Cancelled'],
 };
 
-// Colored status "badges" - the exact colors the app itself uses for Risk
-// Status (Tailwind "risk" palette), so the sheet reads the same way the UI
-// does. PO Status and GRN Outcome get a simpler 4-tier scheme.
-const RISK_BADGES = {
-  GREEN: { bg: '#10B981', fg: '#FFFFFF' },
-  YELLOW: { bg: '#FBBF24', fg: '#1F2937' },
-  ORANGE: { bg: '#F97316', fg: '#FFFFFF' },
-  RED: { bg: '#DC2626', fg: '#FFFFFF' },
-  BLACK: { bg: '#1F2937', fg: '#FFFFFF' },
-};
+// Colored status "badges" for PO Status and GRN Outcome - a simple 4-tier
+// scheme (neutral / in-progress-on-brand / done / negative).
 const PO_STATUS_BADGES = {
   RECEIVED: { bg: '#F1F5F9', fg: '#475569' },
   APPOINTMENT_REQUESTED: { bg: '#F1F5F9', fg: '#475569' },
@@ -583,8 +584,16 @@ function syncAllPoData() {
   });
   sheet.setRowHeight(1, 30);
 
-  // Header row: on-brand cream background with a bold orange underline.
-  sheet.getRange(2, 1, 1, colCount).setFontWeight('bold').setBackground('#FFF8EF').setFontColor('#334155').setBorder(null, null, true, null, null, null, '#EA6A2D', SpreadsheetApp.BorderStyle.SOLID_MEDIUM);
+  // Header row: each column tinted with a light version of its own
+  // category's color, so the grouping reads clearly column-by-column, not
+  // just from the band above. Bold dark text, bold orange underline across
+  // the whole row ties it back to the brand.
+  sheet.getRange(2, 1, 1, colCount).setFontWeight('bold').setFontColor('#334155').setBorder(null, null, true, null, null, null, '#EA6A2D', SpreadsheetApp.BorderStyle.SOLID_MEDIUM);
+  var headerCol = 1;
+  data.categories.forEach(function (cat) {
+    sheet.getRange(2, headerCol, 1, cat.span).setBackground(CATEGORY_LIGHT_COLORS[cat.name] || '#F3F4F6');
+    headerCol += cat.span;
+  });
 
   // Vertical dividers between categories, spanning the band + header + data
   // rows, so the grouping reads clearly even without the top band in view.
@@ -594,17 +603,15 @@ function syncAllPoData() {
     sheet.getRange(1, boundary, lastRow, 1).setBorder(null, null, null, true, null, null, '#CBD5E1', SpreadsheetApp.BorderStyle.SOLID_MEDIUM);
   });
 
-  // Colored status badges (matching the app's own Risk Status colors
-  // exactly), then a zebra-stripe rule last so it only fills in cells the
-  // badge rules above didn't already color - earlier rules in this list win
-  // ties, so order matters. Done via a formula rule rather than the Banding
-  // API's row-banding, which turned out to silently ignore the custom colors
-  // and keep its built-in grey theme.
+  // Colored status badges, then a zebra-stripe rule last so it only fills in
+  // cells the badge rules above didn't already color - earlier rules in this
+  // list win ties, so order matters. Done via a formula rule rather than the
+  // Banding API's row-banding, which turned out to silently ignore the
+  // custom colors and keep its built-in grey theme.
   sheet.getBandings().forEach(function (b) {
     b.remove();
   });
   const rules = [];
-  addBadgeRules(rules, sheet, data.headers, 'Risk Status', RISK_BADGES, lastRow);
   addBadgeRules(rules, sheet, data.headers, 'PO Status', PO_STATUS_BADGES, lastRow);
   addBadgeRules(rules, sheet, data.headers, 'GRN Outcome', GRN_OUTCOME_BADGES, lastRow);
   if (data.rows.length) {

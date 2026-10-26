@@ -676,14 +676,14 @@ export class SheetTrackerImportService {
     const quantityByPo = new Map(quantityRows.map((r) => [r.poId, Number(r.totalQuantity) || 0]));
 
     const categories = [
-      { name: 'PO INFO', span: 11 },
+      { name: 'PO INFO', span: 10 },
       { name: 'DISPATCH & LOGISTICS', span: 12 },
       { name: 'APPOINTMENT', span: 1 },
       { name: 'GRN RECONCILIATION', span: 12 },
     ];
     const headers = [
-      // ---- PO Info (11)
-      'PO Number', 'Channel', 'Location / Hub', 'PO Status', 'Risk Status', 'PO Value', 'Total Quantity',
+      // ---- PO Info (10)
+      'PO Number', 'Channel', 'Location / Hub', 'PO Status', 'PO Value', 'Total Quantity',
       'Fulfilment %', 'Fill Rate %', 'Order Date', 'Expriy Date',
       // ---- Dispatch & Logistics (12)
       'Dispatch Date', 'Recommended Dispatch Date', 'Planned Dispatch Date', 'Dispatch Plan Status', 'Location Type',
@@ -707,7 +707,6 @@ export class SheetTrackerImportService {
         po.channelId,
         po.location,
         po.status,
-        po.riskStatus,
         Number(po.poValue) || 0,
         quantityByPo.get(po.id) ?? 0,
         po.fulfilmentPercent ?? '',
