@@ -376,13 +376,91 @@ const TAB_NAME = 'ALL PO DATA';
 // Row 1 of the tab is a colored category band (PO INFO / DISPATCH &
 // LOGISTICS / ...), row 2 is the real column headers, data starts at row 3.
 // A category band color per group name - add one here if a new category
-// name ever appears in the pushed data.
+// name ever appears in the pushed data. Two of these are the app's own
+// brand colors (Tailwind "nootie" orange-dark / gold-dark).
 const CATEGORY_COLORS = {
-  'PO INFO': '#1E3A8A',
-  'DISPATCH & LOGISTICS': '#B45309',
-  APPOINTMENT: '#6D28D9',
+  'PO INFO': '#334155',
+  'DISPATCH & LOGISTICS': '#CC5620',
+  APPOINTMENT: '#DB8F13',
   'GRN RECONCILIATION': '#047857',
 };
+
+// Columns to force to plain text so Google Sheets never "smart"-converts a
+// date-shaped or long numeric string inconsistently across rows (seen live:
+// some PO dates rendered as "2026-09-03", others as "14/9/2026" because
+// Sheets silently reinterpreted only the ones matching its locale pattern).
+// Must be set BEFORE the values are written - formatting a cell that's
+// already been auto-converted only changes its display, not its underlying
+// type.
+const PLAIN_TEXT_COLUMNS = [
+  'PO Number', 'Order Date', 'Expriy Date', 'Dispatch Date', 'Recommended Dispatch Date',
+  'Planned Dispatch Date', 'Invoice Number', 'Docket / AWB Number', 'Delivery Date',
+  'Appointment Date', "Credit Note #", 'GRN Recorded Date',
+];
+const CURRENCY_COLUMNS = ['PO Value', 'Invoice Value (₹)', 'Shortage Value (₹)', 'Damage Value (₹)', 'Excess Value (₹)', 'Net Discrepancy (₹)', 'Credit Note Value (₹)'];
+// Stored as e.g. 76.21 meaning 76.21% (not a 0-1 fraction) - a plain "append
+// a %" format, not Sheets' native percentage type, which would divide by 100.
+const PERCENT_COLUMNS = ['Fulfilment %', 'Fill Rate %'];
+const QTY_COLUMNS = ['Total Quantity', 'Shortage Qty', 'Damage Qty', 'Excess Qty'];
+// Status-like columns read better centered than left-aligned.
+const CENTER_COLUMNS = ['PO Status', 'Risk Status', 'GRN Outcome', 'Dispatch Plan Status', 'Location Type', 'GRN Status', 'Status'];
+// Dropdowns for the columns ops actually choose a value from when editing
+// the sheet (everything else here is free text or a date).
+const DROPDOWN_COLUMNS = {
+  'GRN Status': ['', 'Pending', 'Completed'],
+  Status: ['', 'Dispatched', 'Invoiced', 'In Transit', 'Delivered', 'RTO', 'Returned', 'Cancelled'],
+};
+
+// Colored status "badges" - the exact colors the app itself uses for Risk
+// Status (Tailwind "risk" palette), so the sheet reads the same way the UI
+// does. PO Status and GRN Outcome get a simpler 4-tier scheme.
+const RISK_BADGES = {
+  GREEN: { bg: '#10B981', fg: '#FFFFFF' },
+  YELLOW: { bg: '#FBBF24', fg: '#1F2937' },
+  ORANGE: { bg: '#F97316', fg: '#FFFFFF' },
+  RED: { bg: '#DC2626', fg: '#FFFFFF' },
+  BLACK: { bg: '#1F2937', fg: '#FFFFFF' },
+};
+const PO_STATUS_BADGES = {
+  RECEIVED: { bg: '#F1F5F9', fg: '#475569' },
+  APPOINTMENT_REQUESTED: { bg: '#F1F5F9', fg: '#475569' },
+  APPOINTMENT_CONFIRMED: { bg: '#F1F5F9', fg: '#475569' },
+  READY_FOR_DISPATCH: { bg: '#F1F5F9', fg: '#475569' },
+  DISPATCHED: { bg: '#FDE9DC', fg: '#CC5620' },
+  IN_TRANSIT: { bg: '#FDE9DC', fg: '#CC5620' },
+  DELIVERED: { bg: '#D1FAE5', fg: '#065F46' },
+  GRN_PENDING: { bg: '#D1FAE5', fg: '#065F46' },
+  RECONCILED: { bg: '#D1FAE5', fg: '#065F46' },
+  CLOSED: { bg: '#D1FAE5', fg: '#065F46' },
+  RETURNED: { bg: '#FEE2E2', fg: '#991B1B' },
+  CANCELLED: { bg: '#FEE2E2', fg: '#991B1B' },
+};
+const GRN_OUTCOME_BADGES = {
+  MATCHED: { bg: '#D1FAE5', fg: '#065F46' },
+  SHORTAGE: { bg: '#FEE2E2', fg: '#991B1B' },
+  DAMAGE: { bg: '#FEE2E2', fg: '#991B1B' },
+  MISMATCHED: { bg: '#FEE2E2', fg: '#991B1B' },
+  OTHER: { bg: '#FEF3C7', fg: '#92400E' },
+  NO_GRN: { bg: '#F1F5F9', fg: '#475569' },
+};
+
+function addBadgeRules(rules, sheet, headers, columnName, badgeMap, lastRow) {
+  var col = headers.indexOf(columnName) + 1;
+  if (col === 0 || lastRow < 3) return;
+  const range = sheet.getRange(3, col, lastRow - 2, 1);
+  Object.keys(badgeMap).forEach(function (value) {
+    const badge = badgeMap[value];
+    rules.push(
+      SpreadsheetApp.newConditionalFormatRule()
+        .whenTextEqualTo(value)
+        .setBackground(badge.bg)
+        .setFontColor(badge.fg)
+        .setBold(true)
+        .setRanges([range])
+        .build(),
+    );
+  });
+}
 
 function syncAllPoData() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -426,8 +504,17 @@ function syncAllPoData() {
   }
   const data = JSON.parse(refreshRes.getContentText());
   const colCount = data.headers.length;
+  const lastRow = data.rows.length ? 2 + data.rows.length : 2;
 
   sheet.clear();
+  sheet.clearConditionalFormatRules();
+
+  // Force plain text on these columns BEFORE any values are written - must
+  // happen first, see the comment on PLAIN_TEXT_COLUMNS above.
+  PLAIN_TEXT_COLUMNS.forEach(function (name) {
+    const c = data.headers.indexOf(name) + 1;
+    if (c > 0) sheet.getRange(1, c, sheet.getMaxRows(), 1).setNumberFormat('@');
+  });
 
   // Band row: category name in its first column, blank cells for the rest of
   // its span (about to be merged) - this low non-empty-cell count is exactly
@@ -441,29 +528,100 @@ function syncAllPoData() {
   sheet.getRange(2, 1, 1, colCount).setValues([data.headers]);
   if (data.rows.length) sheet.getRange(3, 1, data.rows.length, colCount).setValues(data.rows);
 
+  // Number formats for currency / percent / quantity columns.
+  CURRENCY_COLUMNS.forEach(function (name) {
+    const c = data.headers.indexOf(name) + 1;
+    if (c > 0 && data.rows.length) sheet.getRange(3, c, data.rows.length, 1).setNumberFormat('"₹"#,##0.00;[RED]-"₹"#,##0.00');
+  });
+  PERCENT_COLUMNS.forEach(function (name) {
+    const c = data.headers.indexOf(name) + 1;
+    if (c > 0 && data.rows.length) sheet.getRange(3, c, data.rows.length, 1).setNumberFormat('0.0"%"');
+  });
+  QTY_COLUMNS.forEach(function (name) {
+    const c = data.headers.indexOf(name) + 1;
+    if (c > 0 && data.rows.length) sheet.getRange(3, c, data.rows.length, 1).setNumberFormat('#,##0');
+  });
+
+  // Alignment: numbers/money right, statuses centered (everything else -
+  // text, dates - stays left, the default).
+  if (data.rows.length) {
+    CURRENCY_COLUMNS.concat(PERCENT_COLUMNS, QTY_COLUMNS).forEach(function (name) {
+      const c = data.headers.indexOf(name) + 1;
+      if (c > 0) sheet.getRange(3, c, data.rows.length, 1).setHorizontalAlignment('right');
+    });
+    CENTER_COLUMNS.forEach(function (name) {
+      const c = data.headers.indexOf(name) + 1;
+      if (c > 0) sheet.getRange(3, c, data.rows.length, 1).setHorizontalAlignment('center');
+    });
+  }
+
+  // Dropdowns on the columns ops picks a value from when editing.
+  if (data.rows.length) {
+    Object.keys(DROPDOWN_COLUMNS).forEach(function (name) {
+      const c = data.headers.indexOf(name) + 1;
+      if (c === 0) return;
+      const rule = SpreadsheetApp.newDataValidation().requireValueInList(DROPDOWN_COLUMNS[name], true).setAllowInvalid(true).build();
+      sheet.getRange(3, c, data.rows.length, 1).setDataValidation(rule);
+    });
+  }
+
   // Style the band: merge each category's span, color it, white bold
-  // centered text.
+  // centered text, taller row.
   var col = 1;
   data.categories.forEach(function (cat) {
     const range = sheet.getRange(1, col, 1, cat.span);
     if (cat.span > 1) range.merge();
-    range.setBackground(CATEGORY_COLORS[cat.name] || '#374151').setFontColor('#FFFFFF').setFontWeight('bold').setHorizontalAlignment('center');
+    range.setBackground(CATEGORY_COLORS[cat.name] || '#374151').setFontColor('#FFFFFF').setFontWeight('bold').setFontSize(10).setHorizontalAlignment('center');
     col += cat.span;
   });
+  sheet.setRowHeight(1, 30);
 
-  // Header row: light grey, bold, bordered.
-  sheet.getRange(2, 1, 1, colCount).setFontWeight('bold').setBackground('#F3F4F6').setBorder(true, true, true, true, true, true);
+  // Header row: on-brand cream background with a bold orange underline.
+  sheet.getRange(2, 1, 1, colCount).setFontWeight('bold').setBackground('#FFF8EF').setFontColor('#334155').setBorder(null, null, true, null, null, null, '#EA6A2D', SpreadsheetApp.BorderStyle.SOLID_MEDIUM);
 
-  // Zebra striping on the data rows, freeze the band + header rows, and size
-  // columns to fit. Can't also freeze a column here - the band row's merged
-  // cells span multiple columns, and Sheets refuses to freeze a column that
-  // would split a merge.
+  // Vertical dividers between categories, spanning the band + header + data
+  // rows, so the grouping reads clearly even without the top band in view.
+  var boundary = 0;
+  data.categories.slice(0, -1).forEach(function (cat) {
+    boundary += cat.span;
+    sheet.getRange(1, boundary, lastRow, 1).setBorder(null, null, null, true, null, null, '#CBD5E1', SpreadsheetApp.BorderStyle.SOLID_MEDIUM);
+  });
+
+  // Colored status badges (matching the app's own Risk Status colors
+  // exactly), then a zebra-stripe rule last so it only fills in cells the
+  // badge rules above didn't already color - earlier rules in this list win
+  // ties, so order matters. Done via a formula rule rather than the Banding
+  // API's row-banding, which turned out to silently ignore the custom colors
+  // and keep its built-in grey theme.
   sheet.getBandings().forEach(function (b) {
     b.remove();
   });
-  if (data.rows.length) sheet.getRange(3, 1, data.rows.length, colCount).applyRowBanding(SpreadsheetApp.BandingTheme.LIGHT_GREY, false, false);
+  const rules = [];
+  addBadgeRules(rules, sheet, data.headers, 'Risk Status', RISK_BADGES, lastRow);
+  addBadgeRules(rules, sheet, data.headers, 'PO Status', PO_STATUS_BADGES, lastRow);
+  addBadgeRules(rules, sheet, data.headers, 'GRN Outcome', GRN_OUTCOME_BADGES, lastRow);
+  if (data.rows.length) {
+    rules.push(
+      SpreadsheetApp.newConditionalFormatRule()
+        .whenFormulaSatisfied('=ISEVEN(ROW())')
+        .setBackground('#FFF8EF')
+        .setRanges([sheet.getRange(3, 1, data.rows.length, colCount)])
+        .build(),
+    );
+  }
+  sheet.setConditionalFormatRules(rules);
+
+  // Freeze the band + header rows, hide gridlines, and size columns to fit
+  // (with a floor so a narrow status/qty column isn't squeezed unreadably
+  // thin). Can't also freeze a column here - the band row's merged cells
+  // span multiple columns, and Sheets refuses to freeze a column that would
+  // split a merge.
   sheet.setFrozenRows(2);
+  sheet.setHiddenGridlines(true);
   sheet.autoResizeColumns(1, colCount);
+  for (var i = 1; i <= colCount; i++) {
+    if (sheet.getColumnWidth(i) < 90) sheet.setColumnWidth(i, 90);
+  }
 
   Logger.log('Refreshed ' + data.rows.length + ' POs');
 }
