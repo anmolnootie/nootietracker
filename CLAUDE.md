@@ -1,0 +1,67 @@
+# Nootie Control Tower
+
+A PO / dispatch / GRN tracking system for Nootie (pet food & treats), covering purchase orders raised by quick-commerce platforms (Blinkit, Zepto, etc.) from creation through dispatch, delivery, GRN reconciliation, and returns.
+
+**This file is a running project journal for Claude, not just a one-time reference.** Append a dated entry to the Project Log below after any session that builds, fixes, or investigates something non-trivial — the goal is that a fresh session can read this file and the Project Log instead of re-reading old conversation transcripts. Keep entries terse (what changed/was found, not a narrative); move anything that becomes a permanent convention up into the reference sections below instead of leaving it buried in the log.
+
+Live: frontend `https://app.mynootie.com`, backend `https://api.mynootie.com`. Both on Railway (web + worker services), DB on Supabase.
+
+## Project Log
+
+**2026-10-26** — Created this file (previously relied on conversation memory + a separate `~/.claude/projects/.../memory/` dir for user/feedback facts, which still exists and is still used for cross-session *user* preferences — this file is for project/code state instead).
+
+- Shipped (this session, chronologically): Dispatch & GRN Dashboard KPI redesign; Expired-Not-Delivered page; duplicate-recall race fix + live data repair; Field Forms public page; "The Pet Point" `store-team` page (separate business, hosted here as a favor; install-to-homescreen support added); Bulk PRN Upload + Bulk DN Upload modules; Day-wise Dispatch Report (SKU/PO Excel export by date, under Purchase Orders nav); bulk-import speed work (preload cache + grouped concurrency, ~28%+ round-trip reduction, verified via scratch-DB A/B diff); background processing + live progress for every upload type (GRN/Invoice/PRN/DN/Dispatch Report/Sheets) via new `BackgroundImportRunner` + `useBatchProgress`; PO quantity column added to Compilation Reports' PO/Facility Summary.
+- **Found and fixed a real production bug** while testing the above: `PrnUploadBatchEntity`/`PrnImportRowEntity`/`DnUploadBatchEntity`/`DnImportRowEntity` were never added to `database.module.ts`'s `ENTITIES` array, so every real PRN/DN upload had been throwing `EntityMetadataNotFoundError` since those features shipped. Earlier "verified live" testing had used a custom minimal test module that registered the entities itself, masking the gap — lesson captured in the Entity-registration gotcha below.
+- **Open/unresolved at end of session:**
+  - A frontend Railway deploy got stuck for an unusually long time (30+ min, no new `buildId`) after the background-processing commit — user confirmed Railway showed it as online, but the live bundle still didn't contain the new code at last check. Status unconfirmed — **check whether commits `254e9d9` and `c19316b` (PO quantity column) have actually reached production before assuming either is live.**
+  - Dashboard KPI tiles: "Total POs"/"Dispatched"/"Not Fulfilled" are intentionally FY-wide + channel-only (don't filter by Month/Status/Partner/Aging) — confirmed by code comments and tile hover text, not a bug. User was confused by this; offered to make them respect the Month filter too but no decision made yet.
+  - The 8 "Store View" Google Sheet links on `store-team` return HTTP 401 to anonymous viewers — a Google Drive sharing-permission setting only the user can fix, not a code issue.
+
+## Stack & monorepo layout
+
+npm workspaces + Turborepo:
+
+- `apps/backend` — NestJS + TypeORM, Postgres. Entry point `src/main.ts`, port `8001` locally.
+- `apps/frontend` — Next.js (pages router) + Tailwind. Port `8000` locally (`npm run dev` inside `apps/frontend` runs `next dev -p 8000`).
+- `packages/shared` — types/enums shared by both (`@po-control-tower/shared`). Build this first (`predev`/`prebuild` scripts do it automatically) whenever its types change, or the other two will resolve stale types.
+
+Root scripts: `npm run dev` (turbo, runs both apps in parallel), `npm run build`, `npm run lint`, `npm run test`.
+
+## Database
+
+- Local dev: Postgres via `apps/backend/.env` (`DATABASE_*` vars), `synchronize: false` always — this project runs off checked-in migrations, not entity-driven schema sync, even in dev.
+- Production: Supabase Postgres, accessed through the **Session Pooler** (`aws-0-ap-south-1.pooler.supabase.com:5432`), **hard-capped at 15 total connections** shared across every client (web service pool, worker service pool, Supabase dashboard, any one-off script). The web service's pool (`DATABASE_POOL_MAX`, `database.module.ts`) is deliberately small (8) to leave headroom for the worker's pool (5) plus margin — this has already caused one production outage (`EMAXCONNSESSION`) from two unbounded pools. Don't raise it casually.
+- Migrations: `npm run migration:generate` (diffs entities against the connected DB — **run against a DB whose migration history actually matches production**, or it'll bundle in unrelated tables; see the entity-registration gotcha below for why this matters more than it sounds), `migration:run`, `migration:revert`, all from `apps/backend`. Migrations run automatically on boot in production (`migrationsRun: isProduction` in `database.module.ts`).
+- **Every new entity must be added to `database.module.ts`'s `ENTITIES` array manually** (plain imports, not a glob). Forgetting this doesn't fail the build or crash the app at boot — `TypeOrmModule.forFeature()` resolves lazily, so the app starts fine and only throws `EntityMetadataNotFoundError` the first time a repository method actually runs. This exact bug shipped silently for two whole features (PRN/DN bulk upload) before being caught — when adding a new entity, grep `ENTITIES` in `database.module.ts` and verify it's there, and test against a real `AppModule` boot, not a hand-rolled minimal test module that registers entities itself (that masks exactly this class of bug).
+
+## Timezone handling
+
+Source data (vendor exports, quick-commerce portals) is implicitly IST with no timezone marker. Both Excel-cell dates (via SheetJS/xlsx) and raw CSV date strings parse ambiguously depending on the *server process's* local timezone unless handled explicitly — this already caused one dev-vs-prod drift bug. Use `apps/backend/src/common/ist-timestamp.util.ts` (`parseIstTimestamp`, `istDayRangeUtc`) for any date arriving from an upload or export; don't reach for `new Date(str)` directly on vendor data.
+
+## Bulk upload / import modules
+
+There are many near-identical upload features (`bulk-import` for POs, plus `invoice-import`, `grn-import`, `prn-import`, `dn-import`, `dispatch-report-import`, `sheet-tracker-import`). The established shape for a new one:
+
+- A `*UploadBatchEntity` (status `PROCESSING | COMPLETED | FAILED`, counts, `errorMessage`) + a `*RowEntity` per uploaded row, both registered in `database.module.ts`.
+- `startFile()` creates the batch row, enqueues the real work via `apps/backend/src/common/background-import-runner.ts`'s `BackgroundImportRunner` (one queue per service instance — serializes imports of the *same* type so two runs never race on creating the same PO, but different import types run independently), and returns immediately. Never process synchronously inside the HTTP request — a real file is thousands of rows at several DB round-trips each, far longer than a browser/proxy keeps a connection open.
+- The actual work flushes progress periodically (every ~25 rows or 5s) so the frontend can poll live status instead of a static "Processing..." spinner, and calls `failStalledBatches()` (same file) from `listBatches()`/`getBatch()` so a batch orphaned by a server restart shows `FAILED` instead of spinning forever.
+- `bulk-import`'s own version of this (`bulk-import.service.ts`) is older/richer — it also has a Stop button (needs a `CANCELLED` status value) and a `preloadCache()` pattern (`po-compilation.service.ts`) that bulk-fetches every PO/line/appointment/etc. a file's rows could touch *before* the row loop, to avoid the N-round-trips-per-row cost that otherwise dominates against a remote DB. Reach for that pattern before adding new per-row `findOne()` calls anywhere in these modules.
+- Frontend: `apps/frontend/src/hooks/useBatchProgress.ts` polls a batch until terminal status — use it for any new upload page instead of a one-shot await.
+
+## Verifying a live deploy
+
+Don't trust a 200 response or a WebFetch of the page HTML — WebFetch doesn't execute JS, and a server-rendered shell can't reflect client-only `useEffect`-injected behavior either way. To confirm a frontend change actually shipped: fetch the page, extract its `buildId` and the hashed chunk under `/_next/static/chunks/pages/<route>-<hash>.js`, and grep *that* file for the expected code. A `curl`/`diff` that shows the "before" and "after" HTML as byte-identical is the tell that the check is checking the wrong layer. Poll the live `buildId` (background loop, not `sleep`) until it changes rather than assuming a push deploys instantly — Railway deploys have taken anywhere from ~2 to ~30+ minutes in practice.
+
+For the backend, there's no buildId equivalent — confirm it redeployed and didn't crash-loop by hitting any endpoint and checking for a normal HTTP response (even a 500 from bad input) rather than a connection timeout/502, which is what an actual boot failure looks like.
+
+## Testing correctness-sensitive changes
+
+For anything touching PO compilation, dedup logic, or other race-sensitive paths: clone the real dev DB to a scratch DB (`pg_dump | psql`), run the scenario through both the old code (`git stash` the changes) and the new code against separately-reset clones, and diff the JSON output. This caught real behavioral drift that type-checking and a single forward test both missed. Always use the real `AppModule` for this, not a hand-assembled minimal NestJS module (see the entity-registration gotcha above).
+
+## Two unrelated, intentionally separate public pages
+
+`apps/frontend/src/pages/field-forms.tsx` and `store-team.tsx` are standalone, no-login pages excluded from `_app.tsx`'s auth guard and not linked from the main nav. `store-team.tsx` in particular belongs to a *different business* (a pet store chain, "The Pet Point") hosted on this domain as a favor/convenience — it has nothing to do with Nootie's PO data and its markup is generated programmatically from a companion Claude Artifact, not hand-edited. Don't assume either page should follow the rest of the app's conventions (auth, layout, nav).
+
+## Live financial/inventory data
+
+This app's database holds real purchase orders, dispatch records, and GRN data for an active business. Treat any direct live-DB write (even a "just fixing duplicate rows" cleanup) as requiring explicit confirmation and a preview first, and prefer fixing forward via the app's own write paths over raw SQL where practical.
