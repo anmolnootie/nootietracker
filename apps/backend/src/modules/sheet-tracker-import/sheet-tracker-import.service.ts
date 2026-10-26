@@ -12,6 +12,7 @@ import { DispatchEntity } from '../../database/entities/dispatch.entity';
 import { AppointmentEntity } from '../../database/entities/appointment.entity';
 import { GRNTrackerEntity } from '../../database/entities/grn-tracker.entity';
 import { LogisticsTrackerEntity } from '../../database/entities/logistics-tracker.entity';
+import { TransporterMasterEntity } from '../../database/entities/transporter-master.entity';
 import { GRNOutcome } from '@po-control-tower/shared';
 import { FileReaderService, ParsedFile } from '../bulk-import/file-reader.service';
 import { POService } from '../po/po.service';
@@ -167,6 +168,8 @@ export class SheetTrackerImportService {
     private readonly grnRepository: Repository<GRNTrackerEntity>,
     @InjectRepository(LogisticsTrackerEntity)
     private readonly logisticsRepository: Repository<LogisticsTrackerEntity>,
+    @InjectRepository(TransporterMasterEntity)
+    private readonly transporterRepository: Repository<TransporterMasterEntity>,
     private readonly fileReaderService: FileReaderService,
     private readonly poService: POService,
   ) {}
@@ -654,13 +657,17 @@ export class SheetTrackerImportService {
    * same apply logic. The rest are read-only, app-computed, named distinctly
    * so none collide with a writable alias and get misread as that field.
    */
-  async getFullPoDataForSheet(): Promise<{ categories: { name: string; span: number }[]; headers: string[]; rows: (string | number)[][] }> {
+  async getFullPoDataForSheet(): Promise<{ categories: { name: string; span: number }[]; headers: string[]; rows: (string | number)[][]; transporters: string[] }> {
     const pos = await this.poRepository.find({ where: { isDeleted: false }, order: { poNumber: 'ASC' } });
     const poIds = pos.map((p) => p.id);
     const dispatchByPo = new Map((await this.loadInChunks(poIds, (c) => this.dispatchRepository.find({ where: { poId: In(c) } }))).map((d) => [d.poId, d]));
     const appointmentByPo = new Map((await this.loadInChunks(poIds, (c) => this.appointmentRepository.find({ where: { poId: In(c) } }))).map((a) => [a.poId, a]));
     const grnByPo = new Map((await this.loadInChunks(poIds, (c) => this.grnRepository.find({ where: { poId: In(c) } }))).map((g) => [g.poId, g]));
     const logisticsByPo = new Map((await this.loadInChunks(poIds, (c) => this.logisticsRepository.find({ where: { poId: In(c) } }))).map((l) => [l.poId, l]));
+    // Powers a live dropdown for the Delivery Partner column on the sheet -
+    // sourced from the real master list so it never goes stale like a
+    // hardcoded one would.
+    const transporters = (await this.transporterRepository.find({ order: { name: 'ASC' } })).map((t) => t.name);
     const quantityRows = poIds.length
       ? await this.loadInChunks(poIds, (c) =>
           this.lineRepository.createQueryBuilder('li').select('li.poId', 'poId').addSelect('SUM(li.quantity)', 'totalQuantity').where('li.poId IN (:...ids)', { ids: c }).groupBy('li.poId').getRawMany(),
@@ -742,7 +749,7 @@ export class SheetTrackerImportService {
       ];
     });
 
-    return { categories, headers, rows };
+    return { categories, headers, rows, transporters };
   }
 
   /** Removes the upload record only - never undoes what was applied to POs. */

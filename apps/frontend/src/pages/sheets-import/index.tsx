@@ -555,7 +555,9 @@ function syncAllPoData() {
     });
   }
 
-  // Dropdowns on the columns ops picks a value from when editing.
+  // Dropdowns on the columns ops picks a value from when editing. Delivery
+  // Partner's list comes live from the backend (the real transporter
+  // master), not a hardcoded array, so it can't go stale.
   if (data.rows.length) {
     Object.keys(DROPDOWN_COLUMNS).forEach(function (name) {
       const c = data.headers.indexOf(name) + 1;
@@ -563,6 +565,11 @@ function syncAllPoData() {
       const rule = SpreadsheetApp.newDataValidation().requireValueInList(DROPDOWN_COLUMNS[name], true).setAllowInvalid(true).build();
       sheet.getRange(3, c, data.rows.length, 1).setDataValidation(rule);
     });
+    const deliveryPartnerCol = data.headers.indexOf('Delivery Partner') + 1;
+    if (deliveryPartnerCol > 0 && data.transporters && data.transporters.length) {
+      const partnerRule = SpreadsheetApp.newDataValidation().requireValueInList(data.transporters, true).setAllowInvalid(true).build();
+      sheet.getRange(3, deliveryPartnerCol, data.rows.length, 1).setDataValidation(partnerRule);
+    }
   }
 
   // Style the band: merge each category's span, color it, white bold

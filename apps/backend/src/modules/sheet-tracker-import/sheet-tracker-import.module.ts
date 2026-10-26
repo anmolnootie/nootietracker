@@ -10,6 +10,7 @@ import { DispatchEntity } from '../../database/entities/dispatch.entity';
 import { AppointmentEntity } from '../../database/entities/appointment.entity';
 import { GRNTrackerEntity } from '../../database/entities/grn-tracker.entity';
 import { LogisticsTrackerEntity } from '../../database/entities/logistics-tracker.entity';
+import { TransporterMasterEntity } from '../../database/entities/transporter-master.entity';
 
 import { SheetTrackerImportService } from './sheet-tracker-import.service';
 import { SheetTrackerImportController } from './sheet-tracker-import.controller';
@@ -19,7 +20,7 @@ import { POModule } from '../po/po.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([SheetTrackerUploadBatchEntity, SheetTrackerRowEntity, POMasterEntity, POLineItemEntity, DispatchEntity, AppointmentEntity, GRNTrackerEntity, LogisticsTrackerEntity]),
+    TypeOrmModule.forFeature([SheetTrackerUploadBatchEntity, SheetTrackerRowEntity, POMasterEntity, POLineItemEntity, DispatchEntity, AppointmentEntity, GRNTrackerEntity, LogisticsTrackerEntity, TransporterMasterEntity]),
     MulterModule.register({ limits: { fileSize: 25 * 1024 * 1024 } }),
     BulkImportModule,
     POModule,
