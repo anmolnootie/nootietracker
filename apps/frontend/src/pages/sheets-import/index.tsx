@@ -454,14 +454,15 @@ function syncAllPoData() {
   // Header row: light grey, bold, bordered.
   sheet.getRange(2, 1, 1, colCount).setFontWeight('bold').setBackground('#F3F4F6').setBorder(true, true, true, true, true, true);
 
-  // Zebra striping on the data rows, freeze the band + header rows and the
-  // PO Number column, and size columns to fit.
+  // Zebra striping on the data rows, freeze the band + header rows, and size
+  // columns to fit. Can't also freeze a column here - the band row's merged
+  // cells span multiple columns, and Sheets refuses to freeze a column that
+  // would split a merge.
   sheet.getBandings().forEach(function (b) {
     b.remove();
   });
   if (data.rows.length) sheet.getRange(3, 1, data.rows.length, colCount).applyRowBanding(SpreadsheetApp.BandingTheme.LIGHT_GREY, false, false);
   sheet.setFrozenRows(2);
-  sheet.setFrozenColumns(1);
   sheet.autoResizeColumns(1, colCount);
 
   Logger.log('Refreshed ' + data.rows.length + ' POs');
