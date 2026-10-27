@@ -62,7 +62,7 @@ export const MainLayout: React.FC<LayoutProps> = ({ children }) => {
     { title: 'Import', items: [
       { label: '⇪ Upload / Bulk Import', href: '/bulk-import' },
       { label: '📊 Compilation Reports', href: '/bulk-import/reports' },
-      { label: '🧾 Invoice Bulk Upload', href: '/invoice-import' },
+      { label: '🧾 Invoice Bulk Upload (Excel / Vasy PDF)', href: '/invoice-import' },
       { label: '🧾 Bulk PRN Upload', href: '/prn-import' },
       { label: '🧾 Bulk DN Upload', href: '/dn-import' },
       { label: '📗 Google Sheets Upload', href: '/sheets-import' },

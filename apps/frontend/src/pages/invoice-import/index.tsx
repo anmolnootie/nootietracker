@@ -73,7 +73,12 @@ export default function InvoiceImport() {
     <MainLayout>
       <div className="bg-white rounded-lg shadow p-8 mb-6">
         <div className="flex items-center justify-between mb-2">
-          <h2 className="text-2xl font-bold text-gray-800">Invoice Bulk Upload</h2>
+          <div className="flex items-center gap-3">
+            <h2 className="text-2xl font-bold text-gray-800">Invoice Bulk Upload</h2>
+            <span className="text-xs font-medium bg-nootie-orange-light text-nootie-orange-dark rounded-full px-2.5 py-1">
+              Now supports Vasy invoice PDFs
+            </span>
+          </div>
           <div className="flex gap-4 text-sm">
             <a href="/prn-import" className="text-nootie-orange-dark hover:underline">
               Bulk PRN Upload →
