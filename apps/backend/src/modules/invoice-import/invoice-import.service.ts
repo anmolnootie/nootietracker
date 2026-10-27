@@ -319,7 +319,7 @@ export class InvoiceImportService {
         matchStatus: 'PO_NOT_FOUND',
         matchedPoId: null,
         errorMessage: poNumber
-          ? `No PO found with number ${poNumber}`
+          ? `No PO found with number ${poNumber}, and invoice ${data.invoiceNumber ?? '(none)'} isn't on any dispatch record or uploaded Daily Dispatch Report either.`
           : `Couldn't link ${what} to a PO - this sheet has no PO Number, and the voucher isn't in any uploaded Daily Dispatch Report yet. Upload that report first, then re-upload this sheet.`,
       };
     }
@@ -351,7 +351,12 @@ export class InvoiceImportService {
    * the one document that pairs each voucher number with its PO number.
    */
   async resolvePo(poNumber: string | null, invoiceNumber: string | null): Promise<POMasterEntity | null> {
-    if (poNumber) return this.poRepository.findOne({ where: { poNumber } });
+    // A PO number that doesn't resolve (e.g. typed slightly differently on a
+    // Vasy invoice) still falls through to the invoice-number lookups below.
+    if (poNumber) {
+      const po = await this.poRepository.findOne({ where: { poNumber } });
+      if (po) return po;
+    }
     if (!invoiceNumber) return null;
 
     const existing = await this.dispatchRepository.findOne({ where: { invoiceNumber } });
