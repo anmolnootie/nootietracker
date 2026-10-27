@@ -84,10 +84,12 @@ export default function InvoiceImport() {
           </div>
         </div>
         <p className="text-gray-500 text-sm mb-6">
-          Upload the invoice sheet as exported (Invoice No., Invoice Date, Customer Name, Net Amount). The sheet
-          carries no PO Number, so each invoice is linked to its PO through the Daily Dispatch Report - upload
-          that first. Linked invoices update the PO's dispatch record and recompute Fill Rate automatically;
-          any that can't be linked are listed so you can re-upload once the report is in.
+          Upload the invoice sheet as exported (Invoice No., Invoice Date, Customer Name, Net Amount), or a Vasy
+          invoice PDF (one file can hold many invoices). The spreadsheet carries no PO Number, so each invoice is
+          linked to its PO through the Daily Dispatch Report - upload that first. PDF invoices carry their own PO
+          Number (from "Reference No. :PO#...") and are linked directly. Either way, linked invoices update the
+          PO's dispatch record and recompute Fill Rate automatically; any that can't be linked are listed so you
+          can re-upload once the report is in.
         </p>
 
         <div
@@ -109,11 +111,11 @@ export default function InvoiceImport() {
           <input
             ref={fileInputRef}
             type="file"
-            accept=".xlsx,.xls,.csv"
+            accept=".xlsx,.xls,.csv,.pdf"
             className="hidden"
             onChange={(e) => handleFile(e.target.files)}
           />
-          <p className="text-gray-600 font-medium">Drag &amp; drop an Excel/CSV file here, or click to browse</p>
+          <p className="text-gray-600 font-medium">Drag &amp; drop an Excel/CSV file or a Vasy invoice PDF here, or click to browse</p>
           {file && <p className="mt-4 text-sm text-gray-700">📄 {file.name}</p>}
         </div>
 

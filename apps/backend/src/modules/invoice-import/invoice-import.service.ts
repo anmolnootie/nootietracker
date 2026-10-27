@@ -2,6 +2,9 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Like, Repository } from 'typeorm';
 import { format } from 'date-fns';
+// pdf-parse ships as CJS with no default-export interop; require() avoids TS/ESM friction - same approach as po-import.service.ts.
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const pdfParse = require('pdf-parse');
 
 import { InvoiceUploadBatchEntity } from '../../database/entities/invoice-upload-batch.entity';
 import { InvoiceImportRowEntity } from '../../database/entities/invoice-import-row.entity';
@@ -19,6 +22,16 @@ const ACTIVE_STATUSES = ['PROCESSING'];
 // bulk PO pipeline's ColumnMappingService/per-platform overrides, since an
 // invoice sheet's handful of columns don't need that machinery.
 type InvoiceField = 'poNumber' | 'invoiceNumber' | 'invoiceValue' | 'invoiceDate' | 'awbNumber' | 'customerName';
+
+interface ParsedInvoiceRow {
+  rowIndex: number;
+  poNumber: string | null;
+  invoiceNumber: string | null;
+  invoiceValue: number | null;
+  invoiceDate: Date | null;
+  awbNumber: string | null;
+  customerName: string | null;
+}
 
 const INVOICE_FIELD_ALIASES: Record<InvoiceField, string[]> = {
   poNumber: ['po number', 'po no', 'purchase order', 'purchase order number', 'po id', 'po#'],
@@ -101,7 +114,13 @@ export class InvoiceImportService {
 
   private async runImport(batch: InvoiceUploadBatchEntity, buffer: Buffer, fileName: string): Promise<void> {
     try {
-      const parsed = this.parseSheet(buffer, fileName);
+      const isPdf = (fileName.split('.').pop() || '').toLowerCase() === 'pdf';
+      const parsed = isPdf ? await this.parsePdf(buffer) : this.parseSheet(buffer, fileName);
+      if (parsed.length === 0 && isPdf) {
+        throw new Error(
+          "Couldn't find any invoices in this PDF - expected Vasy-style \"Invoice No. :...\" labels on each page. If this is a different export format, it isn't supported yet.",
+        );
+      }
 
       let matchedCount = 0;
       let unmatchedCount = 0;
@@ -157,23 +176,18 @@ export class InvoiceImportService {
   }
 
   /**
-   * Reads an invoice sheet into typed rows, skipping blank/total lines (a
-   * row with neither an invoice number nor a PO number). Shared with GRN
-   * Bulk Upload's "from invoices" mode so both read the same export the
-   * same way.
+   * Reads an invoice sheet (.xlsx/.xls/.csv) into typed rows, skipping
+   * blank/total lines (a row with neither an invoice number nor a PO
+   * number). Shared with GRN Bulk Upload's "from invoices" mode so both
+   * read the same export the same way. See parsePdf() below for the other
+   * supported source: Vasy ERP's PDF invoice export, which carries the same
+   * four fields but in a completely different shape (no spreadsheet exists
+   * for that source).
    */
-  parseSheet(buffer: Buffer, fileName: string) {
+  parseSheet(buffer: Buffer, fileName: string): ParsedInvoiceRow[] {
     const { headers, rows } = this.fileReaderService.read(buffer, fileName);
     const mapping = this.mapHeaders(headers);
-    const out: {
-      rowIndex: number;
-      poNumber: string | null;
-      invoiceNumber: string | null;
-      invoiceValue: number | null;
-      invoiceDate: Date | null;
-      awbNumber: string | null;
-      customerName: string | null;
-    }[] = [];
+    const out: ParsedInvoiceRow[] = [];
 
     rows.forEach((row, rowIndex) => {
       const get = (field: InvoiceField) => (mapping[field] ? row[mapping[field]!] : undefined);
@@ -191,6 +205,106 @@ export class InvoiceImportService {
         customerName: text('customerName'),
       });
     });
+    return out;
+  }
+
+  /**
+   * Vasy ERP's GST tax invoice PDF export - the only format this source
+   * offers (no spreadsheet register exists), so this reads the PDF text
+   * directly rather than going through FileReaderService. One PDF commonly
+   * bundles many invoices back to back (each 1-3 pages, header repeated on
+   * every page), so rows are grouped by Invoice No. rather than assumed
+   * one-per-file.
+   *
+   * The template's text-extraction order is scrambled within each page's
+   * header table (pdf-parse/pdf.js follows internal PDF object order, not
+   * visual reading order): a page's Invoice Date value is emitted just
+   * BEFORE that page's "Invoice No. :<value>" line, with the "Invoice Date"
+   * label itself left dangling with no value after it. Every other field we
+   * need (PO Number via "Reference No. :PO#...", Net Amount) is instead
+   * emitted AFTER its page's "Invoice No." line and before the next one -
+   * so each field is paired with whichever "Invoice No." occurrence is
+   * nearest to it: backward for those, forward for the date.
+   *
+   * No AWB field exists in this format ("Vehicle No." is a generic
+   * box/truck label, not a courier AWB) - left null here by design, same as
+   * the spreadsheet path leaves it null when its own column is absent.
+   */
+  async parsePdf(buffer: Buffer): Promise<ParsedInvoiceRow[]> {
+    const { text } = await pdfParse(buffer);
+
+    const invoiceMatches: { value: string; index: number }[] = [];
+    const invoiceNoRe = /Invoice No\.\s*:\s*(\S+)/g;
+    let m: RegExpExecArray | null;
+    while ((m = invoiceNoRe.exec(text))) {
+      invoiceMatches.push({ value: m[1].trim(), index: m.index });
+    }
+    if (invoiceMatches.length === 0) return [];
+
+    const nearestBefore = (pos: number): string | null => {
+      let best: { value: string; index: number } | null = null;
+      for (const im of invoiceMatches) {
+        if (im.index <= pos && (!best || im.index > best.index)) best = im;
+      }
+      return best?.value ?? null;
+    };
+    const nearestAfter = (pos: number): string | null => {
+      let best: { value: string; index: number } | null = null;
+      for (const im of invoiceMatches) {
+        if (im.index >= pos && (!best || im.index < best.index)) best = im;
+      }
+      return best?.value ?? null;
+    };
+
+    const poByInvoice = new Map<string, string>();
+    const poNumberRe = /Reference No\.\s*:\s*PO#\s*(\S+)/gi;
+    while ((m = poNumberRe.exec(text))) {
+      const inv = nearestBefore(m.index);
+      if (inv && !poByInvoice.has(inv)) poByInvoice.set(inv, m[1].trim());
+    }
+
+    const valueByInvoice = new Map<string, number>();
+    const netAmountRe = /Net Amount\s*:\s*([\d,]+\.?\d*)/gi;
+    while ((m = netAmountRe.exec(text))) {
+      const inv = nearestBefore(m.index);
+      const value = parseNumber(m[1]);
+      if (inv && value !== null) valueByInvoice.set(inv, value);
+    }
+
+    const dateByInvoice = new Map<string, Date>();
+    // Date value directly before the label it belongs to, per the scrambled
+    // ordering explained above; a few spaces/newlines of slack between them.
+    const dateBeforeInvoiceNoRe = /:\s*(\d{1,2}\/\d{1,2}\/\d{2,4})\s+Invoice No\./gi;
+    while ((m = dateBeforeInvoiceNoRe.exec(text))) {
+      const inv = nearestAfter(m.index);
+      const parsedDate = parseFlexibleDate(m[1]);
+      if (inv && parsedDate && !dateByInvoice.has(inv)) dateByInvoice.set(inv, parsedDate);
+    }
+    // Fallback for a cleaner export where the label and value sit together normally.
+    const dateLabelRe = /Invoice Date\s*:?\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/gi;
+    while ((m = dateLabelRe.exec(text))) {
+      const inv = nearestBefore(m.index);
+      const parsedDate = parseFlexibleDate(m[1]);
+      if (inv && parsedDate && !dateByInvoice.has(inv)) dateByInvoice.set(inv, parsedDate);
+    }
+
+    // Preserve document order - the first time each invoice number appears.
+    const seen = new Set<string>();
+    const out: ParsedInvoiceRow[] = [];
+    let rowIndex = 0;
+    for (const im of invoiceMatches) {
+      if (seen.has(im.value)) continue;
+      seen.add(im.value);
+      out.push({
+        rowIndex: rowIndex++,
+        poNumber: poByInvoice.get(im.value) ?? null,
+        invoiceNumber: im.value,
+        invoiceValue: valueByInvoice.get(im.value) ?? null,
+        invoiceDate: dateByInvoice.get(im.value) ?? null,
+        awbNumber: null,
+        customerName: null,
+      });
+    }
     return out;
   }
 
