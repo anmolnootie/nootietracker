@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { RiskStatus } from '@po-control-tower/shared';
 import { POMasterEntity } from '../database/entities/po-master.entity';
+import { ConfigService, RiskThresholds } from '../modules/config/config.service';
 
 /**
  * Risk Engine
@@ -8,8 +9,9 @@ import { POMasterEntity } from '../database/entities/po-master.entity';
  * 1. Days remaining to expiry
  * 2. Current stage in the PO lifecycle
  * 3. Delays/discrepancies
- * 
- * Risk Color Bands (configurable via thresholds):
+ *
+ * Risk Color Bands are admin-editable (System Settings) via ConfigService;
+ * defaults mirror the original design:
  * - BLACK: < 1 day to expiry, or critical failure (no delivery attempt, critical damage)
  * - RED: 1-2 days to expiry, or significant delays, or failed GRN match
  * - ORANGE: 3-4 days to expiry, or minor delays
@@ -18,22 +20,17 @@ import { POMasterEntity } from '../database/entities/po-master.entity';
  */
 @Injectable()
 export class RiskEngine {
-  private readonly riskThresholds = {
-    black: 1,      // < 1 day
-    red: 2,        // 1-2 days
-    orange: 4,     // 3-4 days
-    yellow: 7,     // 5-7 days
-    // GREEN: >= 7 days
-  };
+  constructor(private readonly configService: ConfigService) {}
 
-  computeRisk(
+  async computeRisk(
     po: POMasterEntity,
     daysToExpiry: number,
     stage: string,
     hasDelays: boolean = false,
     hasDiscrepancies: boolean = false,
-  ): { riskStatus: RiskStatus; priorityScore: number } {
-    let riskStatus = this.getRiskByDaysToExpiry(daysToExpiry);
+  ): Promise<{ riskStatus: RiskStatus; priorityScore: number }> {
+    const thresholds = await this.configService.getRiskThresholds();
+    let riskStatus = this.getRiskByDaysToExpiry(daysToExpiry, thresholds);
     let priorityScore = this.calculatePriorityScore(daysToExpiry, stage, hasDelays, hasDiscrepancies);
 
     // Override risk if there are critical issues
@@ -50,17 +47,17 @@ export class RiskEngine {
     return { riskStatus, priorityScore };
   }
 
-  private getRiskByDaysToExpiry(daysToExpiry: number): RiskStatus {
-    if (daysToExpiry < this.riskThresholds.black) {
+  private getRiskByDaysToExpiry(daysToExpiry: number, thresholds: RiskThresholds): RiskStatus {
+    if (daysToExpiry < thresholds.black) {
       return RiskStatus.BLACK;
     }
-    if (daysToExpiry < this.riskThresholds.red) {
+    if (daysToExpiry < thresholds.red) {
       return RiskStatus.RED;
     }
-    if (daysToExpiry < this.riskThresholds.orange) {
+    if (daysToExpiry < thresholds.orange) {
       return RiskStatus.ORANGE;
     }
-    if (daysToExpiry < this.riskThresholds.yellow) {
+    if (daysToExpiry < thresholds.yellow) {
       return RiskStatus.YELLOW;
     }
     return RiskStatus.GREEN;
@@ -119,7 +116,7 @@ export class RiskEngine {
     return [RiskStatus.BLACK, RiskStatus.RED].includes(riskStatus);
   }
 
-  getThresholds() {
-    return { ...this.riskThresholds };
+  getThresholds(): Promise<RiskThresholds> {
+    return this.configService.getRiskThresholds();
   }
 }

@@ -1435,7 +1435,7 @@ export class POService {
     const dispatch = preloaded ? preloaded.dispatch ?? null : await this.dispatchRepository.findOneBy({ poId });
     const hasDelays = !!dispatch && dispatch.latestSafeDispatchDate < new Date() && !dispatch.actualDispatchDate;
 
-    const { riskStatus, priorityScore } = this.riskEngine.computeRisk(
+    const { riskStatus, priorityScore } = await this.riskEngine.computeRisk(
       po,
       daysToExpiry,
       po.status,

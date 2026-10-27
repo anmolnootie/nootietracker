@@ -22,7 +22,6 @@ import { POPdfService } from './po-pdf.service';
 import { DispatchDashboardService } from './dispatch-dashboard.service';
 import { POController } from './po.controller';
 import { StatusEngine } from '../../engines/status.engine';
-import { RiskEngine } from '../../engines/risk.engine';
 import { DispatchPlanningEngine } from '../../engines/dispatch-planning.engine';
 import { LocationDispatchEngine } from '../../engines/location-dispatch.engine';
 import { FulfilmentStatusEngine } from '../../engines/fulfilment-status.engine';
@@ -33,6 +32,7 @@ import { LocationsModule } from '../locations/locations.module';
 import { ExceptionsModule } from '../exceptions/exceptions.module';
 import { DocumentsModule } from '../documents/documents.module';
 import { POMappingModule } from '../po-mapping/po-mapping.module';
+import { AppConfigModule } from '../config/config.module';
 
 @Module({
   imports: [
@@ -60,8 +60,9 @@ import { POMappingModule } from '../po-mapping/po-mapping.module';
     ExceptionsModule,
     DocumentsModule,
     POMappingModule,
+    AppConfigModule,
   ],
-  providers: [DispatchDashboardService, POService, POPdfService, StatusEngine, RiskEngine, DispatchPlanningEngine, LocationDispatchEngine, FulfilmentStatusEngine],
+  providers: [DispatchDashboardService, POService, POPdfService, StatusEngine, DispatchPlanningEngine, LocationDispatchEngine, FulfilmentStatusEngine],
   controllers: [POController],
   exports: [POService],
 })
