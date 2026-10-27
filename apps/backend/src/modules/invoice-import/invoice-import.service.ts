@@ -42,6 +42,22 @@ const INVOICE_FIELD_ALIASES: Record<InvoiceField, string[]> = {
   customerName: ['customer name', 'customer', 'party name'],
 };
 
+// Buyer names as they appear on a Vasy invoice -> channel names used on
+// POMasterEntity.channelId. Same buyers as po-import.service.ts's
+// VENDOR_NAME_TO_CHANNEL; checked in order, first hit wins.
+const PDF_BUYER_TO_CHANNEL: [string, string][] = [
+  ['BLINK COMMERCE', 'Blinkit'],
+  ['BLINKIT', 'Blinkit'],
+  ['ZEPTO', 'Zepto'],
+  ['INSTAMART', 'Instamart'],
+  ['SWIGGY', 'Instamart'],
+  ['FLIPKART', 'Flipkart'],
+];
+
+// Vasy PDFs bundle every platform's invoices together; only this channel's
+// are applied for now; the rest are recorded as SKIPPED.
+const PDF_IMPORT_CHANNEL = 'Blinkit';
+
 function parseNumber(v: any): number | null {
   if (typeof v === 'number') return Number.isNaN(v) ? null : v;
   const s = String(v).replace(/[,₹$\s]/g, '').trim();
@@ -124,11 +140,28 @@ export class InvoiceImportService {
 
       let matchedCount = 0;
       let unmatchedCount = 0;
+      let skippedCount = 0;
       let lastFlush = Date.now();
 
       for (let i = 0; i < parsed.length; i++) {
-        const { rowIndex, poNumber, invoiceNumber, invoiceValue, invoiceDate, awbNumber, customerName } = parsed[i];
-        const result = await this.matchAndApply(poNumber, { invoiceNumber, invoiceValue, invoiceDate, awbNumber });
+        const { rowIndex, poNumber, invoiceNumber, invoiceValue, invoiceDate, awbNumber } = parsed[i];
+        let { customerName } = parsed[i];
+
+        // PDF only: skip other platforms' invoices. When the text names no
+        // buyer, the resolved PO's channel decides instead.
+        let skipReason: string | null = null;
+        if (isPdf) {
+          if (!customerName) {
+            customerName = (await this.resolvePo(poNumber, invoiceNumber))?.channelId ?? null;
+          }
+          if (customerName && customerName !== PDF_IMPORT_CHANNEL) {
+            skipReason = `${customerName} invoice - only ${PDF_IMPORT_CHANNEL} invoices are imported from PDFs for now`;
+          }
+        }
+
+        const result = skipReason
+          ? { matchStatus: 'SKIPPED' as const, matchedPoId: null, errorMessage: skipReason }
+          : await this.matchAndApply(poNumber, { invoiceNumber, invoiceValue, invoiceDate, awbNumber });
 
         // Show the PO this row resolved to even though the sheet itself has no PO column.
         const linkedPoNumber =
@@ -151,6 +184,7 @@ export class InvoiceImportService {
         );
 
         if (result.matchStatus === 'MATCHED') matchedCount++;
+        else if (result.matchStatus === 'SKIPPED') skippedCount++;
         else unmatchedCount++;
 
         // Saving progress bumps updatedAt, which is how failStalledBatches()
@@ -158,15 +192,21 @@ export class InvoiceImportService {
         // merely slow one - so it must happen at least every few seconds
         // even when rows are slow, not just at the very end.
         if (i > 0 && (i % 25 === 0 || Date.now() - lastFlush > 5000)) {
-          await this.batchRepository.update(batch.id, { totalRows: matchedCount + unmatchedCount, matchedCount, unmatchedCount });
+          await this.batchRepository.update(batch.id, {
+            totalRows: matchedCount + unmatchedCount + skippedCount,
+            matchedCount,
+            unmatchedCount,
+            skippedCount,
+          });
           lastFlush = Date.now();
         }
       }
 
       await this.batchRepository.update(batch.id, {
-        totalRows: matchedCount + unmatchedCount,
+        totalRows: matchedCount + unmatchedCount + skippedCount,
         matchedCount,
         unmatchedCount,
+        skippedCount,
         status: 'COMPLETED',
       });
     } catch (err) {
@@ -288,6 +328,17 @@ export class InvoiceImportService {
       if (inv && parsedDate && !dateByInvoice.has(inv)) dateByInvoice.set(inv, parsedDate);
     }
 
+    // Buyer platform per invoice: scan each page's slice of text (its
+    // "Invoice No." up to the next one) for a known buyer name. A bundled
+    // Vasy export mixes every platform's invoices in one file.
+    const channelByInvoice = new Map<string, string>();
+    invoiceMatches.forEach((im, i) => {
+      if (channelByInvoice.has(im.value)) return;
+      const slice = text.slice(im.index, invoiceMatches[i + 1]?.index ?? text.length).toUpperCase();
+      const hit = PDF_BUYER_TO_CHANNEL.find(([needle]) => slice.includes(needle));
+      if (hit) channelByInvoice.set(im.value, hit[1]);
+    });
+
     // Preserve document order - the first time each invoice number appears.
     const seen = new Set<string>();
     const out: ParsedInvoiceRow[] = [];
@@ -302,7 +353,7 @@ export class InvoiceImportService {
         invoiceValue: valueByInvoice.get(im.value) ?? null,
         invoiceDate: dateByInvoice.get(im.value) ?? null,
         awbNumber: null,
-        customerName: null,
+        customerName: channelByInvoice.get(im.value) ?? null,
       });
     }
     return out;

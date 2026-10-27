@@ -29,6 +29,9 @@ export class InvoiceUploadBatchEntity {
   @Column({ type: 'int', default: 0 })
   unmatchedCount: number;
 
+  @Column({ type: 'int', default: 0 })
+  skippedCount: number;
+
   @Column({ type: 'text', nullable: true })
   errorMessage: string | null;
 

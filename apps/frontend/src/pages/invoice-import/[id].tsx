@@ -15,6 +15,7 @@ const MATCH_STYLES: Record<string, string> = {
   PO_NOT_FOUND: 'bg-red-100 text-red-700',
   NO_DISPATCH_RECORD: 'bg-nootie-orange-light text-nootie-orange-dark',
   INVALID: 'bg-gray-100 text-gray-600',
+  SKIPPED: 'bg-gray-100 text-gray-500',
 };
 
 export default function InvoiceImportBatchDetail() {
@@ -57,10 +58,11 @@ export default function InvoiceImportBatchDetail() {
         {batch.errorMessage && (
           <div className="mt-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded text-sm">{batch.errorMessage}</div>
         )}
-        <div className="grid grid-cols-3 gap-4 text-center mt-4">
+        <div className="grid grid-cols-4 gap-4 text-center mt-4">
           <Stat label="Rows" value={batch.totalRows} />
           <Stat label="Matched" value={batch.matchedCount} accent="text-green-600" />
           <Stat label="Unmatched" value={batch.unmatchedCount} accent="text-nootie-orange-dark" />
+          <Stat label="Skipped (other platforms)" value={batch.skippedCount} accent="text-gray-500" />
         </div>
       </div>
 

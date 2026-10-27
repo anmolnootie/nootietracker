@@ -30,8 +30,8 @@ export class InvoiceImportRowEntity {
   @Column({ type: 'varchar', nullable: true })
   customerName: string | null;
 
-  @Column({ type: 'enum', enum: ['MATCHED', 'PO_NOT_FOUND', 'NO_DISPATCH_RECORD', 'INVALID'] })
-  matchStatus: 'MATCHED' | 'PO_NOT_FOUND' | 'NO_DISPATCH_RECORD' | 'INVALID';
+  @Column({ type: 'enum', enum: ['MATCHED', 'PO_NOT_FOUND', 'NO_DISPATCH_RECORD', 'INVALID', 'SKIPPED'] })
+  matchStatus: 'MATCHED' | 'PO_NOT_FOUND' | 'NO_DISPATCH_RECORD' | 'INVALID' | 'SKIPPED';
 
   @Column({ type: 'uuid', nullable: true })
   matchedPoId: string | null;

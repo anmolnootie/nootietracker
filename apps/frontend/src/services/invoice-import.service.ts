@@ -10,6 +10,7 @@ export interface InvoiceUploadBatch {
   totalRows: number;
   matchedCount: number;
   unmatchedCount: number;
+  skippedCount: number;
   errorMessage: string | null;
 }
 
@@ -23,7 +24,7 @@ export interface InvoiceImportRow {
   invoiceDate: string | null;
   awbNumber: string | null;
   customerName: string | null;
-  matchStatus: 'MATCHED' | 'PO_NOT_FOUND' | 'NO_DISPATCH_RECORD' | 'INVALID';
+  matchStatus: 'MATCHED' | 'PO_NOT_FOUND' | 'NO_DISPATCH_RECORD' | 'INVALID' | 'SKIPPED';
   matchedPoId: string | null;
   errorMessage: string | null;
 }

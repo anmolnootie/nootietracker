@@ -90,7 +90,7 @@ export default function InvoiceImport() {
         </div>
         <p className="text-gray-500 text-sm mb-6">
           Upload the invoice sheet as exported (Invoice No., Invoice Date, Customer Name, Net Amount), or a Vasy
-          invoice PDF (one file can hold many invoices). The spreadsheet carries no PO Number, so each invoice is
+          invoice PDF (one file can hold many invoices; only Blinkit invoices are imported from PDFs for now, others are listed as skipped). The spreadsheet carries no PO Number, so each invoice is
           linked to its PO through the Daily Dispatch Report - upload that first. PDF invoices carry their own PO
           Number (from "Reference No. :PO#...") and are linked directly. Either way, linked invoices update the
           PO's dispatch record and recompute Fill Rate automatically; any that can't be linked are listed so you
@@ -146,10 +146,11 @@ export default function InvoiceImport() {
                 {isRunning ? 'Processing' : liveBatch.status}
               </span>
             </div>
-            <div className="grid grid-cols-3 gap-4 text-center">
+            <div className="grid grid-cols-4 gap-4 text-center">
               <Stat label="Rows So Far" value={liveBatch.totalRows} />
               <Stat label="Matched" value={liveBatch.matchedCount} accent="text-green-600" />
               <Stat label="Unmatched" value={liveBatch.unmatchedCount} accent="text-nootie-orange-dark" />
+              <Stat label="Skipped (other platforms)" value={liveBatch.skippedCount} accent="text-gray-500" />
             </div>
             {isRunning ? (
               <p className="text-xs text-gray-500 mt-4 text-center">Running in the background - this updates automatically, feel free to navigate away.</p>
