@@ -30,6 +30,11 @@ export class InvoiceImportRowEntity {
   @Column({ type: 'varchar', nullable: true })
   customerName: string | null;
 
+  // PDF imports only: per-SKU quantities read off the invoice, kept so later
+  // invoices for the same PO can be summed with this one.
+  @Column({ type: 'jsonb', nullable: true })
+  lineItems: { ean: string; qty: number }[] | null;
+
   @Column({ type: 'enum', enum: ['MATCHED', 'PO_NOT_FOUND', 'NO_DISPATCH_RECORD', 'INVALID', 'SKIPPED'] })
   matchStatus: 'MATCHED' | 'PO_NOT_FOUND' | 'NO_DISPATCH_RECORD' | 'INVALID' | 'SKIPPED';
 

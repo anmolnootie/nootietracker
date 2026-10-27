@@ -92,7 +92,8 @@ export default function InvoiceImport() {
           Upload the invoice sheet as exported (Invoice No., Invoice Date, Customer Name, Net Amount), or a Vasy
           invoice PDF (one file can hold many invoices; only Blinkit invoices are imported from PDFs for now, others are listed as skipped). The spreadsheet carries no PO Number, so each invoice is
           linked to its PO through the Daily Dispatch Report - upload that first. PDF invoices carry their own PO
-          Number (from "Reference No. :PO#...") and are linked directly. Either way, linked invoices update the
+          Number (from "Reference No. :PO#...") and are linked directly; their item quantities also set each SKU's
+          dispatched quantity on the PO (summed across invoices, re-uploads don't double-count). Either way, linked invoices update the
           PO's dispatch record and recompute Fill Rate automatically; any that can't be linked are listed so you
           can re-upload once the report is in.
         </p>

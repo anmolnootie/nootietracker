@@ -6,6 +6,7 @@ import { InvoiceUploadBatchEntity } from '../../database/entities/invoice-upload
 import { InvoiceImportRowEntity } from '../../database/entities/invoice-import-row.entity';
 import { POMasterEntity } from '../../database/entities/po-master.entity';
 import { DispatchEntity } from '../../database/entities/dispatch.entity';
+import { POLineItemEntity } from '../../database/entities/po-line-item.entity';
 import { DispatchReportRowEntity } from '../../database/entities/dispatch-report-row.entity';
 
 import { InvoiceImportService } from './invoice-import.service';
@@ -15,7 +16,7 @@ import { POModule } from '../po/po.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([InvoiceUploadBatchEntity, InvoiceImportRowEntity, POMasterEntity, DispatchEntity, DispatchReportRowEntity]),
+    TypeOrmModule.forFeature([InvoiceUploadBatchEntity, InvoiceImportRowEntity, POMasterEntity, DispatchEntity, DispatchReportRowEntity, POLineItemEntity]),
     MulterModule.register({ limits: { fileSize: 25 * 1024 * 1024 } }),
     BulkImportModule,
     POModule,

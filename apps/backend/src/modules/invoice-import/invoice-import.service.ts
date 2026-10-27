@@ -11,6 +11,7 @@ import { InvoiceImportRowEntity } from '../../database/entities/invoice-import-r
 import { POMasterEntity } from '../../database/entities/po-master.entity';
 import { DispatchEntity } from '../../database/entities/dispatch.entity';
 import { DispatchReportRowEntity } from '../../database/entities/dispatch-report-row.entity';
+import { POLineItemEntity } from '../../database/entities/po-line-item.entity';
 import { FileReaderService } from '../bulk-import/file-reader.service';
 import { POService } from '../po/po.service';
 import { BackgroundImportRunner, failStalledBatches } from '../../common/background-import-runner';
@@ -31,6 +32,15 @@ interface ParsedInvoiceRow {
   invoiceDate: Date | null;
   awbNumber: string | null;
   customerName: string | null;
+  // PDF only: per-SKU quantities off the invoice's item table, plus the
+  // invoice's own printed quantity total to check them against.
+  lines?: InvoiceLine[];
+  printedTotalQty?: number | null;
+}
+
+export interface InvoiceLine {
+  ean: string;
+  qty: number;
 }
 
 const INVOICE_FIELD_ALIASES: Record<InvoiceField, string[]> = {
@@ -108,6 +118,8 @@ export class InvoiceImportService {
     private readonly dispatchRepository: Repository<DispatchEntity>,
     @InjectRepository(DispatchReportRowEntity)
     private readonly dispatchReportRowRepository: Repository<DispatchReportRowEntity>,
+    @InjectRepository(POLineItemEntity)
+    private readonly poLineItemRepository: Repository<POLineItemEntity>,
     private readonly fileReaderService: FileReaderService,
     private readonly poService: POService,
   ) {}
@@ -144,24 +156,28 @@ export class InvoiceImportService {
       let lastFlush = Date.now();
 
       for (let i = 0; i < parsed.length; i++) {
-        const { rowIndex, poNumber, invoiceNumber, invoiceValue, invoiceDate, awbNumber } = parsed[i];
+        const { rowIndex, poNumber, invoiceNumber, invoiceValue, invoiceDate, awbNumber, lines, printedTotalQty } = parsed[i];
         let { customerName } = parsed[i];
 
-        // PDF only: skip other platforms' invoices. When the text names no
-        // buyer, the resolved PO's channel decides instead.
+        // PDF only: apply an invoice only once it's confirmed to be for
+        // PDF_IMPORT_CHANNEL - by buyer name in the text, else by the resolved
+        // PO's channel. Anything else (another platform, or a buyer like a
+        // retail store that's neither) is skipped.
         let skipReason: string | null = null;
         if (isPdf) {
           if (!customerName) {
             customerName = (await this.resolvePo(poNumber, invoiceNumber))?.channelId ?? null;
           }
-          if (customerName && customerName !== PDF_IMPORT_CHANNEL) {
-            skipReason = `${customerName} invoice - only ${PDF_IMPORT_CHANNEL} invoices are imported from PDFs for now`;
+          if (customerName !== PDF_IMPORT_CHANNEL) {
+            skipReason = customerName
+              ? `${customerName} invoice - only ${PDF_IMPORT_CHANNEL} invoices are imported from PDFs for now`
+              : `Buyer isn't ${PDF_IMPORT_CHANNEL} and no ${PDF_IMPORT_CHANNEL} PO matched - only ${PDF_IMPORT_CHANNEL} invoices are imported from PDFs for now`;
           }
         }
 
         const result = skipReason
           ? { matchStatus: 'SKIPPED' as const, matchedPoId: null, errorMessage: skipReason }
-          : await this.matchAndApply(poNumber, { invoiceNumber, invoiceValue, invoiceDate, awbNumber });
+          : await this.matchAndApply(poNumber, { invoiceNumber, invoiceValue, invoiceDate, awbNumber }, lines, printedTotalQty);
 
         // Show the PO this row resolved to even though the sheet itself has no PO column.
         const linkedPoNumber =
@@ -177,6 +193,7 @@ export class InvoiceImportService {
             invoiceDate,
             awbNumber,
             customerName,
+            lineItems: lines?.length ? lines : null,
             matchStatus: result.matchStatus,
             matchedPoId: result.matchedPoId,
             errorMessage: result.errorMessage,
@@ -272,7 +289,10 @@ export class InvoiceImportService {
    */
   async parsePdf(buffer: Buffer): Promise<ParsedInvoiceRow[]> {
     const { text } = await pdfParse(buffer);
+    return this.parsePdfText(text);
+  }
 
+  parsePdfText(text: string): ParsedInvoiceRow[] {
     const invoiceMatches: { value: string; index: number }[] = [];
     const invoiceNoRe = /Invoice No\.\s*:\s*(\S+)/g;
     let m: RegExpExecArray | null;
@@ -328,6 +348,31 @@ export class InvoiceImportService {
       if (inv && parsedDate && !dateByInvoice.has(inv)) dateByInvoice.set(inv, parsedDate);
     }
 
+    // Item rows: "<Itemcode/EAN> <Qty> <Free Qty> <HSN> <Unit> ...", e.g.
+    // "7419870829292 72.00 0.00 96190040 PCS 93.31 ...". The description
+    // wraps onto lines above it, but these five fields stay on one line.
+    // Each row is emitted after its page's "Invoice No.", like PO Number.
+    const linesByInvoice = new Map<string, Map<string, number>>();
+    const itemRowRe = /\b(\d{8,14})\s+(\d[\d,]*\.\d+)\s+\d[\d,]*\.\d+\s+\d{4,8}\s+[A-Z]{2,}\b/g;
+    while ((m = itemRowRe.exec(text))) {
+      const inv = nearestBefore(m.index);
+      const qty = parseNumber(m[2]);
+      if (!inv || qty === null) continue;
+      const lines = linesByInvoice.get(inv) ?? new Map<string, number>();
+      lines.set(m[1], (lines.get(m[1]) ?? 0) + qty);
+      linesByInvoice.set(inv, lines);
+    }
+
+    // Last page's "Total : 494.00 39,488.64 ..." - the first figure is the
+    // invoice's total quantity.
+    const totalQtyByInvoice = new Map<string, number>();
+    const totalRe = /Total\s*:\s*(\d[\d,]*\.\d+)/g;
+    while ((m = totalRe.exec(text))) {
+      const inv = nearestBefore(m.index);
+      const value = parseNumber(m[1]);
+      if (inv && value !== null) totalQtyByInvoice.set(inv, value);
+    }
+
     // Buyer platform per invoice: scan each page's slice of text (its
     // "Invoice No." up to the next one) for a known buyer name. A bundled
     // Vasy export mixes every platform's invoices in one file.
@@ -354,6 +399,8 @@ export class InvoiceImportService {
         invoiceDate: dateByInvoice.get(im.value) ?? null,
         awbNumber: null,
         customerName: channelByInvoice.get(im.value) ?? null,
+        lines: [...(linesByInvoice.get(im.value) ?? new Map<string, number>())].map(([ean, qty]) => ({ ean, qty })),
+        printedTotalQty: totalQtyByInvoice.get(im.value) ?? null,
       });
     }
     return out;
@@ -362,6 +409,8 @@ export class InvoiceImportService {
   private async matchAndApply(
     poNumber: string | null,
     data: { invoiceNumber: string | null; invoiceValue: number | null; invoiceDate: Date | null; awbNumber: string | null },
+    lines?: InvoiceLine[],
+    printedTotalQty?: number | null,
   ): Promise<{ matchStatus: InvoiceImportRowEntity['matchStatus']; matchedPoId: string | null; errorMessage: string | null }> {
     const po = await this.resolvePo(poNumber, data.invoiceNumber);
     if (!po) {
@@ -391,7 +440,56 @@ export class InvoiceImportService {
 
     await this.poService.recomputeFillRate(po.id);
 
-    return { matchStatus: 'MATCHED', matchedPoId: po.id, errorMessage: null };
+    const notes: string[] = [];
+    if (lines?.length) {
+      const readQty = lines.reduce((sum, l) => sum + l.qty, 0);
+      if (printedTotalQty != null && Math.abs(readQty - printedTotalQty) > 0.001) {
+        notes.push(`Read ${readQty} units from the item rows but the invoice total says ${printedTotalQty} - check dispatched quantities on this PO`);
+      }
+      notes.push(...(await this.applyDispatchedQuantities(po.id, data.invoiceNumber, lines)));
+    }
+
+    return { matchStatus: 'MATCHED', matchedPoId: po.id, errorMessage: notes.length ? notes.join('. ') : null };
+  }
+
+  /**
+   * Sets each PO line's dispatchedQuantity to that SKU's total across every
+   * invoice matched to the PO, so a PO billed on several invoices adds up.
+   * Earlier invoices' lines come from their saved import rows (latest row
+   * per invoice number), and this invoice replaces any earlier upload of
+   * itself - so re-uploading the same PDF never double-counts. Lines are
+   * matched by EAN against upc, falling back to skuCode. PO lines no invoice
+   * mentions are left as they are. Returns notes for the row.
+   */
+  private async applyDispatchedQuantities(poId: string, invoiceNumber: string | null, lines: InvoiceLine[]): Promise<string[]> {
+    const priorRows = await this.rowRepository.find({
+      where: { matchedPoId: poId, matchStatus: 'MATCHED' },
+      order: { createdAt: 'DESC' },
+    });
+    const totals = new Map<string, number>();
+    const add = (ls: InvoiceLine[]) => ls.forEach((l) => totals.set(l.ean, (totals.get(l.ean) ?? 0) + Number(l.qty)));
+    const seenInvoices = new Set<string>(invoiceNumber ? [invoiceNumber] : []);
+    for (const r of priorRows) {
+      if (!r.invoiceNumber || seenInvoices.has(r.invoiceNumber)) continue;
+      seenInvoices.add(r.invoiceNumber);
+      if (r.lineItems) add(r.lineItems);
+    }
+    add(lines);
+
+    const poLines = await this.poLineItemRepository.find({ where: { poId } });
+    const matchedEans = new Set<string>();
+    const changed: POLineItemEntity[] = [];
+    for (const li of poLines) {
+      const key = li.upc && totals.has(li.upc) ? li.upc : totals.has(li.skuCode) ? li.skuCode : null;
+      if (!key) continue;
+      matchedEans.add(key);
+      li.dispatchedQuantity = totals.get(key)!;
+      changed.push(li);
+    }
+    if (changed.length) await this.poLineItemRepository.save(changed);
+
+    const notOnPo = lines.filter((l) => !matchedEans.has(l.ean)).map((l) => l.ean);
+    return notOnPo.length ? [`${notOnPo.length} invoiced SKU(s) not on this PO: ${notOnPo.join(', ')}`] : [];
   }
 
   /**
