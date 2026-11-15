@@ -27,6 +27,7 @@ const params = (q: CtQuery) => {
 export const controlTowerService = {
   meta: async () => (await api.get('/control-tower/meta')).data,
   summary: async (q: CtQuery) => (await api.get('/control-tower/summary', { params: params(q) })).data,
+  trends: async (q: CtQuery) => (await api.get('/control-tower/trends', { params: params(q) })).data,
   journey: async (q: CtQuery) => (await api.get('/control-tower/journey', { params: params(q) })).data,
   register: async (q: CtQuery) => (await api.get('/control-tower/register', { params: params(q) })).data,
   po: async (poNumber: string) => (await api.get(`/control-tower/po/${encodeURIComponent(poNumber)}`)).data,
