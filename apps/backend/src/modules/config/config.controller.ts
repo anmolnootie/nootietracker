@@ -29,6 +29,18 @@ export class ConfigController {
     };
   }
 
+  @Get('control-tower-sla')
+  getControlTowerSla() {
+    return this.configService.getControlTowerSla();
+  }
+
+  @Patch('control-tower-sla')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.ADMIN)
+  updateControlTowerSla(@Body() body: Record<string, number>, @Req() req: any) {
+    return this.configService.updateControlTowerSla(body, req.user.userId);
+  }
+
   @Patch('thresholds/risk')
   @UseGuards(RolesGuard)
   @Roles(UserRole.ADMIN)

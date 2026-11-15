@@ -13,6 +13,8 @@ module.exports = {
           yellow: '#FBBF24',
           green: '#10B981',
         },
+        // Control Tower brand (docs/control-tower/reference/style.css)
+        ct: { orange: '#e8591a', yellow: '#f6a21e', cream: '#faf6f1', ink: '#2b2118' },
         nootie: {
           orange: '#EA6A2D',
           'orange-dark': '#CC5620',
