@@ -10,6 +10,7 @@
  */
 var SRC_ID = '10vLMqODDWeo8g4wFCmYATH59hhg2s4W7VTWp1e8euQo';   // Warehouse Master (read only)
 var TRK_ID = '1XkWpydTQPviypiN2-xmhfYzPyc_hTRHRFLKQDVLMT98';   // PO Control Tower - Tracking (app data)
+var MASTER_ID = '1NMr0ObBSNndhMpFMxmQQJM4rX3lCwm4Prbo9rMppx2E'; // PO Control Tower - MASTER (all data), rewritten automatically
 
 function out_(o) {
   return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);
@@ -26,6 +27,7 @@ function doPost(e) {
     if (!key) return out_({ error: 'setup: set the VIEW_KEY script property first' });
     if (r.key !== key) return out_({ error: 'unauthorized' });
     var tool = r.tool, a = r.args || {};
+    if (tool === 'sync_master') return out_(syncMaster());
     var id = a.spreadsheetId || a.spreadsheet_id;
     if (tool === 'get_values') return out_(getValues_(id, a.range));
     if (tool === 'update_values' || tool === 'append_values') {
@@ -43,18 +45,29 @@ function doPost(e) {
   }
 }
 
-function getValues_(id, range) {
-  if (id !== SRC_ID && id !== TRK_ID) throw new Error('sheet not allowed');
-  var v = SpreadsheetApp.openById(id).getRange(range).getDisplayValues();
-  // drop trailing empty rows and cells, like the Sheets API does
+// Reads a range like 'Sheet'!A4:N5500 as display strings, clamped to the real grid (like the Sheets API does).
+function readRange_(ss, a1) {
+  var i = a1.lastIndexOf('!');
+  var name = a1.slice(0, i).replace(/^'|'$/g, ''), ref = a1.slice(i + 1);
+  var sh = ss.getSheetByName(name);
+  if (!sh) throw new Error('tab not found: ' + name);
+  var m = ref.match(/^([A-Z]+)(\d+):([A-Z]+)(\d+)$/);
+  var col = function (s) { var n = 0; for (var k = 0; k < s.length; k++) n = n * 26 + s.charCodeAt(k) - 64; return n; };
+  var r1 = +m[2], c1 = col(m[1]), r2 = Math.min(+m[4], sh.getMaxRows()), c2 = Math.min(col(m[3]), sh.getMaxColumns());
+  if (r2 < r1 || c2 < c1) return [];
+  var v = sh.getRange(r1, c1, r2 - r1 + 1, c2 - c1 + 1).getDisplayValues();
   var last = v.length;
   while (last > 0 && v[last - 1].every(function (c) { return c === ''; })) last--;
-  v = v.slice(0, last).map(function (row) {
+  return v.slice(0, last).map(function (row) {
     var n = row.length;
     while (n > 0 && row[n - 1] === '') n--;
     return row.slice(0, n);
   });
-  return { range: range, values: v };
+}
+
+function getValues_(id, range) {
+  if (id !== SRC_ID && id !== TRK_ID) throw new Error('sheet not allowed');
+  return { range: range, values: readRange_(SpreadsheetApp.openById(id), range) };
 }
 
 function storedPin_() {
