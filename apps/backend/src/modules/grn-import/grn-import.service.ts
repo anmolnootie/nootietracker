@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Like, Repository } from 'typeorm';
 import { format } from 'date-fns';
@@ -385,7 +385,9 @@ export class GrnImportService {
 
   async getBatch(id: string): Promise<GrnUploadBatchEntity> {
     await failStalledBatches(this.batchRepository, this.runner.getInFlightIds(), ACTIVE_STATUSES);
-    return this.batchRepository.findOneByOrFail({ id });
+    const batch = await this.batchRepository.findOneBy({ id });
+    if (!batch) throw new NotFoundException('Import batch not found');
+    return batch;
   }
 
   async getRows(batchId: string): Promise<GrnImportRowEntity[]> {

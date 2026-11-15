@@ -379,12 +379,20 @@ export class POMappingService {
   }
 
   /** Every mapping line ever created in the same batch (shared originalPoId/newPoId/mappingDate) - used to act on a whole PO-to-PO mapping event at once. */
+  /** A mapping batch is (original PO, new PO, mapping date); all three are required and the date must parse. */
+  private assertBatchKey(originalPoId: string, newPoId: string, mappingDate: string): void {
+    if (!originalPoId || !newPoId || !mappingDate) throw new BadRequestException('originalPoId, newPoId and mappingDate are required');
+    if (isNaN(new Date(mappingDate).getTime())) throw new BadRequestException('mappingDate is not a valid date');
+  }
+
   async listBatch(originalPoId: string, newPoId: string, mappingDate: string): Promise<POMappingWithExecution[]> {
+    this.assertBatchKey(originalPoId, newPoId, mappingDate);
     const lines = await this.mappingRepository.find({ where: { originalPoId, newPoId, mappingDate: new Date(mappingDate) } });
     return this.enrichWithExecutionStatus(lines);
   }
 
   async updateBatch(originalPoId: string, newPoId: string, mappingDate: string, data: UpdatePOMappingInput): Promise<POMappingWithExecution[]> {
+    this.assertBatchKey(originalPoId, newPoId, mappingDate);
     const rawLines = await this.mappingRepository.find({ where: { originalPoId, newPoId, mappingDate: new Date(mappingDate) } });
     for (const line of rawLines) {
       await this.update(line.id, data);
