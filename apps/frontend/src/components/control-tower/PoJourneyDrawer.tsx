@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { controlTowerService } from '@/services/control-tower.service';
 import { FLAG_TONE, fd, inr, money, TONE } from './ui';
 import { TeamFieldsForm } from './TeamFieldsForm';
+import { PoIssuesPanel } from './PoIssuesPanel';
 
 type StepState = 'done' | 'late' | '';
 const uniq = (xs: (string | null | undefined)[]) => Array.from(new Set(xs.filter(Boolean))) as string[];
@@ -52,7 +53,7 @@ function steps(x: any): { t: string; v: string; st: StepState; sub?: string }[] 
 
 const DOT: Record<StepState, string> = { done: 'bg-emerald-500', late: 'bg-red-500', '': 'bg-gray-300' };
 
-export const PoJourneyDrawer: React.FC<{ po: string | null; onClose: () => void; extra?: (po: any, reload: () => void) => React.ReactNode }> = ({ po, onClose, extra }) => {
+export const PoJourneyDrawer: React.FC<{ po: string | null; onClose: () => void }> = ({ po, onClose }) => {
   const [d, setD] = useState<any>(null);
   const load = useCallback(() => {
     if (po) controlTowerService.po(po).then(setD).catch(() => setD({ error: true }));
@@ -128,7 +129,7 @@ export const PoJourneyDrawer: React.FC<{ po: string | null; onClose: () => void;
               <TeamFieldsForm poNumber={d.po} onSaved={load} />
             </section>
 
-            {extra?.(d, load)}
+            <PoIssuesPanel poNumber={d.po} onChange={load} />
           </div>
         )}
       </aside>

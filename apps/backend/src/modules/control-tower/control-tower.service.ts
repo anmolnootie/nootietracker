@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { In, Not, Repository } from 'typeorm';
 import { FulfilmentDecision, NonFulfilmentReason, NON_FULFILMENT_REASON_LABELS, POStatus } from '@po-control-tower/shared';
 import { POMasterEntity } from '../../database/entities/po-master.entity';
 import { POLineItemEntity } from '../../database/entities/po-line-item.entity';
@@ -14,6 +14,7 @@ import { SheetTrackerUploadBatchEntity } from '../../database/entities/sheet-tra
 import { InvoiceImportRowEntity } from '../../database/entities/invoice-import-row.entity';
 import { POTrackingEntity } from '../../database/entities/po-tracking.entity';
 import { AuditLogEntity } from '../../database/entities/audit-log.entity';
+import { POIssueEntity } from '../../database/entities/po-issue.entity';
 import { ConfigService } from '../config/config.service';
 import {
   aggregate, CtInvoice, CtPo, CtTracking, DECISIONS, Derived, deriveAll, FLAGS, GAPS, inGapOf, inPeriod, journey, journeyOf, normChan, normPlat,
@@ -67,6 +68,7 @@ export class ControlTowerService {
     @InjectRepository(InvoiceImportRowEntity) private readonly invoiceRowRepo: Repository<InvoiceImportRowEntity>,
     @InjectRepository(POTrackingEntity) private readonly trackingRepo: Repository<POTrackingEntity>,
     @InjectRepository(AuditLogEntity) private readonly auditRepo: Repository<AuditLogEntity>,
+    @InjectRepository(POIssueEntity) private readonly issueRepo: Repository<POIssueEntity>,
     private readonly config: ConfigService,
   ) {}
 
@@ -135,8 +137,10 @@ export class ControlTowerService {
     return saved;
   }
 
-  protected async loadOpenIssues(): Promise<{ po: string; status: string }[]> {
-    return [];
+  /** Unresolved issues as {po: poNumber, status} - feeds derive()'s openIssues count. */
+  private async loadOpenIssues(byId: Map<string, POMasterEntity>): Promise<{ po: string; status: string }[]> {
+    const rows = await this.issueRepo.find({ where: { status: Not('Resolved') }, select: ['id', 'poId', 'status'] });
+    return rows.map((r) => ({ po: byId.get(r.poId)?.poNumber || '', status: r.status })).filter((x) => x.po);
   }
 
   async snapshot(): Promise<Snapshot> {
@@ -191,7 +195,7 @@ export class ControlTowerService {
     });
 
     const trk = await this.loadTracking(byId);
-    const issues = await this.loadOpenIssues();
+    const issues = await this.loadOpenIssues(byId);
     const rows = deriveAll(P, invoices, trk, issues, cfg, asof);
     return { asof, cfg, rows, builtAt: Date.now() };
   }

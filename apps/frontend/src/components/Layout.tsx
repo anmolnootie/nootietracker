@@ -54,6 +54,7 @@ export const MainLayout: React.FC<LayoutProps> = ({ children }) => {
       { label: '🗼 Overall tower', href: '/control-tower' },
       { label: '🛰 Pipeline', href: '/control-tower/pipeline' },
       { label: '📒 PO Register', href: '/control-tower/register' },
+      { label: '🧯 Issues', href: '/control-tower/issues' },
     ] },
     { title: 'Purchase Orders', items: [
       { label: '📦 All POs', href: '/pos' },

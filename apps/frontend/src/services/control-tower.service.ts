@@ -33,6 +33,11 @@ export const controlTowerService = {
   getTracking: async (poNumber: string) => (await api.get(`/control-tower/po/${encodeURIComponent(poNumber)}/tracking`)).data,
   updateTracking: async (poNumber: string, body: Record<string, string | null>) =>
     (await api.patch(`/control-tower/po/${encodeURIComponent(poNumber)}/tracking`, body)).data,
+  issues: async (q: { po?: string; status?: string; open?: boolean; platform?: string; assignee?: string }) =>
+    (await api.get('/control-tower/issues', { params: { ...q, open: q.open ? '1' : undefined } })).data,
+  createIssue: async (body: Record<string, unknown>) => (await api.post('/control-tower/issues', body)).data,
+  updateIssue: async (id: string, body: Record<string, unknown>) => (await api.patch(`/control-tower/issues/${id}`, body)).data,
+  audit: async (q: { po?: string; limit?: number }) => (await api.get('/control-tower/audit', { params: q })).data,
   getSla: async () => (await api.get('/config/control-tower-sla')).data,
   updateSla: async (body: Record<string, number>) => (await api.patch('/config/control-tower-sla', body)).data,
 };

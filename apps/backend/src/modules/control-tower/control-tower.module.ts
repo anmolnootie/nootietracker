@@ -12,9 +12,13 @@ import { SheetTrackerUploadBatchEntity } from '../../database/entities/sheet-tra
 import { InvoiceImportRowEntity } from '../../database/entities/invoice-import-row.entity';
 import { POTrackingEntity } from '../../database/entities/po-tracking.entity';
 import { AuditLogEntity } from '../../database/entities/audit-log.entity';
+import { POIssueEntity } from '../../database/entities/po-issue.entity';
+import { UserEntity } from '../../database/entities/user.entity';
 import { AppConfigModule } from '../config/config.module';
 import { ControlTowerController } from './control-tower.controller';
 import { ControlTowerService } from './control-tower.service';
+import { ControlTowerIssuesService } from './control-tower-issues.service';
+import { ControlTowerIssuesController } from './control-tower-issues.controller';
 
 @Module({
   imports: [
@@ -22,11 +26,12 @@ import { ControlTowerService } from './control-tower.service';
     TypeOrmModule.forFeature([
       POMasterEntity, POLineItemEntity, AppointmentEntity, DispatchEntity, LogisticsTrackerEntity, GRNTrackerEntity,
       ReturnTrackerEntity, SheetTrackerRowEntity, SheetTrackerUploadBatchEntity, InvoiceImportRowEntity, POTrackingEntity, AuditLogEntity,
+      POIssueEntity, UserEntity,
     ]),
     AppConfigModule,
   ],
-  controllers: [ControlTowerController],
-  providers: [ControlTowerService],
+  controllers: [ControlTowerController, ControlTowerIssuesController],
+  providers: [ControlTowerService, ControlTowerIssuesService],
   exports: [ControlTowerService],
 })
 export class ControlTowerModule {}

@@ -3,6 +3,7 @@ import { MainLayout } from '@/components/Layout';
 import api from '@/lib/api';
 import { useAuthStore } from '@/store/auth.store';
 import { UserRole } from '@po-control-tower/shared';
+import { SlaSettings } from '@/components/control-tower/SlaSettings';
 
 type RiskThresholds = { black: number; red: number; orange: number; yellow: number };
 
@@ -148,6 +149,7 @@ export default function Settings() {
           </a>
         </div>
       </div>
+      <div className="mt-6"><SlaSettings isAdmin={isAdmin} /></div>
     </MainLayout>
   );
 }
