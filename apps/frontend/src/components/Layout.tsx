@@ -51,6 +51,7 @@ export const MainLayout: React.FC<LayoutProps> = ({ children }) => {
       { label: '📈 Power BI Dashboard', href: '/powerbi' },
     ] },
     { title: 'Control Tower', items: [
+      { label: '🗼 Overall tower', href: '/control-tower' },
       { label: '🛰 Pipeline', href: '/control-tower/pipeline' },
       { label: '📒 PO Register', href: '/control-tower/register' },
     ] },
