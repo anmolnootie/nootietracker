@@ -34,6 +34,7 @@ import { StuckStockModule } from './modules/stuck-stock/stuck-stock.module';
 import { POMappingModule } from './modules/po-mapping/po-mapping.module';
 import { PartnersbizModule } from './modules/partnersbiz/partnersbiz.module';
 import { ControlTowerModule } from './modules/control-tower/control-tower.module';
+import { WarehouseMasterModule } from './modules/warehouse-master/warehouse-master.module';
 import { DatabaseModule } from './database/database.module';
 
 @Module({
@@ -72,6 +73,7 @@ import { DatabaseModule } from './database/database.module';
     POMappingModule,
     PartnersbizModule,
     ControlTowerModule,
+    WarehouseMasterModule,
   ],
   controllers: [],
   providers: [],

@@ -99,6 +99,7 @@ export const MainLayout: React.FC<LayoutProps> = ({ children }) => {
       { label: 'PO mapping', icon: <Icon name="link" size={17} />, href: '/po-mapping' },
     ] },
     { title: 'Uploads', items: [
+      { label: 'Warehouse Master', icon: <Icon name="sheet" size={17} />, href: '/warehouse-master' },
       { label: 'PO files', icon: <Icon name="upload" size={17} />, href: '/bulk-import' },
       { label: 'Invoices', icon: <Icon name="receipt" size={17} />, href: '/invoice-import' },
       { label: 'GRN', icon: <Icon name="inbox" size={17} />, href: '/grn-import' },
