@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Get, Param, Patch, Query, Req, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { UserRole } from '@po-control-tower/shared';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { RolesGuard } from '../../common/guards/roles.guard';
@@ -76,5 +76,13 @@ export class ControlTowerController {
   @Roles(...CT_EDITOR_ROLES)
   updateTracking(@Param('poNumber') poNumber: string, @Body() body: Record<string, unknown>, @Req() req: any) {
     return this.service.updateTracking(poNumber, body, req.user.userId);
+  }
+
+  /** Batch handover / acknowledgement: { mode: 'handed' | 'ack', date, person, poNumbers: string[] | "pasted text" }. */
+  @Post('handover')
+  @UseGuards(RolesGuard)
+  @Roles(...CT_EDITOR_ROLES)
+  handover(@Body() body: Record<string, any>, @Req() req: any) {
+    return this.service.batchHandover(body, req.user.userId);
   }
 }

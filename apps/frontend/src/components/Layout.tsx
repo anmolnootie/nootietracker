@@ -3,6 +3,15 @@ import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { useAuthStore } from '@/store/auth.store';
 import { notificationsService } from '@/services/notifications.service';
+import { controlTowerService } from '@/services/control-tower.service';
+import { CT_PLATFORMS, PlatformLogo, platformSlug } from '@/components/control-tower/brand';
+
+interface NavItem {
+  label: string;
+  href: string;
+  icon?: React.ReactNode;
+  badge?: number;
+}
 
 interface LayoutProps {
   children: ReactNode;
@@ -44,18 +53,28 @@ export const MainLayout: React.FC<LayoutProps> = ({ children }) => {
 
   const isAdmin = user?.roles?.includes('ADMIN' as any) || user?.roles?.includes('SCM' as any);
 
-  const navGroups: { title?: string; items: { label: string; href: string }[] }[] = [
+  // Control Tower: overall + every platform, each with its logo and urgent badge (flags 1-6, all time).
+  const [ctUrgent, setCtUrgent] = useState<Record<string, number>>({});
+  useEffect(() => {
+    if (!user) return;
+    controlTowerService.summary({}).then((s) => {
+      const m: Record<string, number> = { ALL: s.aggregate?.urgent || 0 };
+      (s.platforms || []).forEach((p: any) => (m[p.platform] = p.urgentAllTime || 0));
+      setCtUrgent(m);
+    }).catch(() => {});
+  }, [user]);
+  const ctItems: NavItem[] = [
+    { label: 'Overall tower', href: '/control-tower', icon: <span className="w-5 h-5 rounded-md bg-gradient-to-br from-ct-orange to-ct-yellow text-white text-[9px] font-bold flex items-center justify-center">CT</span>, badge: ctUrgent.ALL },
+    ...CT_PLATFORMS.map((p) => ({ label: p, href: `/control-tower/${platformSlug(p)}`, icon: <PlatformLogo p={p} size={20} />, badge: ctUrgent[p] })),
+  ];
+
+  const navGroups: { title?: string; items: NavItem[] }[] = [
     { items: [
       { label: '🏠 Dashboard', href: '/dashboard' },
       { label: '🚚 Dispatch & GRN Dashboard', href: '/dispatch-dashboard' },
       { label: '📈 Power BI Dashboard', href: '/powerbi' },
     ] },
-    { title: 'Control Tower', items: [
-      { label: '🗼 Overall tower', href: '/control-tower' },
-      { label: '🛰 Pipeline', href: '/control-tower/pipeline' },
-      { label: '📒 PO Register', href: '/control-tower/register' },
-      { label: '🧯 Issues', href: '/control-tower/issues' },
-    ] },
+    { title: 'Control Tower', items: ctItems },
     { title: 'Purchase Orders', items: [
       { label: '📦 All POs', href: '/pos' },
       { label: '🔴 Not Fulfilled', href: '/pos/not-fulfilled' },
@@ -110,9 +129,7 @@ export const MainLayout: React.FC<LayoutProps> = ({ children }) => {
       {/* Sidebar */}
       <aside className="w-64 shrink-0 bg-white shadow-lg sticky top-0 h-screen overflow-y-auto">
         <div className="p-6 border-b">
-          <h1 className="font-brand text-2xl font-bold text-nootie-gold-dark tracking-tight">
-            n<span className="text-nootie-orange">oo</span>tie
-          </h1>
+          <img src="/logos/nootie.jpg" alt="nootie" className="h-12 w-auto -ml-1" />
           <p className="text-xs text-gray-500 mt-1 uppercase tracking-widest">PO Control Tower</p>
         </div>
 
@@ -126,13 +143,15 @@ export const MainLayout: React.FC<LayoutProps> = ({ children }) => {
                 <Link
                   key={item.href}
                   href={item.href}
-                  className={`block px-6 py-2.5 transition-colors ${
-                    router.pathname === item.href
+                  className={`flex items-center gap-2.5 px-6 py-2 transition-colors ${
+                    router.pathname === item.href || (item.href.startsWith('/control-tower/') && router.asPath.split('?')[0] === item.href)
                       ? 'bg-nootie-orange-light text-nootie-orange-dark border-r-4 border-nootie-orange'
                       : 'text-gray-700 hover:bg-gray-50'
                   }`}
                 >
-                  {item.label}
+                  {item.icon}
+                  <span className="flex-1 truncate">{item.label}</span>
+                  {!!item.badge && <span className="text-[10px] min-w-[1.25rem] text-center px-1.5 py-0.5 rounded-full bg-red-600 text-white font-semibold">{item.badge}</span>}
                 </Link>
               ))}
             </div>

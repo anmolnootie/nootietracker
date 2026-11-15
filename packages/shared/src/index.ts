@@ -685,3 +685,53 @@ export interface CreatePORequest {
     unitPrice?: number | null;
   }>;
 }
+
+// --- Platforms (PO Control Tower manual §6 and §14) ---
+
+/** The ten platforms, in display order. "Other" is the catch-all. */
+export const PLATFORMS = ['Blinkit', 'Zepto', 'Swiggy Instamart', 'BigBasket', 'Flipkart', 'Amazon', 'Supertails', 'FirstClub', 'Tata 1mg', 'Other'] as const;
+export type Platform = (typeof PLATFORMS)[number];
+
+const PLATFORM_ALIASES: Record<string, Platform> = {
+  blinkit: 'Blinkit', 'blink commerce': 'Blinkit', zepto: 'Zepto', swiggy: 'Swiggy Instamart', 'swiggy instamart': 'Swiggy Instamart',
+  instamart: 'Swiggy Instamart', 'big basket': 'BigBasket', bigbasket: 'BigBasket', flipkart: 'Flipkart', amazon: 'Amazon',
+  'amazon india': 'Amazon', etrade: 'Amazon', 'e-trade': 'Amazon', 'e trade': 'Amazon', supertails: 'Supertails', 'super tails': 'Supertails',
+  firstclub: 'FirstClub', 'first club': 'FirstClub', 'tata 1mg': 'Tata 1mg', tata1mg: 'Tata 1mg', '1mg': 'Tata 1mg', other: 'Other',
+};
+
+/** Canonical platform for any spelling (22 seen in the sheets). Unknown non-empty text -> "Other"; empty -> null. */
+export function normalizePlatform(text: unknown): Platform | null {
+  const k = String(text ?? '').trim().toLowerCase();
+  if (!k) return null;
+  return PLATFORM_ALIASES[k] ?? 'Other';
+}
+
+/**
+ * Guess a platform from the PO number's shape (manual §14), tested in order.
+ * Returns null when nothing matches, so callers can fall back to a chosen default.
+ */
+export function detectPlatformFromPo(poNumber: unknown): Platform | null {
+  const po = String(poNumber ?? '').trim().toUpperCase().replace(/\s/g, '').replace(/\.0$/, '');
+  if (!po) return null;
+  if (/^P\d{6,}$/.test(po)) return 'Zepto';
+  if (/^[A-Z0-9]{3}PO\d+$/.test(po)) return 'Swiggy Instamart';
+  if (/^FLS/.test(po)) return 'Flipkart';
+  if (/^\d{12,14}$/.test(po)) return 'Blinkit';
+  if (/^IRA/.test(po)) return 'BigBasket';
+  if (/^PUR-ORD/.test(po)) return 'Supertails';
+  return null;
+}
+
+/** Every spelling that normalises to this platform (for SQL `IN (...)` filters over stored channel names), plus the canonical name. */
+export function platformAliases(platform: string): string[] {
+  const canon = normalizePlatform(platform);
+  if (!canon) return [platform];
+  const out = new Set<string>([canon, platform]);
+  Object.entries(PLATFORM_ALIASES).forEach(([alias, p]) => {
+    if (p !== canon) return;
+    out.add(alias);
+    out.add(alias.replace(/\b\w/g, (c) => c.toUpperCase()));
+    out.add(alias.toUpperCase());
+  });
+  return [...out];
+}

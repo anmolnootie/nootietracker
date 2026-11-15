@@ -27,9 +27,9 @@ export const TONE: Record<string, string> = {
 export const FLAG_TONE: Record<number, string> = { 1: 'crit', 2: 'crit', 3: 'warn', 4: 'warn', 5: 'warn', 6: 'warn', 7: 'info', 8: 'info', 9: 'info', 10: 'mute' };
 
 export const Card: React.FC<{ title: string; sub?: string; children: React.ReactNode; className?: string }> = ({ title, sub, children, className }) => (
-  <section className={`bg-white rounded-xl border border-orange-100 shadow-sm p-5 ${className || ''}`}>
-    <h2 className="text-base font-semibold text-ct-ink">{title}</h2>
-    {sub && <p className="text-xs text-gray-500 mt-0.5 mb-3">{sub}</p>}
+  <section className={`bg-white rounded-2xl ring-1 ring-[#efe3d6] shadow-[0_1px_2px_rgba(43,33,24,0.05)] p-5 ${className || ''}`}>
+    <h2 className="text-[15px] font-semibold text-ct-ink tracking-tight">{title}</h2>
+    {sub ? <p className="text-xs text-gray-500 mt-0.5 mb-4">{sub}</p> : <div className="mb-3" />}
     {children}
   </section>
 );
@@ -42,7 +42,7 @@ export const PeriodBar: React.FC = () => {
   const { pkey, range, draft, choose, setDraft, apply } = usePeriodStore();
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <div role="group" aria-label="Period" className="flex flex-wrap gap-1">
+      <div role="group" aria-label="Period" className="inline-flex flex-wrap gap-1 p-1 rounded-xl bg-[#f6eee5]">
         {PERIODS.map((p) => (
           <button
             key={p.k}
