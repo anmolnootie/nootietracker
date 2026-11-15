@@ -8,6 +8,8 @@ Live: frontend `https://app.mynootie.com`, backend `https://api.mynootie.com`. B
 
 ## Project Log
 
+**Control Tower port in progress** - see `docs/control-tower/SPEC.md` (feature spec + acceptance numbers), `docs/control-tower/reference/` (source of the standalone artifact, read-only reference) and `docs/control-tower/prompts/PROMPTS.md` (step-by-step plan). Work on feature branches only.
+
 **2026-11-15** — Moved development to a Windows machine (Node 20 via fnm, `.node-version` added; portable Postgres 17 for local dev; Railway CLI linked to project `insightful-flow` / `production`). Found a live production problem through `railway logs`: both the worker **and the web backend** have been logging `EMAXCONNSESSION` (Supabase's 15-connection cap) since at least 2026-11-10, failing the scheduled sweeps.
 - Root cause 1 (code): `main.ts` stopped cron jobs *before* `app.listen()`, but `@nestjs/schedule` v4 only registers and starts crons during `app.init()`, which `listen()` runs. So the registry was empty, nothing was stopped, and **every cron ran on both web and worker**: duplicate AVV follow-up notifications, double sweep load. Fixed by calling `await app.init()` before the stop loop; the web process now logs `stopped 11 cron job(s)`. Verified with a local boot.
 - Root cause 2 (config): `DATABASE_POOL_MAX` isn't set on either Railway service, so both use the code default of 8 → 16 > 15. Intended split is web 8 / worker 5 (set `DATABASE_POOL_MAX=5` on `po-control-tower-worker`).
