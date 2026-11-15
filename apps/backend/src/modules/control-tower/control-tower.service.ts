@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { FulfilmentDecision, NonFulfilmentReason, NON_FULFILMENT_REASON_LABELS, POStatus } from '@po-control-tower/shared';
@@ -12,9 +12,11 @@ import { ReturnTrackerEntity } from '../../database/entities/return-tracker.enti
 import { SheetTrackerRowEntity } from '../../database/entities/sheet-tracker-row.entity';
 import { SheetTrackerUploadBatchEntity } from '../../database/entities/sheet-tracker-upload-batch.entity';
 import { InvoiceImportRowEntity } from '../../database/entities/invoice-import-row.entity';
+import { POTrackingEntity } from '../../database/entities/po-tracking.entity';
+import { AuditLogEntity } from '../../database/entities/audit-log.entity';
 import { ConfigService } from '../config/config.service';
 import {
-  aggregate, CtInvoice, CtPo, CtTracking, Derived, deriveAll, FLAGS, GAPS, inGapOf, inPeriod, journey, journeyOf, normChan, normPlat,
+  aggregate, CtInvoice, CtPo, CtTracking, DECISIONS, Derived, deriveAll, FLAGS, GAPS, inGapOf, inPeriod, journey, journeyOf, normChan, normPlat,
   PLATS, SlaConfig, STAGES,
 } from './control-tower.core';
 
@@ -63,6 +65,8 @@ export class ControlTowerService {
     @InjectRepository(SheetTrackerRowEntity) private readonly sheetRowRepo: Repository<SheetTrackerRowEntity>,
     @InjectRepository(SheetTrackerUploadBatchEntity) private readonly sheetBatchRepo: Repository<SheetTrackerUploadBatchEntity>,
     @InjectRepository(InvoiceImportRowEntity) private readonly invoiceRowRepo: Repository<InvoiceImportRowEntity>,
+    @InjectRepository(POTrackingEntity) private readonly trackingRepo: Repository<POTrackingEntity>,
+    @InjectRepository(AuditLogEntity) private readonly auditRepo: Repository<AuditLogEntity>,
     private readonly config: ConfigService,
   ) {}
 
@@ -71,10 +75,66 @@ export class ControlTowerService {
     this.cache = null;
   }
 
-  /** Extension points filled in by later steps (team tracking fields, open issues). */
-  protected async loadTracking(_poIds: string[]): Promise<Record<string, CtTracking>> {
-    return {};
+  /** Team tracking rows keyed by PO number, in core.js's tracking shape. */
+  private async loadTracking(byId: Map<string, POMasterEntity>): Promise<Record<string, CtTracking>> {
+    const out: Record<string, CtTracking> = {};
+    for (const t of await this.trackingRepo.find()) {
+      const po = byId.get(t.poId);
+      if (!po) continue;
+      out[po.poNumber] = {
+        dec: t.decision || undefined, reason: t.decisionReason || undefined, printout: t.printoutReceivedOn, handed: t.handedOn,
+        handedTo: t.handedTo || '', ack: t.ackOn, ackBy: t.ackBy || '', owner: t.owner || '', rem: t.remarks || '', ewb: t.ewayBillNo || '',
+      };
+    }
+    return out;
   }
+
+  /** Fields the team edits on a PO, with the type each accepts. */
+  static readonly TRACKING_FIELDS: Record<string, 'decision' | 'date' | 'text'> = {
+    decision: 'decision', decisionReason: 'text', printoutReceivedOn: 'date', handedOn: 'date', handedTo: 'text',
+    ackOn: 'date', ackBy: 'text', owner: 'text', remarks: 'text', ewayBillNo: 'text',
+  };
+
+  async getTracking(poNumber: string) {
+    const po = await this.poRepo.findOne({ where: { poNumber }, select: ['id', 'poNumber'] });
+    if (!po) throw new NotFoundException(`PO ${poNumber} not found`);
+    return (await this.trackingRepo.findOneBy({ poId: po.id })) ?? { poId: po.id };
+  }
+
+  /**
+   * Partial update of a PO's team fields. Only keys present in the body change;
+   * '' or null clears a field. Every real change writes one audit_logs row
+   * (table po_tracking, field name, old -> new, who).
+   */
+  async updateTracking(poNumber: string, body: Record<string, unknown>, userId: string) {
+    const po = await this.poRepo.findOne({ where: { poNumber }, select: ['id', 'poNumber'] });
+    if (!po) throw new NotFoundException(`PO ${poNumber} not found`);
+    const patch: Record<string, string | null> = {};
+    for (const [k, v] of Object.entries(body || {})) {
+      const kind = ControlTowerService.TRACKING_FIELDS[k];
+      if (!kind) throw new BadRequestException(`Unknown field "${k}"`);
+      const s = v == null ? '' : String(v).trim();
+      if (!s) { patch[k] = null; continue; }
+      if (kind === 'date' && !/^\d{4}-\d{2}-\d{2}$/.test(s)) throw new BadRequestException(`${k} must be YYYY-MM-DD`);
+      if (kind === 'decision' && !(DECISIONS as readonly string[]).includes(s)) throw new BadRequestException(`decision must be one of ${DECISIONS.join(', ')}`);
+      patch[k] = s;
+    }
+    let row = await this.trackingRepo.findOneBy({ poId: po.id });
+    const before: Record<string, any> = row ? { ...row } : {};
+    row = row ?? this.trackingRepo.create({ poId: po.id });
+    const changes = Object.keys(patch).filter((k) => (before[k] ?? null) !== patch[k]);
+    if (!changes.length) return row;
+    Object.assign(row, patch, { updatedByUserId: userId });
+    const saved = await this.trackingRepo.save(row);
+    await this.auditRepo.save(
+      changes.map((k) => this.auditRepo.create({
+        tableName: 'po_tracking', recordId: po.id, fieldName: k, oldValue: before[k] ?? undefined, newValue: patch[k] ?? undefined, userId,
+      })),
+    );
+    this.invalidate();
+    return saved;
+  }
+
   protected async loadOpenIssues(): Promise<{ po: string; status: string }[]> {
     return [];
   }
@@ -130,7 +190,7 @@ export class ControlTowerService {
       };
     });
 
-    const trk = await this.loadTracking(ids);
+    const trk = await this.loadTracking(byId);
     const issues = await this.loadOpenIssues();
     const rows = deriveAll(P, invoices, trk, issues, cfg, asof);
     return { asof, cfg, rows, builtAt: Date.now() };

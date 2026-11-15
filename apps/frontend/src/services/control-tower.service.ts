@@ -30,6 +30,9 @@ export const controlTowerService = {
   journey: async (q: CtQuery) => (await api.get('/control-tower/journey', { params: params(q) })).data,
   register: async (q: CtQuery) => (await api.get('/control-tower/register', { params: params(q) })).data,
   po: async (poNumber: string) => (await api.get(`/control-tower/po/${encodeURIComponent(poNumber)}`)).data,
+  getTracking: async (poNumber: string) => (await api.get(`/control-tower/po/${encodeURIComponent(poNumber)}/tracking`)).data,
+  updateTracking: async (poNumber: string, body: Record<string, string | null>) =>
+    (await api.patch(`/control-tower/po/${encodeURIComponent(poNumber)}/tracking`, body)).data,
   getSla: async () => (await api.get('/config/control-tower-sla')).data,
   updateSla: async (body: Record<string, number>) => (await api.patch('/config/control-tower-sla', body)).data,
 };

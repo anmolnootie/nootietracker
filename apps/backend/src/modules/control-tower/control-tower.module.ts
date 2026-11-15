@@ -10,6 +10,8 @@ import { ReturnTrackerEntity } from '../../database/entities/return-tracker.enti
 import { SheetTrackerRowEntity } from '../../database/entities/sheet-tracker-row.entity';
 import { SheetTrackerUploadBatchEntity } from '../../database/entities/sheet-tracker-upload-batch.entity';
 import { InvoiceImportRowEntity } from '../../database/entities/invoice-import-row.entity';
+import { POTrackingEntity } from '../../database/entities/po-tracking.entity';
+import { AuditLogEntity } from '../../database/entities/audit-log.entity';
 import { AppConfigModule } from '../config/config.module';
 import { ControlTowerController } from './control-tower.controller';
 import { ControlTowerService } from './control-tower.service';
@@ -19,7 +21,7 @@ import { ControlTowerService } from './control-tower.service';
     // Every repository ControlTowerService injects must be listed here - a missing one crashes the whole app at boot (CLAUDE.md).
     TypeOrmModule.forFeature([
       POMasterEntity, POLineItemEntity, AppointmentEntity, DispatchEntity, LogisticsTrackerEntity, GRNTrackerEntity,
-      ReturnTrackerEntity, SheetTrackerRowEntity, SheetTrackerUploadBatchEntity, InvoiceImportRowEntity,
+      ReturnTrackerEntity, SheetTrackerRowEntity, SheetTrackerUploadBatchEntity, InvoiceImportRowEntity, POTrackingEntity, AuditLogEntity,
     ]),
     AppConfigModule,
   ],

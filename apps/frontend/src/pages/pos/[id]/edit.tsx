@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import { MainLayout } from '@/components/Layout';
+import { TeamFieldsForm } from '@/components/control-tower/TeamFieldsForm';
 import { poService } from '@/services/po.service';
 import { documentsService } from '@/services/documents.service';
 import { DocumentPreviewModal } from '@/components/DocumentPreviewModal';
@@ -396,6 +397,14 @@ export default function EditPO() {
       </div>
 
       {error && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-6">{error}</div>}
+
+      {initialPo?.poNumber && (
+        <div className="bg-white rounded-lg shadow p-6 mb-6">
+          <h3 className="text-lg font-semibold text-gray-800">Control Tower team fields</h3>
+          <p className="text-xs text-gray-500 mb-3">Saved separately with their own button; every change goes to the audit trail.</p>
+          <TeamFieldsForm poNumber={initialPo.poNumber} />
+        </div>
+      )}
 
       {/* PO Details */}
       <div className="bg-white rounded-lg shadow p-6 mb-6">

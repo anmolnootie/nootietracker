@@ -43,6 +43,7 @@ import { PrnImportRowEntity } from './entities/prn-import-row.entity';
 import { DnUploadBatchEntity } from './entities/dn-upload-batch.entity';
 import { DnImportRowEntity } from './entities/dn-import-row.entity';
 import { SystemConfigEntity } from './entities/system-config.entity';
+import { POTrackingEntity } from './entities/po-tracking.entity';
 
 const ENTITIES = [
   UserEntity,
@@ -86,6 +87,7 @@ const ENTITIES = [
   DnUploadBatchEntity,
   DnImportRowEntity,
   SystemConfigEntity,
+  POTrackingEntity,
 ];
 
 @Module({
