@@ -12,8 +12,8 @@ import { PartnersbizAckResponse, PartnersbizPOCreationPayload, PartnersbizPODeta
 const TENANT_TO_CHANNEL: Record<string, string> = {
   BLINKIT: 'Blinkit',
   ZEPTO: 'Zepto',
-  INSTAMART: 'Instamart',
-  SWIGGY: 'Instamart',
+  INSTAMART: 'Swiggy Instamart',
+  SWIGGY: 'Swiggy Instamart',
   BIGBASKET: 'BigBasket',
 };
 

@@ -1,3 +1,4 @@
+import { platformAliases } from '@po-control-tower/shared';
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
@@ -37,7 +38,7 @@ export class CompilationsService {
     let joinedAppointment = false;
     let joinedLine = false;
 
-    if (filters.platform) qb = qb.andWhere('po.channelId = :platform', { platform: filters.platform });
+    if (filters.platform) qb = qb.andWhere('po.channelId IN (:...platforms)', { platforms: platformAliases(filters.platform) });
     if (filters.location) qb = qb.andWhere('po.location ILIKE :location', { location: `%${filters.location}%` });
     if (filters.vendor) qb = qb.andWhere('po.customerId ILIKE :vendor', { vendor: `%${filters.vendor}%` });
     if (filters.status) qb = qb.andWhere('po.status = :status', { status: filters.status });

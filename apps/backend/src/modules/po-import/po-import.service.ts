@@ -30,8 +30,8 @@ export interface ExtractedPODraft {
 const KNOWN_BUYERS: Record<string, string> = {
   'BLINK COMMERCE PRIVATE LIMITED': 'Blinkit',
   'ZEPTO': 'Zepto',
-  'INSTAMART': 'Instamart',
-  'SWIGGY': 'Instamart',
+  'INSTAMART': 'Swiggy Instamart',
+  'SWIGGY': 'Swiggy Instamart',
   'FLIPKART': 'Flipkart',
   'BIGBASKET': 'BigBasket',
 };
@@ -93,8 +93,8 @@ const PLATFORM_EXCEL_ALIASES: Record<string, Partial<Record<ExcelHeaderField, st
 const VENDOR_NAME_TO_CHANNEL: Record<string, string> = {
   'BLINK COMMERCE': 'Blinkit',
   ZEPTO: 'Zepto',
-  INSTAMART: 'Instamart',
-  SWIGGY: 'Instamart',
+  INSTAMART: 'Swiggy Instamart',
+  SWIGGY: 'Swiggy Instamart',
   FLIPKART: 'Flipkart',
   BIGBASKET: 'BigBasket',
 };
