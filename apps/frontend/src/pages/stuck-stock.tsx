@@ -127,7 +127,7 @@ export default function StuckStockPage() {
           disabled={detecting}
           className="px-4 py-2 bg-nootie-orange-dark hover:bg-nootie-orange text-white text-sm rounded-lg disabled:opacity-50 whitespace-nowrap"
         >
-          {detecting ? 'Scanning...' : '🔄 Run Detection'}
+          {detecting ? 'Scanning...' : 'Run Detection'}
         </button>
       </div>
 
@@ -137,14 +137,14 @@ export default function StuckStockPage() {
             autoMapMessage.type === 'success' ? 'bg-green-50 border-green-200 text-green-700' : 'bg-red-50 border-red-200 text-red-700'
           }`}
         >
-          {autoMapMessage.type === 'success' ? '✅ ' : '⚠️ '}
+          {autoMapMessage.type === 'success' ? '' : ''}
           {autoMapMessage.text}
         </div>
       )}
 
       {summary && summary.valueStuckOver30Days > 0 && (
         <div className="mb-6 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg font-medium">
-          🔴 ₹{summary.valueStuckOver30Days.toLocaleString()} stuck &gt;30 days
+          ₹{summary.valueStuckOver30Days.toLocaleString()} stuck &gt;30 days
         </div>
       )}
 
@@ -180,7 +180,7 @@ export default function StuckStockPage() {
               view === v ? 'bg-white text-nootie-orange-dark border border-b-0 border-gray-200 -mb-px' : 'text-gray-500 hover:text-gray-700'
             }`}
           >
-            {v === 'po' ? '📦 By PO' : '🏷 By SKU'}
+            {v === 'po' ? 'By PO' : 'By SKU'}
           </button>
         ))}
       </div>
@@ -242,7 +242,7 @@ export default function StuckStockPage() {
                               disabled={autoMappingId === g.poId}
                               className="text-xs text-white bg-nootie-orange-dark hover:bg-nootie-orange px-2 py-1 rounded mr-2 disabled:opacity-50"
                             >
-                              {autoMappingId === g.poId ? 'Mapping...' : '🤖 Auto Map'}
+                              {autoMappingId === g.poId ? 'Mapping...' : 'Auto Map'}
                             </button>
                             <Link href={`/po-mapping/new?originalPoId=${g.poId}`} className="text-xs text-nootie-orange-dark hover:underline">
                               Manual

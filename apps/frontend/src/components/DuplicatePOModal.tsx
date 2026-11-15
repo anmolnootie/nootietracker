@@ -13,7 +13,7 @@ export const DuplicatePOModal: React.FC<Props> = ({ poNumber, existing, onCancel
   <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
     <div className="bg-white rounded-lg shadow-xl max-w-lg w-full p-6">
       <div className="flex items-start gap-3 mb-4">
-        <span className="text-2xl">⚠️</span>
+        <span className="text-2xl"></span>
         <div>
           <h3 className="text-lg font-bold text-gray-800">{poNumber} already exists</h3>
           <p className="text-sm text-gray-500 mt-1">This PO Number is already in the system - it was not created again.</p>

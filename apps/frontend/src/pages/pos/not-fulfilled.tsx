@@ -62,14 +62,14 @@ export default function NotFulfilledView() {
   return (
     <MainLayout>
       <div className="flex items-center justify-between mb-6">
-        <h2 className="text-2xl font-bold text-gray-800">🔴 Not Fulfilled</h2>
+        <h2 className="text-2xl font-bold text-gray-800">Not Fulfilled</h2>
         <div className="flex items-center gap-4">
           <button
             onClick={download}
             disabled={downloading || pos.length === 0}
             className="px-3 py-1.5 rounded border border-gray-300 bg-white text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50 whitespace-nowrap"
           >
-            {downloading ? 'Downloading...' : '⬇ Download Excel'}
+            {downloading ? 'Downloading...' : 'Download Excel'}
           </button>
           <Link href="/pos" className="text-nootie-orange-dark hover:underline text-sm font-medium">
             ← Back to All POs

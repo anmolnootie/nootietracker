@@ -7,9 +7,9 @@ type SortKey = 'unitsOrdered' | 'unitsDispatched' | 'unitsAvailable' | 'unitsPen
 type Tab = 'insights' | 'sku-master' | 'rollup';
 
 const TABS: { key: Tab; label: string }[] = [
-  { key: 'insights', label: '📊 Insights' },
-  { key: 'sku-master', label: '🏷 SKU Master' },
-  { key: 'rollup', label: '📦 SKU Rollup' },
+  { key: 'insights', label: 'Insights' },
+  { key: 'sku-master', label: 'SKU Master' },
+  { key: 'rollup', label: 'SKU Rollup' },
 ];
 
 export default function Inventory() {
@@ -220,7 +220,7 @@ export default function Inventory() {
             <div className="grid grid-cols-2 gap-4">
               <div className="bg-white rounded-lg shadow">
                 <div className="p-4 border-b">
-                  <h4 className="font-semibold text-gray-800">🔥 Highest-Moving SKUs</h4>
+                  <h4 className="font-semibold text-gray-800">Highest-Moving SKUs</h4>
                   <p className="text-xs text-gray-500 mt-0.5">Ranked by units dispatched across every live PO</p>
                 </div>
                 {dashboard.highestMoving.length === 0 ? (
@@ -248,7 +248,7 @@ export default function Inventory() {
 
               <div className="bg-white rounded-lg shadow">
                 <div className="p-4 border-b">
-                  <h4 className="font-semibold text-gray-800">💀 Dead Stock</h4>
+                  <h4 className="font-semibold text-gray-800">Dead Stock</h4>
                   <p className="text-xs text-gray-500 mt-0.5">In SKU Master with stock on hand but nothing ever dispatched</p>
                 </div>
                 {dashboard.deadStock.length === 0 ? (

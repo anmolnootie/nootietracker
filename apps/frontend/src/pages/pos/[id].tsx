@@ -353,7 +353,7 @@ export default function PODetail() {
               {mappedStock && mappedStock.totalQuantityMapped > 0 && (
                 <div className="mb-6 bg-green-50 border border-green-200 rounded-lg p-4">
                   <p className="text-sm font-semibold text-green-800">
-                    📦 Mapped Stock Available: {mappedStock.totalQuantityMapped.toLocaleString()} units (₹{mappedStock.totalValueMapped.toLocaleString()})
+                    Mapped Stock Available: {mappedStock.totalQuantityMapped.toLocaleString()} units (₹{mappedStock.totalValueMapped.toLocaleString()})
                   </p>
                   <p className="text-xs text-green-700 mt-1">
                     Already-stuck stock from another PO has been allocated here - no need for fresh stock for this quantity.{' '}
