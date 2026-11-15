@@ -26,6 +26,7 @@ import { POModule } from '../po/po.module';
     POModule,
   ],
   providers: [SheetTrackerImportService],
+  exports: [SheetTrackerImportService],
   controllers: [SheetTrackerImportController, SheetTrackerWebhookController],
 })
 export class SheetTrackerImportModule {}

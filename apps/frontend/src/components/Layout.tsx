@@ -69,51 +69,53 @@ export const MainLayout: React.FC<LayoutProps> = ({ children }) => {
     ...CT_PLATFORMS.map((p) => ({ label: p, href: `/control-tower/${platformSlug(p)}`, icon: <PlatformLogo p={p} size={20} />, badge: ctUrgent[p] })),
   ];
 
+  // Grouped by what people come to do: see the state, work the queue, manage POs and stock,
+  // bring data in, report, administer. Groups collapse; the group holding the current page always opens.
   const navGroups: { title?: string; items: NavItem[] }[] = [
     { items: [
       { label: 'Dashboard', icon: <Icon name="home" size={17} />, href: '/dashboard' },
-      { label: 'Dispatch & GRN', icon: <Icon name="truck" size={17} />, href: '/dispatch-dashboard' },
-      { label: 'Power BI', icon: <Icon name="chart" size={17} />, href: '/powerbi' },
+      { label: 'Dispatch & GRN overview', icon: <Icon name="truck" size={17} />, href: '/dispatch-dashboard' },
     ] },
-    { title: 'Control Tower', items: ctItems },
-    { title: 'Purchase Orders', items: [
-      { label: 'All POs', icon: <Icon name="package" size={17} />, href: '/pos' },
-      { label: 'Not Fulfilled', icon: <Icon name="ban" size={17} />, href: '/pos/not-fulfilled' },
-      { label: 'Expired, not delivered', icon: <Icon name="clock" size={17} />, href: '/pos/expired-undelivered' },
-      { label: 'Day-wise dispatch', icon: <Icon name="calendar" size={17} />, href: '/dispatch-date-report' },
-      { label: 'PO Bin', icon: <Icon name="trash" size={17} />, href: '/pos/bin' },
-      { label: 'My Tasks', icon: <Icon name="check" size={17} />, href: '/tasks' },
-      { label: 'Exceptions', icon: <Icon name="alert" size={17} />, href: '/exceptions' },
-    ] },
-    { title: 'Import', items: [
-      { label: 'Bulk PO upload', icon: <Icon name="upload" size={17} />, href: '/bulk-import' },
-      { label: 'Compilation reports', icon: <Icon name="report" size={17} />, href: '/bulk-import/reports' },
-      { label: 'Invoices (Excel / Vasy PDF)', icon: <Icon name="receipt" size={17} />, href: '/invoice-import' },
-      { label: 'PRN upload', icon: <Icon name="file" size={17} />, href: '/prn-import' },
-      { label: 'DN upload', icon: <Icon name="file" size={17} />, href: '/dn-import' },
-      { label: 'Google Sheets sync', icon: <Icon name="sheet" size={17} />, href: '/sheets-import' },
-      { label: 'GRN upload', icon: <Icon name="inbox" size={17} />, href: '/grn-import' },
-      { label: 'Daily dispatch report', icon: <Icon name="clipboard" size={17} />, href: '/dispatch-report-import' },
-    ] },
-    { title: 'Compilation', items: [
-      { label: 'New compilation', icon: <Icon name="plus" size={17} />, href: '/compilations/new' },
-      { label: 'Saved compilations', icon: <Icon name="folder" size={17} />, href: '/compilations' },
-    ] },
-    { title: 'Operations', items: [
-      { label: 'Field forms', icon: <Icon name="forms" size={17} />, href: '/field-forms' },
+    { title: 'Control tower', items: ctItems },
+    { title: 'Daily work', items: [
+      { label: 'My tasks', icon: <Icon name="check" size={17} />, href: '/tasks' },
       { label: 'Appointments', icon: <Icon name="calendar" size={17} />, href: '/appointments' },
       { label: 'Dispatch', icon: <Icon name="truck" size={17} />, href: '/dispatch' },
       { label: 'Logistics', icon: <Icon name="pin" size={17} />, href: '/logistics' },
       { label: 'GRN', icon: <Icon name="clipboard" size={17} />, href: '/grn' },
       { label: 'Returns', icon: <Icon name="undo" size={17} />, href: '/returns' },
-      { label: 'Inventory', icon: <Icon name="boxes" size={17} />, href: '/inventory' },
+      { label: 'Exceptions', icon: <Icon name="alert" size={17} />, href: '/exceptions' },
     ] },
-    { title: 'PO Control', items: [
+    { title: 'Purchase orders', items: [
+      { label: 'All POs', icon: <Icon name="package" size={17} />, href: '/pos' },
+      { label: 'Add a PO', icon: <Icon name="plus" size={17} />, href: '/pos/new' },
+      { label: 'Not fulfilled', icon: <Icon name="ban" size={17} />, href: '/pos/not-fulfilled' },
+      { label: 'Expired, not delivered', icon: <Icon name="clock" size={17} />, href: '/pos/expired-undelivered' },
+      { label: 'PO bin', icon: <Icon name="trash" size={17} />, href: '/pos/bin' },
+    ] },
+    { title: 'Stock', items: [
+      { label: 'Inventory', icon: <Icon name="boxes" size={17} />, href: '/inventory' },
       { label: 'Stuck stock', icon: <Icon name="pause" size={17} />, href: '/stuck-stock' },
       { label: 'PO mapping', icon: <Icon name="link" size={17} />, href: '/po-mapping' },
     ] },
-    { title: 'Reports', items: [{ label: 'Reports', icon: <Icon name="report" size={17} />, href: '/reports' }] },
-    { title: 'Settings', items: [
+    { title: 'Uploads', items: [
+      { label: 'Warehouse Master', icon: <Icon name="sheet" size={17} />, href: '/warehouse-master' },
+      { label: 'PO files', icon: <Icon name="upload" size={17} />, href: '/bulk-import' },
+      { label: 'Invoices', icon: <Icon name="receipt" size={17} />, href: '/invoice-import' },
+      { label: 'GRN', icon: <Icon name="inbox" size={17} />, href: '/grn-import' },
+      { label: 'Daily dispatch report', icon: <Icon name="clipboard" size={17} />, href: '/dispatch-report-import' },
+      { label: 'Google Sheets sync', icon: <Icon name="sheet" size={17} />, href: '/sheets-import' },
+      { label: 'PRN (Blinkit)', icon: <Icon name="file" size={17} />, href: '/prn-import' },
+      { label: 'DN (Blinkit)', icon: <Icon name="file" size={17} />, href: '/dn-import' },
+    ] },
+    { title: 'Reports', items: [
+      { label: 'CSV reports', icon: <Icon name="report" size={17} />, href: '/reports' },
+      { label: 'Day-wise dispatch', icon: <Icon name="calendar" size={17} />, href: '/dispatch-date-report' },
+      { label: 'Upload summaries', icon: <Icon name="chart" size={17} />, href: '/bulk-import/reports' },
+      { label: 'Compilations', icon: <Icon name="folder" size={17} />, href: '/compilations' },
+      { label: 'New compilation', icon: <Icon name="plus" size={17} />, href: '/compilations/new' },
+    ] },
+    { title: 'Admin', items: [
       { label: 'Settings', icon: <Icon name="settings" size={17} />, href: '/settings' },
       ...(isAdmin
         ? [
@@ -122,8 +124,20 @@ export const MainLayout: React.FC<LayoutProps> = ({ children }) => {
             { label: 'Users', icon: <Icon name="users" size={17} />, href: '/users' },
           ]
         : []),
+      { label: 'Field forms (public)', icon: <Icon name="forms" size={17} />, href: '/field-forms' },
     ] },
   ];
+
+  const isActive = (href: string) => router.pathname === href || (href.startsWith('/control-tower/') && router.asPath.split('?')[0] === href);
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  useEffect(() => {
+    try { setCollapsed(JSON.parse(localStorage.getItem('nav-collapsed') || '{}')); } catch { /* per-viewer convenience only */ }
+  }, []);
+  const toggleGroup = (title: string) => {
+    const next = { ...collapsed, [title]: !collapsed[title] };
+    setCollapsed(next);
+    try { localStorage.setItem('nav-collapsed', JSON.stringify(next)); } catch { /* ignore */ }
+  };
 
   return (
     <div className="flex min-h-screen bg-gray-50 w-full max-w-full">
@@ -134,29 +148,31 @@ export const MainLayout: React.FC<LayoutProps> = ({ children }) => {
           <p className="text-xs text-gray-500 mt-1 uppercase tracking-widest">PO Control Tower</p>
         </div>
 
-        <nav className="mt-4 pb-6">
-          {navGroups.map((group, gi) => (
-            <div key={gi} className="mb-3">
-              {group.title && (
-                <p className="px-6 pt-3 pb-1 text-[11px] font-semibold text-gray-400 uppercase tracking-widest">{group.title}</p>
-              )}
-              {group.items.map((item) => (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={`flex items-center gap-2.5 px-6 py-2 transition-colors ${
-                    router.pathname === item.href || (item.href.startsWith('/control-tower/') && router.asPath.split('?')[0] === item.href)
-                      ? 'bg-nootie-orange-light text-nootie-orange-dark border-r-4 border-nootie-orange'
-                      : 'text-gray-700 hover:bg-gray-50'
-                  }`}
-                >
-                  {item.icon}
-                  <span className="flex-1 truncate">{item.label}</span>
-                  {!!item.badge && <span className="text-[10px] min-w-[1.25rem] text-center px-1.5 py-0.5 rounded-full bg-red-600 text-white font-semibold">{item.badge}</span>}
-                </Link>
-              ))}
-            </div>
-          ))}
+        <nav className="mt-2 pb-6">
+          {navGroups.map((group, gi) => {
+            const open = !group.title || !collapsed[group.title] || group.items.some((it) => isActive(it.href));
+            return (
+              <div key={gi} className="mb-1">
+                {group.title && (
+                  <button onClick={() => toggleGroup(group.title!)} aria-expanded={open} className="w-full flex items-center justify-between px-6 pt-3 pb-1.5 text-[11px] font-semibold text-gray-400 uppercase tracking-widest hover:text-gray-600">
+                    {group.title}
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={open ? 'transition-transform' : 'transition-transform -rotate-90'}><path d="m6 9 6 6 6-6" /></svg>
+                  </button>
+                )}
+                {open && group.items.map((item) => (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={'flex items-center gap-2.5 px-6 py-1.5 text-[14px] transition-colors ' + (isActive(item.href) ? 'bg-nootie-orange-light text-nootie-orange-dark border-r-4 border-nootie-orange font-medium' : 'text-gray-700 hover:bg-gray-50')}
+                  >
+                    {item.icon}
+                    <span className="flex-1 truncate">{item.label}</span>
+                    {!!item.badge && <span className="text-[10px] min-w-[1.25rem] text-center px-1.5 py-0.5 rounded-full bg-red-600 text-white font-semibold">{item.badge}</span>}
+                  </Link>
+                ))}
+              </div>
+            );
+          })}
         </nav>
       </aside>
 
@@ -231,7 +247,6 @@ function getPageTitle(pathname: string): string {
     '/returns': 'Returns',
     '/tasks': 'My Tasks',
     '/reports': 'Reports',
-    '/powerbi': 'Power BI Dashboard',
     '/dispatch-dashboard': 'Dispatch & GRN Dashboard',
     '/settings': 'Settings',
     '/masters': 'Master Data',
