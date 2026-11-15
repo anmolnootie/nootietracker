@@ -20,6 +20,7 @@ import {
   aggregate, CtInvoice, CtPo, CtTracking, DECISIONS, Derived, deriveAll, FLAGS, GAPS, inGapOf, inPeriod, journey, journeyOf, normChan, normPlat,
   PLATS, SlaConfig, STAGES,
 } from './control-tower.core';
+import { trends } from './control-tower.trends';
 
 /** Calendar day in IST for a stored timestamp - vendor data is IST (see CLAUDE.md "Timezone handling"). */
 export function istDay(d: Date | string | null | undefined): string | null {
@@ -383,6 +384,13 @@ export class ControlTowerService {
       return { ...g, n: inGap.length, v: inGap.reduce((t, d) => t + (d.value || 0), 0) };
     });
     return { asof: s.asof, count: R.length, steps, gaps, side };
+  }
+
+  /** Timeline, age and expiry numbers for the dashboard charts. */
+  async trends(f: RegisterFilter) {
+    const s = await this.snapshot();
+    const range = f.from || f.to ? { from: f.from || '2000-01-01', to: f.to || s.asof } : null;
+    return trends(this.scoped(s, { platform: f.platform }), this.scoped(s, f), range, s.asof);
   }
 
   async register(f: RegisterFilter) {

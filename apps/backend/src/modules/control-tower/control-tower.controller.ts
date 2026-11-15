@@ -56,6 +56,11 @@ export class ControlTowerController {
     return this.service.journey(filterFrom(q));
   }
 
+  @Get('trends')
+  trends(@Query() q: Record<string, string>) {
+    return this.service.trends(filterFrom(q));
+  }
+
   @Get('register')
   register(@Query() q: Record<string, string>) {
     return this.service.register(filterFrom(q));
