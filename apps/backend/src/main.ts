@@ -45,10 +45,19 @@ async function bootstrap() {
 
   // This is the "web" component - scheduled jobs belong to the "worker"
   // component only, so stop every cron job NestJS auto-started on bootstrap.
+  // @nestjs/schedule only registers and starts cron jobs during app.init()
+  // (onModuleInit/onApplicationBootstrap), and NestFactory.create() doesn't
+  // run init - app.listen() does. Without this explicit init() the registry
+  // is still empty here, nothing gets stopped, and every job runs on BOTH
+  // web and worker (doubling DB load against the 15-connection Supabase cap).
+  await app.init();
   const schedulerRegistry = app.get(SchedulerRegistry);
+  let stoppedJobs = 0;
   for (const job of schedulerRegistry.getCronJobs().values()) {
     job.stop();
+    stoppedJobs++;
   }
+  console.log(`Web process: stopped ${stoppedJobs} cron job(s) - they run on the worker only.`);
 
   const PORT = process.env.PORT || 3001;
   await app.listen(PORT);
