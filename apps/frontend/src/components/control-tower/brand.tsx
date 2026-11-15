@@ -5,9 +5,9 @@ export const CT_PLATFORMS: string[] = [...PLATFORMS];
 export const platformSlug = (p: string) => p.toLowerCase().replace(/[^a-z0-9]+/g, '-');
 export const platformFromSlug = (slug: string) => CT_PLATFORMS.find((p) => platformSlug(p) === slug);
 
-/** Logo files in public/logos (supplied by the team). Blinkit has no file yet, so it gets a brand-coloured mark; Other gets a grey chip. */
+/** Logo files in public/logos (supplied by the team). Other has no logo, so it gets a grey chip. */
 const LOGO: Record<string, { src?: string; bg?: string; fg?: string; t?: string; pad?: boolean }> = {
-  Blinkit: { bg: '#F8CB46', fg: '#0C831F', t: 'blinkit' },
+  Blinkit: { src: '/logos/blinkit.png' },
   Zepto: { src: '/logos/zepto.png' },
   'Swiggy Instamart': { src: '/logos/swiggy-instamart.png', pad: true },
   BigBasket: { src: '/logos/bigbasket.png', pad: true },
