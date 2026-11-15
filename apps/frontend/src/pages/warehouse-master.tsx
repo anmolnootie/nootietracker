@@ -5,6 +5,7 @@ import { Icon } from '@/components/Icon';
 import api from '@/lib/api';
 import { useAuthStore } from '@/store/auth.store';
 import { inr } from '@/components/control-tower/ui';
+import { WarehouseMasterScript } from '@/components/WarehouseMasterScript';
 
 /**
  * Warehouse Master import - the starting point for PO numbers. Creates one PO
@@ -66,10 +67,12 @@ export default function WarehouseMasterPage() {
           {error && <p className="text-sm text-red-600">{error}</p>}
         </section>
 
+        <WarehouseMasterScript />
+
         {status && (
           <section className="bg-white rounded-xl border border-slate-200 p-5">
             <div className="flex items-center justify-between">
-              <h2 className="font-semibold text-slate-900">Last import</h2>
+              <h2 className="font-semibold text-slate-900">Last sync or import</h2>
               <span className={`text-xs px-2 py-1 rounded-full ${status.status === 'COMPLETED' ? 'bg-emerald-50 text-emerald-700' : status.status === 'FAILED' ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-700'}`}>{status.status === 'RUNNING' ? 'Running...' : status.status.toLowerCase()}</span>
             </div>
             <p className="text-xs text-slate-500 mt-1">{status.fileName} · started {new Date(status.startedAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} · tabs read: {status.tabsFound?.join(', ')}</p>

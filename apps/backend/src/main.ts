@@ -26,7 +26,7 @@ async function bootstrap() {
 
   // The Google Sheet sync posts the whole tracker as JSON - a few hundred rows
   // easily passes Express's 100kb default.
-  app.useBodyParser('json', { limit: '5mb' });
+  app.useBodyParser('json', { limit: '30mb' }); // the Warehouse Master sync posts several whole tabs
 
   // Global pipes
   app.useGlobalPipes(

@@ -8,6 +8,7 @@ import { AppointmentEntity } from '../../database/entities/appointment.entity';
 import { DispatchEntity } from '../../database/entities/dispatch.entity';
 import { POTrackingEntity } from '../../database/entities/po-tracking.entity';
 import { SystemConfigEntity } from '../../database/entities/system-config.entity';
+import { UserEntity } from '../../database/entities/user.entity';
 import { SheetTrackerImportService } from '../sheet-tracker-import/sheet-tracker-import.service';
 import { ControlTowerService, istDay } from '../control-tower/control-tower.service';
 import { buildPOs, BuiltPo, parseDispatch, parseOrderBook, parseTabs } from './warehouse-master.parse';
@@ -55,6 +56,7 @@ export class WarehouseMasterService {
     @InjectRepository(DispatchEntity) private readonly dispatchRepo: Repository<DispatchEntity>,
     @InjectRepository(POTrackingEntity) private readonly trackingRepo: Repository<POTrackingEntity>,
     @InjectRepository(SystemConfigEntity) private readonly configRepo: Repository<SystemConfigEntity>,
+    @InjectRepository(UserEntity) private readonly userRepo: Repository<UserEntity>,
     private readonly sheetSync: SheetTrackerImportService,
     private readonly tower: ControlTowerService,
   ) {}
@@ -84,6 +86,30 @@ export class WarehouseMasterService {
     if (!grids['ORDER BOOK'] && !grids['DISPATCH + GRN']) {
       throw new BadRequestException(`This file has no "ORDER BOOK" or "DISPATCH + GRN" tab (found: ${wb.SheetNames.join(', ')})`);
     }
+    return this.startFromGrids(grids, fileName, userId);
+  }
+
+  /**
+   * Automatic sync: the Apps Script inside the Warehouse Master posts its tabs
+   * (display values) every 15 minutes. Same import as a file upload; runs as
+   * the first active ADMIN user, since there is no person behind a timer.
+   */
+  async startFromSheet(tabs: Record<string, unknown[][]>): Promise<{ status: string; message: string }> {
+    if (this.running) return { status: 'BUSY', message: 'An import is still running; this push was skipped' };
+    const grids: Partial<Record<TabName, unknown[][]>> = {};
+    for (const [name, rows] of Object.entries(tabs || {})) {
+      const key = name.trim().toUpperCase() as TabName;
+      if (key in TABS && Array.isArray(rows)) grids[key] = rows;
+    }
+    if (!grids['ORDER BOOK'] && !grids['DISPATCH + GRN']) throw new BadRequestException('No "ORDER BOOK" or "DISPATCH + GRN" tab in the push');
+    const admin = (await this.userRepo.find({ where: { isActive: true } })).find((u) => (u.roles as string[]).includes('ADMIN'));
+    if (!admin) throw new BadRequestException('No active ADMIN user to run the sync as');
+    await this.startFromGrids(grids, 'Google Sheet (automatic sync)', admin.id);
+    return { status: 'STARTED', message: 'Received - importing in the background. Results show on Uploads > Warehouse Master.' };
+  }
+
+  private async startFromGrids(grids: Partial<Record<TabName, unknown[][]>>, fileName: string, userId: string): Promise<WarehouseMasterResult> {
+    if (this.running) throw new ConflictException('A Warehouse Master import is already running');
     const result: WarehouseMasterResult = { status: 'RUNNING', fileName, startedAt: new Date().toISOString(), tabsFound: Object.keys(grids) };
     await this.save(result, userId);
     this.running = true;
@@ -120,6 +146,22 @@ export class WarehouseMasterService {
     });
 
     for (let i = 0; i < toCreate.length; i += CHUNK) await this.createChunk(toCreate.slice(i, i + CHUNK), asof, userId);
+
+    // A PO the sheet later marks cancelled / declined: record it, but never overwrite a decision the team set.
+    const closedLater = built.filter((p) => existing.has(p.po) && ['Declined', 'Cancelled', 'Expired'].includes(p.dec));
+    for (let i = 0; i < closedLater.length; i += CHUNK) {
+      const slice = closedLater.slice(i, i + CHUNK);
+      const pos = await this.poRepo.find({ where: { poNumber: In(slice.map((p) => p.po)) }, select: ['id', 'poNumber'] });
+      const idOf = new Map(pos.map((p) => [p.poNumber, p.id]));
+      const tracked = await this.trackingRepo.find({ where: { poId: In(pos.map((p) => p.id)) } });
+      const hasDecision = new Set(tracked.filter((t) => t.decision).map((t) => t.poId));
+      const byPoId = new Map(tracked.map((t) => [t.poId, t]));
+      const rows = slice.filter((p) => idOf.has(p.po) && !hasDecision.has(idOf.get(p.po)!)).map((p) => {
+        const row = byPoId.get(idOf.get(p.po)!) || this.trackingRepo.create({ poId: idOf.get(p.po)! });
+        return Object.assign(row, { decision: p.dec, decisionReason: p.reason || null, updatedByUserId: userId });
+      });
+      if (rows.length) await this.trackingRepo.save(rows, { chunk: 100 });
+    }
 
     // Invoices, delivery, GRN, losses and credit notes: the DISPATCH + GRN tab is the Master
     // Dispatch & GRN Tracker, so the existing sync applies it to the POs just created.
