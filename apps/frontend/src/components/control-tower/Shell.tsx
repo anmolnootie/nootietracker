@@ -78,7 +78,7 @@ export const ControlTowerShell: React.FC<{ platform: string; defaultTab?: TabKey
   return (
     <MainLayout>
       <Ctx.Provider value={ctx}>
-        <div className="-m-2 md:-m-4 min-h-full bg-ct-cream rounded-2xl">
+        <div className="min-w-0 bg-ct-cream rounded-2xl ring-1 ring-[#efe3d6] overflow-hidden">
           {/* Scope header */}
           <div className="px-5 pt-5 pb-3 border-b border-[#efe3d6] bg-white/70 backdrop-blur rounded-t-2xl">
             <div className="flex flex-wrap items-center gap-4 justify-between">

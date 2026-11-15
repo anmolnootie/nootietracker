@@ -179,7 +179,7 @@ const UploadCard: React.FC<{
       >
         <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={(e) => handleFile(e.target.files)} />
         <p className="text-gray-600 font-medium">Drag &amp; drop an Excel/CSV file here, or click to browse</p>
-        {file && <p className="mt-4 text-sm text-gray-700">📄 {file.name}</p>}
+        {file && <p className="mt-4 text-sm text-gray-700">{file.name}</p>}
       </div>
 
       {error && <div className="mt-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded text-sm">{error}</div>}

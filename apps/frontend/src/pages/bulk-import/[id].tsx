@@ -154,7 +154,7 @@ export default function BatchDetail() {
               onClick={() => load(false)}
               className="text-sm px-3 py-1.5 rounded border border-gray-300 text-gray-600 hover:bg-gray-50 whitespace-nowrap"
             >
-              🔄 Refresh
+              Refresh
             </button>
           </div>
         </div>

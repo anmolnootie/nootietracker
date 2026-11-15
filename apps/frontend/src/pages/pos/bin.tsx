@@ -127,7 +127,7 @@ export default function POBin() {
 
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h2 className="text-2xl font-bold text-gray-800">🗑️ PO Bin</h2>
+          <h2 className="text-2xl font-bold text-gray-800">PO Bin</h2>
           <p className="text-sm text-gray-500 mt-1">
             POs here are removed from active views but can be restored at any time until permanently deleted.
           </p>
@@ -264,7 +264,7 @@ export default function POBin() {
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
             <p className="font-medium text-gray-800 mb-2">
-              ⚠️ Permanently delete {permanentTarget.poNumber}?
+              Permanently delete {permanentTarget.poNumber}?
             </p>
             <p className="text-sm text-gray-600 mb-4">This action cannot be undone.</p>
             {error && <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded mb-4 text-sm">{error}</div>}
@@ -325,7 +325,7 @@ export default function POBin() {
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
             <p className="font-medium text-gray-800 mb-2">
-              ⚠️ Permanently delete {selected.size} PO{selected.size > 1 ? 's' : ''}?
+              Permanently delete {selected.size} PO{selected.size > 1 ? 's' : ''}?
             </p>
             <p className="text-sm text-gray-600 mb-4">This action cannot be undone.</p>
             <label className="block text-sm font-medium text-gray-700 mb-1">Reason (optional)</label>

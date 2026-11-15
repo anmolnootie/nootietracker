@@ -8,11 +8,11 @@ interface RiskBadgeProps {
 
 export const RiskBadge: React.FC<RiskBadgeProps> = ({ risk, size = 'md' }) => {
   const colorMap: Record<RiskStatus, { bg: string; text: string; dot: string }> = {
-    BLACK: { bg: 'bg-gray-800', text: 'text-white', dot: '🟫' },
-    RED: { bg: 'bg-red-600', text: 'text-white', dot: '🔴' },
-    ORANGE: { bg: 'bg-orange-500', text: 'text-white', dot: '🟠' },
-    YELLOW: { bg: 'bg-yellow-400', text: 'text-black', dot: '🟡' },
-    GREEN: { bg: 'bg-green-600', text: 'text-white', dot: '🟢' },
+    BLACK: { bg: 'bg-gray-800', text: 'text-white', dot: '' },
+    RED: { bg: 'bg-red-600', text: 'text-white', dot: '' },
+    ORANGE: { bg: 'bg-orange-500', text: 'text-white', dot: '' },
+    YELLOW: { bg: 'bg-yellow-400', text: 'text-black', dot: '' },
+    GREEN: { bg: 'bg-green-600', text: 'text-white', dot: '' },
   };
 
   const sizeMap = {

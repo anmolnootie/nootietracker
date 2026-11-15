@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { Icon } from '@/components/Icon';
 import Link from 'next/link';
 import { MainLayout } from '@/components/Layout';
 import { poService, DispatchDashboardData, DispatchDashboardParams, DispatchDashboardList, DispatchKpi } from '@/services/po.service';
@@ -100,7 +101,7 @@ export default function DispatchDashboard() {
           disabled={loading}
           className="text-sm px-3 py-1 rounded bg-white/20 hover:bg-white/30 disabled:opacity-50 whitespace-nowrap"
         >
-          {loading ? 'Refreshing...' : '🔄 Refresh'}
+          {loading ? 'Refreshing...' : 'Refresh'}
         </button>
         {data && data.fyOptions.length > 1 && (
           <select
@@ -129,19 +130,19 @@ export default function DispatchDashboard() {
           {/* KPI tiles */}
           <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-7 gap-3 bg-gray-100 p-3">
             <Kpi
-              icon="📋"
+              icon="clipboard"
               label="Total POs"
               value={data.kpis.totalPOs.toLocaleString('en-IN')}
               hint="Every PO this FY, whether it's shipped yet or not - click to list them"
               onClick={() => setListKpi('totalPOs')}
               active={listKpi === 'totalPOs'}
             />
-            <Kpi icon="🚀" label="Dispatched" value={data.kpis.dispatched.toLocaleString('en-IN')} hint="Click to list these POs" onClick={() => setListKpi('dispatched')} active={listKpi === 'dispatched'} />
-            <Kpi icon="🚚" label="Delivered" value={data.kpis.delivered.toLocaleString('en-IN')} hint="Click to list these POs" onClick={() => setListKpi('delivered')} active={listKpi === 'delivered'} />
-            <Kpi icon="📦" label="In Transit" value={data.kpis.inTransit.toLocaleString('en-IN')} hint="Click to list these POs" onClick={() => setListKpi('inTransit')} active={listKpi === 'inTransit'} />
-            <Kpi icon="✅" label="GRN Done" value={data.kpis.grnDone.toLocaleString('en-IN')} hint="Click to list these POs" onClick={() => setListKpi('grnDone')} active={listKpi === 'grnDone'} />
-            <Kpi icon="⚠️" label="GRN Pending" value={data.kpis.grnPending.toLocaleString('en-IN')} hint="Delivered, no GRN yet - click to list these POs" onClick={() => setListKpi('grnPending')} active={listKpi === 'grnPending'} />
-            <Kpi icon="🛑" label="Not Fulfilled" value={data.kpis.notFulfilled.toLocaleString('en-IN')} hint="Click to list these POs" onClick={() => setListKpi('notFulfilled')} active={listKpi === 'notFulfilled'} />
+            <Kpi icon="rocket" label="Dispatched" value={data.kpis.dispatched.toLocaleString('en-IN')} hint="Click to list these POs" onClick={() => setListKpi('dispatched')} active={listKpi === 'dispatched'} />
+            <Kpi icon="truck" label="Delivered" value={data.kpis.delivered.toLocaleString('en-IN')} hint="Click to list these POs" onClick={() => setListKpi('delivered')} active={listKpi === 'delivered'} />
+            <Kpi icon="package" label="In Transit" value={data.kpis.inTransit.toLocaleString('en-IN')} hint="Click to list these POs" onClick={() => setListKpi('inTransit')} active={listKpi === 'inTransit'} />
+            <Kpi icon="delivered" label="GRN Done" value={data.kpis.grnDone.toLocaleString('en-IN')} hint="Click to list these POs" onClick={() => setListKpi('grnDone')} active={listKpi === 'grnDone'} />
+            <Kpi icon="alert" label="GRN Pending" value={data.kpis.grnPending.toLocaleString('en-IN')} hint="Delivered, no GRN yet - click to list these POs" onClick={() => setListKpi('grnPending')} active={listKpi === 'grnPending'} />
+            <Kpi icon="ban" label="Not Fulfilled" value={data.kpis.notFulfilled.toLocaleString('en-IN')} hint="Click to list these POs" onClick={() => setListKpi('notFulfilled')} active={listKpi === 'notFulfilled'} />
           </div>
 
           {/* Active filters */}
@@ -333,7 +334,7 @@ const PoListModal: React.FC<{
             disabled={!list || downloading}
             className="ml-auto px-3 py-1.5 rounded border border-gray-300 bg-white text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50 whitespace-nowrap"
           >
-            {downloading ? 'Downloading...' : '⬇ Download Excel'}
+            {downloading ? 'Downloading...' : 'Download Excel'}
           </button>
         </div>
         {downloadError && <p className="px-6 py-2 text-xs text-red-700 bg-red-50 border-b">{downloadError}</p>}
@@ -399,7 +400,7 @@ const Kpi: React.FC<{ icon: string; label: string; value: string; hint?: string;
       title={hint}
       className={`bg-white rounded shadow border-l-4 px-4 py-3 flex items-center gap-3 text-left ${active ? 'border-nootie-orange-dark ring-2 ring-nootie-orange' : 'border-nootie-gold'} ${onClick ? 'hover:shadow-md cursor-pointer' : ''}`}
     >
-      <span className="text-3xl" aria-hidden>{icon}</span>
+      <span className="w-11 h-11 rounded-xl bg-orange-50 text-ct-orange flex items-center justify-center"><Icon name={icon} size={22} /></span>
       <span className="min-w-0 ml-auto text-right">
         <span className={`block ${labelSize} font-semibold text-gray-700 whitespace-nowrap`}>{label}</span>
         <span className={`block ${valueSize} font-bold text-gray-900 tabular-nums whitespace-nowrap`}>{value}</span>

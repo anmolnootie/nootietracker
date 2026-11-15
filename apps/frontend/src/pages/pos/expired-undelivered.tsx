@@ -59,17 +59,17 @@ export default function ExpiredUndeliveredView() {
   return (
     <MainLayout>
       <div className="flex items-center justify-between mb-2">
-        <h2 className="text-2xl font-bold text-gray-800">⏱ Expired - Dispatched, Not Delivered</h2>
+        <h2 className="text-2xl font-bold text-gray-800">Expired - Dispatched, Not Delivered</h2>
         <div className="flex items-center gap-4">
           <button
             onClick={download}
             disabled={downloading || rows.length === 0}
             className="px-3 py-1.5 rounded border border-gray-300 bg-white text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50 whitespace-nowrap"
           >
-            {downloading ? 'Downloading...' : '⬇ Download Excel'}
+            {downloading ? 'Downloading...' : 'Download Excel'}
           </button>
           <button onClick={load} disabled={loading} className="text-sm px-3 py-1.5 rounded border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-50">
-            🔄 Refresh
+            Refresh
           </button>
           <Link href="/pos" className="text-nootie-orange-dark hover:underline text-sm font-medium">
             ← Back to All POs

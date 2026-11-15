@@ -179,7 +179,7 @@ export default function POList() {
           href="/pos/bin"
           className="px-5 py-3 text-sm font-medium text-gray-600 hover:text-gray-800 whitespace-nowrap ml-auto"
         >
-          🗑 Deleted / Bin
+          Deleted / Bin
         </Link>
       </div>
 
@@ -199,7 +199,7 @@ export default function POList() {
           </div>
           <div className="flex gap-3">
             <Link href="/pos/import" className="text-sm px-4 py-1.5 bg-nootie-orange-light text-nootie-orange-dark border border-nootie-gold font-medium rounded-lg hover:bg-orange-100">
-              ⇪ Import PO
+              Import PO
             </Link>
             <Link href="/pos/new" className="text-sm px-4 py-1.5 bg-nootie-orange-dark hover:bg-nootie-orange text-white font-medium rounded-lg">
               + Create PO

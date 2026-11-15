@@ -117,7 +117,7 @@ export default function DispatchDateReport() {
                                 onClick={() => setExpandedSkuRow(expandedSkuRow === i ? null : i)}
                                 className="ml-2 text-xs text-yellow-800 underline decoration-dotted"
                               >
-                                ⚠ MRP mismatch
+                                MRP mismatch
                               </button>
                             )}
                           </td>

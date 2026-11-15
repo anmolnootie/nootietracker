@@ -76,7 +76,7 @@ export default function Appointments() {
             disabled={loading}
             className="text-sm px-3 py-1.5 rounded border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-50 whitespace-nowrap"
           >
-            {loading ? 'Refreshing...' : '🔄 Refresh'}
+            {loading ? 'Refreshing...' : 'Refresh'}
           </button>
         </div>
 

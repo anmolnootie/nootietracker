@@ -192,8 +192,8 @@ export default function Locations() {
       setApprovingId(null);
       setApproveMessage(
         result.resolvedExceptions > 0
-          ? `✅ "${result.location.locationName}" approved - ${result.resolvedExceptions} related exception(s) resolved.`
-          : `✅ "${result.location.locationName}" approved.`,
+          ? `"${result.location.locationName}" approved - ${result.resolvedExceptions} related exception(s) resolved.`
+          : `"${result.location.locationName}" approved.`,
       );
       await load();
     } finally {
@@ -229,13 +229,13 @@ export default function Locations() {
       });
       setSelected(new Set());
       setApproveMessage(
-        `✅ ${result.approved} location${result.approved === 1 ? '' : 's'} approved` +
+        `${result.approved} location${result.approved === 1 ? '' : 's'} approved` +
           (result.resolvedExceptions > 0 ? ` - ${result.resolvedExceptions} related exception(s) resolved` : '') +
-          (result.failed.length > 0 ? `. ⚠️ ${result.failed.length} failed: ${result.failed.map((f) => `${f.locationName} (${f.error})`).join('; ')}` : '.'),
+          (result.failed.length > 0 ? `. ${result.failed.length} failed: ${result.failed.map((f) => `${f.locationName} (${f.error})`).join('; ')}` : '.'),
       );
       await load();
     } catch {
-      setApproveMessage('⚠️ Could not approve the selected locations - nothing may have been saved, refresh and check.');
+      setApproveMessage('Could not approve the selected locations - nothing may have been saved, refresh and check.');
     } finally {
       setBusy(null);
     }
@@ -259,7 +259,7 @@ export default function Locations() {
           disabled={loading}
           className="text-sm px-3 py-1.5 rounded border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-50"
         >
-          {loading ? 'Refreshing...' : '🔄 Refresh'}
+          {loading ? 'Refreshing...' : 'Refresh'}
         </button>
       </div>
 
@@ -270,7 +270,7 @@ export default function Locations() {
       {pending.length > 0 && (
         <div className="bg-white rounded-lg shadow mb-6">
           <div className="p-6 border-b">
-            <h2 className="text-lg font-semibold text-gray-800">🆕 New Locations Awaiting Approval ({pending.length})</h2>
+            <h2 className="text-lg font-semibold text-gray-800">New Locations Awaiting Approval ({pending.length})</h2>
             <p className="text-sm text-gray-500 mt-1">
               Warehouse names seen on incoming POs that don't match the Location Master yet - they're defaulting to NON-LOCAL TAT until approved.
             </p>

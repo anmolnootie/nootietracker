@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { useAuthStore } from '@/store/auth.store';
 import { notificationsService } from '@/services/notifications.service';
+import { Icon } from '@/components/Icon';
 import { controlTowerService } from '@/services/control-tower.service';
 import { CT_PLATFORMS, PlatformLogo, platformSlug } from '@/components/control-tower/brand';
 
@@ -70,62 +71,62 @@ export const MainLayout: React.FC<LayoutProps> = ({ children }) => {
 
   const navGroups: { title?: string; items: NavItem[] }[] = [
     { items: [
-      { label: '🏠 Dashboard', href: '/dashboard' },
-      { label: '🚚 Dispatch & GRN Dashboard', href: '/dispatch-dashboard' },
-      { label: '📈 Power BI Dashboard', href: '/powerbi' },
+      { label: 'Dashboard', icon: <Icon name="home" size={17} />, href: '/dashboard' },
+      { label: 'Dispatch & GRN', icon: <Icon name="truck" size={17} />, href: '/dispatch-dashboard' },
+      { label: 'Power BI', icon: <Icon name="chart" size={17} />, href: '/powerbi' },
     ] },
     { title: 'Control Tower', items: ctItems },
     { title: 'Purchase Orders', items: [
-      { label: '📦 All POs', href: '/pos' },
-      { label: '🔴 Not Fulfilled', href: '/pos/not-fulfilled' },
-      { label: '⏱ Expired - Not Delivered', href: '/pos/expired-undelivered' },
-      { label: '📅 Day-wise Dispatch Report', href: '/dispatch-date-report' },
-      { label: '🗑 PO Bin', href: '/pos/bin' },
-      { label: '✅ My Tasks', href: '/tasks' },
-      { label: '⚠ Exceptions', href: '/exceptions' },
+      { label: 'All POs', icon: <Icon name="package" size={17} />, href: '/pos' },
+      { label: 'Not Fulfilled', icon: <Icon name="ban" size={17} />, href: '/pos/not-fulfilled' },
+      { label: 'Expired, not delivered', icon: <Icon name="clock" size={17} />, href: '/pos/expired-undelivered' },
+      { label: 'Day-wise dispatch', icon: <Icon name="calendar" size={17} />, href: '/dispatch-date-report' },
+      { label: 'PO Bin', icon: <Icon name="trash" size={17} />, href: '/pos/bin' },
+      { label: 'My Tasks', icon: <Icon name="check" size={17} />, href: '/tasks' },
+      { label: 'Exceptions', icon: <Icon name="alert" size={17} />, href: '/exceptions' },
     ] },
     { title: 'Import', items: [
-      { label: '⇪ Upload / Bulk Import', href: '/bulk-import' },
-      { label: '📊 Compilation Reports', href: '/bulk-import/reports' },
-      { label: '🧾 Invoice Bulk Upload (Excel / Vasy PDF)', href: '/invoice-import' },
-      { label: '🧾 Bulk PRN Upload', href: '/prn-import' },
-      { label: '🧾 Bulk DN Upload', href: '/dn-import' },
-      { label: '📗 Google Sheets Upload', href: '/sheets-import' },
-      { label: '📥 GRN Bulk Upload', href: '/grn-import' },
-      { label: '📋 Daily Dispatch Report Upload', href: '/dispatch-report-import' },
+      { label: 'Bulk PO upload', icon: <Icon name="upload" size={17} />, href: '/bulk-import' },
+      { label: 'Compilation reports', icon: <Icon name="report" size={17} />, href: '/bulk-import/reports' },
+      { label: 'Invoices (Excel / Vasy PDF)', icon: <Icon name="receipt" size={17} />, href: '/invoice-import' },
+      { label: 'PRN upload', icon: <Icon name="file" size={17} />, href: '/prn-import' },
+      { label: 'DN upload', icon: <Icon name="file" size={17} />, href: '/dn-import' },
+      { label: 'Google Sheets sync', icon: <Icon name="sheet" size={17} />, href: '/sheets-import' },
+      { label: 'GRN upload', icon: <Icon name="inbox" size={17} />, href: '/grn-import' },
+      { label: 'Daily dispatch report', icon: <Icon name="clipboard" size={17} />, href: '/dispatch-report-import' },
     ] },
     { title: 'Compilation', items: [
-      { label: '➕ Create Compilation', href: '/compilations/new' },
-      { label: '🗂 Saved Compilations', href: '/compilations' },
+      { label: 'New compilation', icon: <Icon name="plus" size={17} />, href: '/compilations/new' },
+      { label: 'Saved compilations', icon: <Icon name="folder" size={17} />, href: '/compilations' },
     ] },
     { title: 'Operations', items: [
-      { label: '📝 Field Forms', href: '/field-forms' },
-      { label: '📅 Appointments', href: '/appointments' },
-      { label: '🚚 Dispatch', href: '/dispatch' },
-      { label: '📍 Logistics', href: '/logistics' },
-      { label: '📋 GRN', href: '/grn' },
-      { label: '↩ Returns', href: '/returns' },
-      { label: '📦 Inventory', href: '/inventory' },
+      { label: 'Field forms', icon: <Icon name="forms" size={17} />, href: '/field-forms' },
+      { label: 'Appointments', icon: <Icon name="calendar" size={17} />, href: '/appointments' },
+      { label: 'Dispatch', icon: <Icon name="truck" size={17} />, href: '/dispatch' },
+      { label: 'Logistics', icon: <Icon name="pin" size={17} />, href: '/logistics' },
+      { label: 'GRN', icon: <Icon name="clipboard" size={17} />, href: '/grn' },
+      { label: 'Returns', icon: <Icon name="undo" size={17} />, href: '/returns' },
+      { label: 'Inventory', icon: <Icon name="boxes" size={17} />, href: '/inventory' },
     ] },
     { title: 'PO Control', items: [
-      { label: '🧊 Stuck Stock', href: '/stuck-stock' },
-      { label: '🔗 PO Mapping', href: '/po-mapping' },
+      { label: 'Stuck stock', icon: <Icon name="pause" size={17} />, href: '/stuck-stock' },
+      { label: 'PO mapping', icon: <Icon name="link" size={17} />, href: '/po-mapping' },
     ] },
-    { title: 'Reports', items: [{ label: '📊 Reports', href: '/reports' }] },
+    { title: 'Reports', items: [{ label: 'Reports', icon: <Icon name="report" size={17} />, href: '/reports' }] },
     { title: 'Settings', items: [
-      { label: '⚙ Settings', href: '/settings' },
+      { label: 'Settings', icon: <Icon name="settings" size={17} />, href: '/settings' },
       ...(isAdmin
         ? [
-            { label: '🏷 Masters', href: '/masters' },
-            { label: '📍 Locations & TAT', href: '/locations' },
-            { label: '👥 Users', href: '/users' },
+            { label: 'Masters', icon: <Icon name="tag" size={17} />, href: '/masters' },
+            { label: 'Locations & TAT', icon: <Icon name="pin" size={17} />, href: '/locations' },
+            { label: 'Users', icon: <Icon name="users" size={17} />, href: '/users' },
           ]
         : []),
     ] },
   ];
 
   return (
-    <div className="flex min-h-screen bg-gray-50">
+    <div className="flex min-h-screen bg-gray-50 w-full max-w-full">
       {/* Sidebar */}
       <aside className="w-64 shrink-0 bg-white shadow-lg sticky top-0 h-screen overflow-y-auto">
         <div className="p-6 border-b">
@@ -160,7 +161,7 @@ export const MainLayout: React.FC<LayoutProps> = ({ children }) => {
       </aside>
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col">
+      <div className="flex-1 min-w-0 flex flex-col">
         {/* Top Bar */}
         <header className="bg-white shadow-sm">
           <div className="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
@@ -168,7 +169,7 @@ export const MainLayout: React.FC<LayoutProps> = ({ children }) => {
             <div className="flex items-center gap-4">
               <div className="relative">
                 <button onClick={openNotifications} className="relative">
-                  <span className="text-2xl">🔔</span>
+                  <Icon name="bell" size={22} className="text-gray-600" />
                   {unreadCount > 0 && (
                     <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
                       {unreadCount > 9 ? '9+' : unreadCount}
@@ -208,8 +209,8 @@ export const MainLayout: React.FC<LayoutProps> = ({ children }) => {
         </header>
 
         {/* Page Content */}
-        <main className="flex-1 overflow-auto">
-          <div className="max-w-7xl mx-auto px-6 py-8">{children}</div>
+        <main className="flex-1 min-w-0 overflow-x-auto">
+          <div className="max-w-[1440px] mx-auto px-4 md:px-6 py-6 min-w-0">{children}</div>
         </main>
       </div>
     </div>

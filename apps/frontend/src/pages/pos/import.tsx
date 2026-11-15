@@ -1,4 +1,5 @@
 import React, { useRef, useState } from 'react';
+import { Icon } from '@/components/Icon';
 import { useRouter } from 'next/router';
 import { MainLayout } from '@/components/Layout';
 import { DuplicatePOModal } from '@/components/DuplicatePOModal';
@@ -186,7 +187,7 @@ export default function ImportPO() {
               onClick={() => setMode('pdf')}
               className="text-left bg-white rounded-lg shadow p-6 border-2 border-transparent hover:border-nootie-orange transition-colors"
             >
-              <p className="text-3xl mb-3">📄</p>
+              <div className="mb-3 flex justify-center text-ct-orange"><Icon name="file" size={36} /></div>
               <h3 className="text-lg font-semibold text-gray-800 mb-1">Upload PDF</h3>
               <p className="text-sm text-gray-500">
                 For a single PO. Upload the customer's PO PDF (and an Excel/CSV line-item export if they provide
@@ -198,7 +199,7 @@ export default function ImportPO() {
               onClick={() => setMode('excel')}
               className="text-left bg-white rounded-lg shadow p-6 border-2 border-transparent hover:border-nootie-orange transition-colors"
             >
-              <p className="text-3xl mb-3">📊</p>
+              <div className="mb-3 flex justify-center text-ct-orange"><Icon name="sheet" size={36} /></div>
               <h3 className="text-lg font-semibold text-gray-800 mb-1">Upload Excel / CSV</h3>
               <p className="text-sm text-gray-500">
                 For a single PO. Upload one Excel/CSV file with this PO's line items - the system guesses the

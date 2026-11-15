@@ -169,7 +169,7 @@ export default function BulkImport() {
           {files.length > 0 && (
             <ul className="mt-4 text-sm text-gray-700 space-y-1">
               {files.map((f) => (
-                <li key={f.name}>📄 {f.name}</li>
+                <li key={f.name}>{f.name}</li>
               ))}
             </ul>
           )}

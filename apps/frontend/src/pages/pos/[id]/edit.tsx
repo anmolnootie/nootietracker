@@ -635,7 +635,7 @@ export default function EditPO() {
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg shadow-xl p-6 max-w-md w-full">
             <p className="font-medium text-gray-800 mb-4">
-              ⚠️ You are changing core PO information. This change will be recorded in the audit history.
+              You are changing core PO information. This change will be recorded in the audit history.
             </p>
             <div className="flex gap-3 justify-end">
               <button onClick={() => setConfirmOpen(false)} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">
