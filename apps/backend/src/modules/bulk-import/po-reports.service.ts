@@ -1,3 +1,4 @@
+import { platformAliases } from '@po-control-tower/shared';
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
@@ -108,7 +109,7 @@ export class POReportsService {
       .addGroupBy('li.mrp');
 
     if (poIds) qb = qb.andWhere('li.poId IN (:...poIds)', { poIds: poIds.length ? poIds : ['00000000-0000-0000-0000-000000000000'] });
-    if (filters.platform) qb = qb.andWhere('po.channelId = :platform', { platform: filters.platform });
+    if (filters.platform) qb = qb.andWhere('po.channelId IN (:...platforms)', { platforms: platformAliases(filters.platform) });
 
     const raw = await qb.getRawMany();
 
@@ -149,7 +150,7 @@ export class POReportsService {
         .addGroupBy('po.location');
 
       if (poIds) detailQb = detailQb.andWhere('li.poId IN (:...poIds)', { poIds: poIds.length ? poIds : ['00000000-0000-0000-0000-000000000000'] });
-      if (filters.platform) detailQb = detailQb.andWhere('po.channelId = :platform', { platform: filters.platform });
+      if (filters.platform) detailQb = detailQb.andWhere('po.channelId IN (:...platforms)', { platforms: platformAliases(filters.platform) });
 
       const detailRaw = await detailQb.getRawMany();
 
@@ -210,7 +211,7 @@ export class POReportsService {
 
     let qb = this.poRepository.createQueryBuilder('po');
     if (poIds) qb = qb.andWhere('po.id IN (:...poIds)', { poIds: poIds.length ? poIds : ['00000000-0000-0000-0000-000000000000'] });
-    if (filters.platform) qb = qb.andWhere('po.channelId = :platform', { platform: filters.platform });
+    if (filters.platform) qb = qb.andWhere('po.channelId IN (:...platforms)', { platforms: platformAliases(filters.platform) });
 
     const pos = await qb.orderBy('po.poExpiryDate', 'ASC').getMany();
     const dispatches = pos.length

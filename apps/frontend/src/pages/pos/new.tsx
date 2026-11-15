@@ -3,7 +3,7 @@ import { useRouter } from 'next/router';
 import { MainLayout } from '@/components/Layout';
 import { DuplicatePOModal } from '@/components/DuplicatePOModal';
 import { poService } from '@/services/po.service';
-import { CreatePORequest, POMaster } from '@po-control-tower/shared';
+import { CreatePORequest, POMaster, PLATFORMS, detectPlatformFromPo } from '@po-control-tower/shared';
 
 export default function CreatePO() {
   const router = useRouter();
@@ -110,6 +110,11 @@ export default function CreatePO() {
                   name="poNumber"
                   value={formData.poNumber}
                   onChange={handleInputChange}
+                  onBlur={() => {
+                    // Manual §14: guess the platform from the PO number when the channel is still empty.
+                    const guess = detectPlatformFromPo(formData.poNumber);
+                    if (guess && !formData.channelId) setFormData((f) => ({ ...f, channelId: guess, customerId: f.customerId || guess }));
+                  }}
                   required
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg"
                 />
@@ -117,15 +122,19 @@ export default function CreatePO() {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Channel *</label>
-                <input
-                  type="text"
+                <select
                   name="channelId"
                   value={formData.channelId}
-                  onChange={handleInputChange}
+                  onChange={handleInputChange as any}
                   required
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg"
-                  placeholder="e.g., Blinkit, BigBasket"
-                />
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-white"
+                >
+                  <option value="">Choose a platform</option>
+                  {PLATFORMS.map((p) => <option key={p}>{p}</option>)}
+                </select>
+                {formData.poNumber && detectPlatformFromPo(formData.poNumber) && detectPlatformFromPo(formData.poNumber) !== formData.channelId && (
+                  <p className="text-xs text-amber-700 mt-1">This PO number looks like {detectPlatformFromPo(formData.poNumber)}.</p>
+                )}
               </div>
 
               <div>

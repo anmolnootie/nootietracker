@@ -137,6 +137,31 @@ export class ControlTowerService {
     return saved;
   }
 
+  /**
+   * Batch handover (manual §12, the Handover check form): mark many POs as
+   * handed to a warehouse person, or acknowledged by one, on a date. Person is
+   * required when handing over. PO numbers are cleaned like the artifact does
+   * (trim, drop ".0", no spaces, upper case). Unknown numbers are reported back,
+   * not created.
+   */
+  async batchHandover(body: { mode?: string; date?: string; person?: string; poNumbers?: unknown }, userId: string) {
+    const mode = body.mode === 'ack' ? 'ack' : body.mode === 'handed' ? 'handed' : null;
+    if (!mode) throw new BadRequestException('mode must be "handed" or "ack"');
+    const date = String(body.date || '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new BadRequestException('date must be YYYY-MM-DD');
+    const person = String(body.person || '').trim();
+    if (mode === 'handed' && !person) throw new BadRequestException('Person is required when handing over printouts');
+    const raw = Array.isArray(body.poNumbers) ? body.poNumbers : String(body.poNumbers || '').split(/[\s,;]+/);
+    const numbers = [...new Set(raw.map((x) => String(x ?? '').trim().replace(/\.0$/, '').replace(/\s/g, '').toUpperCase()).filter((x) => x.length >= 3))];
+    if (!numbers.length) throw new BadRequestException('No PO numbers given');
+    if (numbers.length > 500) throw new BadRequestException('At most 500 POs per batch');
+    const known = await this.poRepo.find({ where: { poNumber: In(numbers) }, select: ['id', 'poNumber'] });
+    const found = new Set(known.map((p) => p.poNumber));
+    const patch = mode === 'handed' ? { handedOn: date, handedTo: person } : { ackOn: date, ...(person ? { ackBy: person } : {}) };
+    for (const p of known) await this.updateTracking(p.poNumber, patch, userId);
+    return { mode, date, person, updated: known.length, notFound: numbers.filter((n) => !found.has(n)) };
+  }
+
   /** Unresolved issues as {po: poNumber, status} - feeds derive()'s openIssues count. */
   private async loadOpenIssues(byId: Map<string, POMasterEntity>): Promise<{ po: string; status: string }[]> {
     const rows = await this.issueRepo.find({ where: { status: Not('Resolved') }, select: ['id', 'poId', 'status'] });
@@ -328,14 +353,21 @@ export class ControlTowerService {
     const s = await this.snapshot();
     const R = this.scoped(s, f);
     const a = aggregate(R);
+    // Flags 1-6 are "urgent" (manual §9). urgentAllTime ignores the period, like the artifact's sidebar badge.
+    const urgentOf = (ag: ReturnType<typeof aggregate>) => [1, 2, 3, 4, 5, 6].reduce((t, k) => t + ag.flag[k], 0);
+    // Every platform, including ones with no POs yet, so each always has its own tower.
     const platforms = PLATS.map((p) => {
-      const rows = this.scoped(s, { ...f, platform: p });
-      const ag = aggregate(rows);
-      return { platform: p, n: ag.n, value: ag.value, open: ag.stage[1].n + ag.stage[2].n + ag.stage[3].n + ag.stage[4].n, flags: ag.flags, expiring: ag.expiring };
-    }).filter((x) => x.n > 0);
+      const ag = aggregate(this.scoped(s, { ...f, platform: p }));
+      const all = aggregate(this.scoped(s, { platform: p }));
+      return {
+        platform: p, n: ag.n, value: ag.value, invoiced: ag.invoiced, fill: ag.fill, undecided: ag.undecided, accNotDisp: ag.accNotDisp,
+        transit: ag.transit, grnP: ag.grnP, rto: ag.stage[7].n, open: ag.stage[1].n + ag.stage[2].n + ag.stage[3].n + ag.stage[4].n,
+        flags: ag.flags, expiring: ag.expiring, urgent: urgentOf(ag), urgentAllTime: urgentOf(all),
+      };
+    });
     return {
       asof: s.asof, from: f.from || null, to: f.to || null, platform: f.platform || 'ALL', cfg: s.cfg,
-      aggregate: a,
+      aggregate: { ...a, urgent: urgentOf(a) },
       stages: STAGES.map((st) => ({ ...st, ...a.stage[st.n] })),
       flags: FLAGS.filter((x) => !!x).map((fl) => ({ ...fl!, count: a.flag[fl!.n], value: a.flagVal[fl!.n] })),
       platforms,

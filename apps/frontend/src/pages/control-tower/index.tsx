@@ -1,12 +1,7 @@
 import React from 'react';
-import { MainLayout } from '@/components/Layout';
-import { Tower } from '@/components/control-tower/Tower';
+import { ControlTowerShell } from '@/components/control-tower/Shell';
 
-/** Overall control tower: every platform together, with a tile per platform. */
+/** Overall control tower: every platform together. Tabs via ?tab=. */
 export default function OverallTowerPage() {
-  return (
-    <MainLayout>
-      <Tower platform="ALL" />
-    </MainLayout>
-  );
+  return <ControlTowerShell platform="ALL" />;
 }

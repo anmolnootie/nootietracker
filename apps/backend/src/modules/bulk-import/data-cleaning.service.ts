@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { ExceptionSeverity, ExceptionType, StandardBulkField } from '@po-control-tower/shared';
+import { detectPlatformFromPo, ExceptionSeverity, ExceptionType, normalizePlatform, StandardBulkField } from '@po-control-tower/shared';
 
 export interface CleanedRow {
   platform?: string;
@@ -74,8 +74,15 @@ export class DataCleaningService {
     const issues: CleaningIssue[] = [];
     const cleaned: CleanedRow = {};
 
-    cleaned.platform = cleanText(get('platform')) || defaultPlatform;
     cleaned.poNumber = cleanText(get('po_number'));
+    // Platform per row, so a wrong pick on the upload screen fixes itself:
+    // the file's own platform column wins, then the PO number's shape
+    // (detectPlatformFromPo, manual §14), then the platform chosen on upload
+    // ("AUTO" = no fallback, so an unrecognised row lands in "Other").
+    // Corrected silently - one exception per row would flood a 2,000-row file;
+    // each processed row shows the platform it was recorded under.
+    const chosen = defaultPlatform && defaultPlatform !== 'AUTO' ? normalizePlatform(defaultPlatform) : null;
+    cleaned.platform = normalizePlatform(cleanText(get('platform'))) || detectPlatformFromPo(cleaned.poNumber) || chosen || 'Other';
     cleaned.warehouse = cleanText(get('warehouse'));
     cleaned.skuCode = cleanText(get('sku_code'));
     cleaned.upc = cleanText(get('upc'));

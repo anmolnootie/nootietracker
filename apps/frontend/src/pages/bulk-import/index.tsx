@@ -1,9 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { PLATFORMS as SHARED_PLATFORMS } from '@po-control-tower/shared';
 import { MainLayout } from '@/components/Layout';
 import { bulkImportService } from '@/services/bulk-import.service';
 import { format } from 'date-fns';
 
-const PLATFORMS = ['Blinkit', 'Zepto', 'Instamart', 'BigBasket', 'Flipkart', 'Other'];
+// 'AUTO' = work out each row's platform from the file's platform column or the PO number's shape.
+// A specific pick is only the fallback - rows whose PO number clearly belongs to another platform are recorded under that one.
+const PLATFORMS = ['AUTO', ...SHARED_PLATFORMS];
+const platformLabel = (p: string) => (p === 'AUTO' ? 'Auto-detect from PO numbers' : p);
 
 const STATUS_STYLES: Record<string, string> = {
   UPLOADING: 'bg-gray-100 text-gray-600',
@@ -30,7 +34,7 @@ const progressLabel = (batch: any) => {
 
 export default function BulkImport() {
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [platform, setPlatform] = useState('Blinkit');
+  const [platform, setPlatform] = useState('AUTO');
   const [files, setFiles] = useState<File[]>([]);
   const [dragging, setDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -130,7 +134,7 @@ export default function BulkImport() {
           <select value={platform} onChange={(e) => setPlatform(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg">
             {PLATFORMS.map((p) => (
               <option key={p} value={p}>
-                {p}
+                {platformLabel(p)}
               </option>
             ))}
           </select>
@@ -272,7 +276,7 @@ export default function BulkImport() {
                     </a>
                     <p className="text-xs text-gray-400">{b.fileName}</p>
                   </td>
-                  <td className="px-4 py-3">{b.platform}</td>
+                  <td className="px-4 py-3">{platformLabel(b.platform)}</td>
                   <td className="px-4 py-3 text-xs text-gray-500">{format(new Date(b.uploadedAt), 'dd MMM yyyy HH:mm')}</td>
                   <td className="px-4 py-3">{isActive(b) ? `${b.processedRows ?? 0} / ${b.totalRows}` : b.totalRows}</td>
                   <td className="px-4 py-3">

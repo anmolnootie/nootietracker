@@ -38,6 +38,8 @@ export const controlTowerService = {
   createIssue: async (body: Record<string, unknown>) => (await api.post('/control-tower/issues', body)).data,
   updateIssue: async (id: string, body: Record<string, unknown>) => (await api.patch(`/control-tower/issues/${id}`, body)).data,
   audit: async (q: { po?: string; limit?: number }) => (await api.get('/control-tower/audit', { params: q })).data,
+  handover: async (body: { mode: 'handed' | 'ack'; date: string; person: string; poNumbers: string[] | string }) =>
+    (await api.post('/control-tower/handover', body)).data,
   getSla: async () => (await api.get('/config/control-tower-sla')).data,
   updateSla: async (body: Record<string, number>) => (await api.patch('/config/control-tower-sla', body)).data,
 };
