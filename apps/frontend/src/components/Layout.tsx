@@ -50,6 +50,10 @@ export const MainLayout: React.FC<LayoutProps> = ({ children }) => {
       { label: '🚚 Dispatch & GRN Dashboard', href: '/dispatch-dashboard' },
       { label: '📈 Power BI Dashboard', href: '/powerbi' },
     ] },
+    { title: 'Control Tower', items: [
+      { label: '🛰 Pipeline', href: '/control-tower/pipeline' },
+      { label: '📒 PO Register', href: '/control-tower/register' },
+    ] },
     { title: 'Purchase Orders', items: [
       { label: '📦 All POs', href: '/pos' },
       { label: '🔴 Not Fulfilled', href: '/pos/not-fulfilled' },

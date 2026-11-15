@@ -14,7 +14,7 @@ import { SheetTrackerUploadBatchEntity } from '../../database/entities/sheet-tra
 import { InvoiceImportRowEntity } from '../../database/entities/invoice-import-row.entity';
 import { ConfigService } from '../config/config.service';
 import {
-  aggregate, CtInvoice, CtPo, CtTracking, Derived, deriveAll, FLAGS, GAPS, inPeriod, journey, journeyOf, normChan, normPlat,
+  aggregate, CtInvoice, CtPo, CtTracking, Derived, deriveAll, FLAGS, GAPS, inGapOf, inPeriod, journey, journeyOf, normChan, normPlat,
   PLATS, SlaConfig, STAGES,
 } from './control-tower.core';
 
@@ -282,8 +282,10 @@ export class ControlTowerService {
     const s = await this.snapshot();
     const R = this.scoped(s, f);
     const { steps, side } = journey(R);
-    const by = Object.fromEntries(steps.map((x) => [x.k, x]));
-    const gaps = GAPS.map((g) => ({ ...g, n: by[g.from].n - by[g.to].n, v: by[g.from].v - by[g.to].v }));
+    const gaps = GAPS.map((g) => {
+      const inGap = R.filter((d) => inGapOf(d, g));
+      return { ...g, n: inGap.length, v: inGap.reduce((t, d) => t + (d.value || 0), 0) };
+    });
     return { asof: s.asof, count: R.length, steps, gaps, side };
   }
 
@@ -292,7 +294,7 @@ export class ControlTowerService {
     let R = this.scoped(s, f);
     if (f.gap) {
       const g = GAPS.find((x) => x.k === f.gap);
-      if (g) R = R.filter((d) => { const j = journeyOf(d); return j[g.from] && !j[g.to]; });
+      if (g) R = R.filter((d) => inGapOf(d, g));
     }
     if (f.stage) R = R.filter((d) => d.stage === Number(f.stage));
     if (f.flag) R = R.filter((d) => d.pri === Number(f.flag));

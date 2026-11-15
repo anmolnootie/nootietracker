@@ -337,3 +337,9 @@ export function inPeriod(d: { date: string | null }, range: { from: string; to: 
   if (!range) return true;
   return !!d.date && d.date >= range.from && d.date <= range.to;
 }
+
+/** v3.js inGap(): reached `from` but not the next step, and not closed as not fulfilled (stage 9). */
+export function inGapOf(d: Derived, g: { from: JStepKey; to: JStepKey }): boolean {
+  const j = journeyOf(d);
+  return j[g.from] && !j[g.to] && d.stage !== 9;
+}

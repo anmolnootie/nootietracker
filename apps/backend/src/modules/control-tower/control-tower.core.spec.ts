@@ -1,5 +1,5 @@
 import {
-  aggregate, CtInvoice, CtPo, CtTracking, DEFAULT_CFG, deriveAll, GAPS, inPeriod, journey, journeyOf, normChan, periodRange,
+  aggregate, CtInvoice, CtPo, CtTracking, DEFAULT_CFG, deriveAll, GAPS, inGapOf, inPeriod, journey, journeyOf, normChan, periodRange,
 } from './control-tower.core';
 
 const ASOF = '2026-11-15';
@@ -79,6 +79,9 @@ describe('control tower core (port of core.js)', () => {
     }
     const gap = (k: string) => { const g = GAPS.find((x) => x.k === k)!; return n[g.from] - n[g.to]; };
     expect([gap('not_accepted'), gap('not_handed'), gap('not_delivered'), gap('no_grn')]).toEqual([6, 1, 2, 1]);
+    // Gap pills exclude stage 9 (declined M reached 'recv' but is not counted as 'not accepted').
+    const pill = (k: string) => D.filter((d) => inGapOf(d, GAPS.find((x) => x.k === k)!)).length;
+    expect([pill('not_accepted'), pill('not_handed'), pill('not_delivered'), pill('no_grn')]).toEqual([5, 1, 2, 1]);
   });
 
   it('period ranges match v3.js setPeriod', () => {
