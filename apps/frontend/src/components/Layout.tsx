@@ -1,4 +1,4 @@
-import React, { ReactNode, useEffect, useState } from 'react';
+import React, { ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { useAuthStore } from '@/store/auth.store';
@@ -128,6 +128,22 @@ export const MainLayout: React.FC<LayoutProps> = ({ children }) => {
     ] },
   ];
 
+  // Every page renders its own MainLayout, so the sidebar remounts on each click and would jump to the top.
+  // Keep its scroll position for the browser session, and make sure the current page's item is visible.
+  const sideRef = useRef<HTMLElement>(null);
+  const useIsoLayoutEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect;
+  useIsoLayoutEffect(() => {
+    const el = sideRef.current;
+    if (!el) return;
+    try { el.scrollTop = Number(sessionStorage.getItem('sidebar-scroll') || 0); } catch { /* storage blocked */ }
+    const active = el.querySelector('[aria-current="page"]') as HTMLElement | null;
+    if (active) {
+      const top = active.offsetTop, bottom = top + active.offsetHeight;
+      if (top < el.scrollTop || bottom > el.scrollTop + el.clientHeight) el.scrollTop = Math.max(0, top - el.clientHeight / 3);
+    }
+  }, []);
+  const saveSideScroll = () => { try { sessionStorage.setItem('sidebar-scroll', String(sideRef.current?.scrollTop || 0)); } catch { /* ignore */ } };
+
   const isActive = (href: string) => router.pathname === href || (href.startsWith('/control-tower/') && router.asPath.split('?')[0] === href);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   useEffect(() => {
@@ -142,7 +158,7 @@ export const MainLayout: React.FC<LayoutProps> = ({ children }) => {
   return (
     <div className="flex min-h-screen bg-gray-50 w-full max-w-full">
       {/* Sidebar */}
-      <aside className="w-64 shrink-0 bg-white shadow-lg sticky top-0 h-screen overflow-y-auto">
+      <aside ref={sideRef} onScroll={saveSideScroll} className="w-64 shrink-0 bg-white shadow-lg sticky top-0 h-screen overflow-y-auto">
         <div className="p-6 border-b">
           <img src="/logos/nootie.jpg" alt="nootie" className="h-12 w-auto -ml-1" />
           <p className="text-xs text-gray-500 mt-1 uppercase tracking-widest">PO Control Tower</p>
@@ -163,6 +179,7 @@ export const MainLayout: React.FC<LayoutProps> = ({ children }) => {
                   <Link
                     key={item.href}
                     href={item.href}
+                    aria-current={isActive(item.href) ? "page" : undefined}
                     className={'flex items-center gap-2.5 px-6 py-1.5 text-[14px] transition-colors ' + (isActive(item.href) ? 'bg-nootie-orange-light text-nootie-orange-dark border-r-4 border-nootie-orange font-medium' : 'text-gray-700 hover:bg-gray-50')}
                   >
                     {item.icon}
