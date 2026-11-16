@@ -1565,7 +1565,7 @@ Object.assign(UI,{
     return r.slice().sort(s==='old'?(a,b)=>(dk(a)<dk(b)?-1:dk(a)>dk(b)?1:0):s==='val'?(a,b)=>(b.value||0)-(a.value||0):s==='age'?(a,b)=>(b.age==null?-1:b.age)-(a.age==null?-1:a.age):(a,b)=>(dk(a)<dk(b)?1:dk(a)>dk(b)?-1:0));
   },
   v_register(){
-    const g=this.f.rg,P=this.f.plat,all=P==='ALL',PS=50;
+    const g=this.f.rg,P=this.f.plat,all=P==='ALL',PS=g.gap?1000:50;
     const r=this.regRows();const pages=Math.max(1,Math.ceil(r.length/PS));if(g.page>=pages)g.page=pages-1;
     const shown=r.slice(g.page*PS,g.page*PS+PS);
     const o=(cur,v,l)=>'<option value="'+esc(v)+'"'+(String(cur)===String(v)?' selected':'')+'>'+esc(l)+'</option>';
@@ -1574,7 +1574,7 @@ Object.assign(UI,{
     const body=shown.map(d=>'<tr class="click" data-act="po" data-arg="'+esc(d.po)+'"><td class="mono">'+esc(d.po)+'</td>'+(all?'<td>'+pn(d.plat)+'</td>':'')+'<td class="num">'+fd(d.date)+'</td><td>'+esc(d.loc)+'</td><td class="num">'+(d.exp?fd(d.exp):'')+'</td><td class="r num">'+(d.value?inr(d.value):'')+'</td><td><span class="tag '+TONE_STAGE[d.stage]+'">'+d.stage+'. '+esc(STAGES[d.stage-1].short)+'</span></td><td>'+esc(d.dec)+'</td><td>'+(d.pri?flagTag(d):'<span class="small">—</span>')+'</td><td class="r num">'+(d.inv.n||'')+'</td><td class="mono">'+esc(invCell(d).inv)+'</td><td class="num">'+fd(d.appt)+'</td><td class="num">'+esc(invCell(d).disp)+'</td><td class="num">'+esc(invCell(d).deliv)+'</td><td>'+esc(invCell(d).awb)+'</td><td class="mono">'+esc(invCell(d).grn)+'</td><td class="mono">'+esc(d.ewb||'')+'</td><td>'+esc(d.owner)+'</td></tr>').join('');
     const pager=pages>1?'<div class="toolbar" style="justify-content:center;margin-top:10px"><button class="btn sm" data-act="rgpage" data-arg="-1"'+(g.page?'':' disabled')+'>← Previous</button><span class="small">Page '+(g.page+1)+' of '+pages+'</span><button class="btn sm" data-act="rgpage" data-arg="1"'+(g.page<pages-1?'':' disabled')+'>Next →</button></div>':'';
     return '<div class="toolbar"><h2>All '+(all?'':esc(P)+' ')+'POs</h2><span class="small">Every PO in the period, with where it stands. Click a row for its full story.</span></div>'+
-      (g.gap?'<div class="gapnote">Showing POs that reached “'+esc(JSTEPS.filter(x=>x.k===g.gap)[0].name)+'” but not the next step <button class="btn sm" data-act="rgreset">Clear</button></div>':'')+'<div class="filters"><input type="text" id="rg-q" placeholder="Search PO number" value="'+esc(g.q)+'" aria-label="Search PO number">'+
+      (g.gap?'<div class="gapnote"><b>'+inr(r.length)+' POs</b> reached “'+esc(JSTEPS.filter(x=>x.k===g.gap)[0].name)+'” but not “'+esc((JSTEPS[JSTEPS.findIndex(x=>x.k===g.gap)+1]||{}).name||'')+'”. Only these are listed. <button class="btn sm" data-act="rgreset">Show all POs</button></div>':'')+'<div class="filters"><input type="text" id="rg-q" placeholder="Search PO number" value="'+esc(g.q)+'" aria-label="Search PO number">'+
       '<select id="rg-stage" aria-label="Stage">'+o(g.stage,'ALL','Any stage')+STAGES.map(s=>o(g.stage,s.n,s.n+'. '+s.name)).join('')+'</select>'+
       '<select id="rg-dec" aria-label="Decision">'+o(g.dec,'ALL','Any decision')+DECISIONS.map(x=>o(g.dec,x,x)).join('')+'</select>'+
       '<select id="rg-flag" aria-label="Problem">'+o(g.flag,'ALL','Any problem status')+o(g.flag,'ACT','Needs action now')+o(g.flag,'NONE','No problem')+FLAGS.slice(1).map(x=>o(g.flag,x.n,x.name)).join('')+'</select>'+
