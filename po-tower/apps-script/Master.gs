@@ -256,27 +256,32 @@ function cleanVal_(v, numeric) {
   return t;
 }
 
-// Something was typed on a platform tab: carry it back to MASTER (PO-level fields) or INVOICES (invoice-level fields), then the normal refresh redraws every tab.
+var INV_ALL_ = [24, 25, 26, 27, 28, 47, 48];   // MASTER columns that describe the whole PO: copied onto every invoice of it
+
+// Something was typed on MASTER or on a platform tab: carry it to where the data really lives (MASTER for PO details, INVOICES for dispatch and GRN), then the normal refresh redraws every tab.
 function platEdit_(e, name) {
   var ss = e.source || SpreadsheetApp.openById(MASTER_ID);
   var sh = ss.getSheetByName(name), master = ss.getSheetByName('MASTER'), inv = ss.getSheetByName('INVOICES');
+  var isMaster = name === 'MASTER';
   var r = e.range, r1 = r.getRow(), c1 = r.getColumn(), nr = r.getNumRows(), nc = r.getNumColumns();
-  if (r1 + nr - 1 < 3) return;                                   // title and header rows
-  var skip = r1 < 3 ? 3 - r1 : 0; r1 += skip; nr -= skip;
-  var vals = (e.value !== undefined && nr === 1 && nc === 1 && !skip) ? [[e.value]] : sh.getRange(r1, c1, nr, nc).getDisplayValues();
-  if (e.value === undefined && nr === 1 && nc === 1) vals = [['']];   // a single cell was cleared
+  if (r1 + nr - 1 < 3) return;
+  if (nr * nc > 800) { try { ss.toast('That is a large paste. Paste invoice, dispatch and GRN columns into the INVOICES tab so every row is carried across.', 'PO Control Tower', 10); } catch (x) {} return; }                                   // title and header rows
+  var skip = r1 < 3 ? 3 - r1 : 0, single = nr === 1 && nc === 1 && !skip;
+  r1 += skip; nr -= skip;
+  var vals = (e.value !== undefined && single) ? [[e.value]] : sh.getRange(r1, c1, nr, nc).getDisplayValues();
+  if (e.value === undefined && single) vals = [['']];            // a single cell was cleared
   var pos = sh.getRange(r1, 1, nr, 1).getDisplayValues();
   var mPos = readRange_(ss, 'MASTER!A3:A14000').map(function (x) { return normPo(x[0]); });
   var mRow = {}; mPos.forEach(function (p, i) { if (p && !mRow[p]) mRow[p] = i + 3; });
-  var iPos = readRange_(ss, 'INVOICES!B2:B14000').map(function (x) { return normPo(x[0]); });
-  var iRows = {}; iPos.forEach(function (p, i) { if (p) (iRows[p] = iRows[p] || []).push(i + 2); });
-  var notes = {}, appended = 0, nextRow = Math.max(mPos.length, master.getLastRow() - 2) + 3;
+  var iData = readRange_(ss, 'INVOICES!A2:AB14000');
+  var iRows = {}; iData.forEach(function (x, i) { var p = normPo(x[1]); if (p) (iRows[p] = iRows[p] || []).push(i + 2); });
+  var notes = {}, nextRow = Math.max(mPos.length, master.getLastRow() - 2) + 3;
   for (var i = 0; i < nr; i++) {
     var rawPo = String((c1 === 1 ? vals[i][0] : pos[i][0]) || '').trim(), po = normPo(rawPo);
     if (!po) continue;
-    var row = mRow[po];
-    if (!row) {                                                  // a PO typed that MASTER has never seen: add it
-      row = nextRow++; appended++; mRow[po] = row;
+    var row = isMaster ? r1 + i : mRow[po];
+    if (!row) {                                                  // a PO typed on a platform tab that MASTER has never seen: add it
+      row = nextRow++; mRow[po] = row;
       ensureCols_(master, MASTER_COLS_);
       if (master.getMaxRows() < row) master.insertRowsAfter(master.getMaxRows(), row - master.getMaxRows());
       var base = []; for (var k = 0; k < MASTER_COLS_; k++) base.push('');
@@ -285,18 +290,22 @@ function platEdit_(e, name) {
       master.getRange(row, 1, 1, MASTER_COLS_).setValues([base]);
     }
     for (var j = 0; j < nc; j++) {
-      var col = c1 + j, mc = PLAT_ORDER_[col - 1], h = MASTER_HEADERS_[mc - 1];
-      if (!mc || (c1 === 1 && col === 1)) continue;
+      var col = c1 + j, mc = isMaster ? col : PLAT_ORDER_[col - 1], h = MASTER_HEADERS_[mc - 1];
+      if (!mc || col === 1 && c1 === 1) continue;
+      var val = vals[i][j];
       if (EDIT_MAP_[h]) {
-        master.getRange(row, mc).setValue(cleanVal_(vals[i][j], MASTER_NUM_.indexOf(mc) >= 0));
+        if (!isMaster) master.getRange(row, mc).setValue(cleanVal_(val, MASTER_NUM_.indexOf(mc) >= 0));
       } else if (INV_MAP_[mc]) {
-        var list = iRows[po] || [];
-        if (list.length === 1) {
-          inv.getRange(list[0], INV_MAP_[mc]).setValue(cleanVal_(vals[i][j], [15, 16, 17, 18, 20, 21, 23, 26].indexOf(INV_MAP_[mc]) >= 0));
-        } else {
-          notes[h] = list.length ? po + ' has ' + list.length + ' invoices: enter ' + h + ' on the INVOICES tab' : po + ' has no invoice yet: add it on INVOICES';
+        var list = iRows[po] || [], ic = INV_MAP_[mc], put = cleanVal_(val, [15, 16, 17, 18, 20, 21, 23, 26].indexOf(ic) >= 0), targets = [];
+        if (list.length === 1) targets = list;
+        else if (list.length > 1 && INV_ALL_.indexOf(mc) >= 0) targets = list;
+        else if (list.length > 1) {                              // an amount or number for a PO with several invoices: use the one invoice that has none yet
+          targets = list.filter(function (x) { var cell = (iData[x - 2] || [])[ic - 1]; return cell === undefined || cell === ''; });
+          if (targets.length !== 1) targets = [];
         }
-      } else if (vals[i][j] !== '' || e.value === undefined) {
+        if (targets.length) targets.forEach(function (x) { inv.getRange(x, ic).setValue(put); });
+        else notes[h] = list.length ? po + ' has ' + list.length + ' invoices and ' + h + ' could belong to any of them: enter it on the INVOICES tab' : po + ' has no invoice yet: add it on INVOICES first';
+      } else if (val !== '' || e.value === undefined) {
         notes[h] = h + ' is calculated and cannot be typed';
       }
     }
@@ -310,7 +319,7 @@ function onSheetEdit(e) {
     var name = e && e.range ? e.range.getSheet().getName() : '';
     if (!LIVE_TABS_[name]) return;
     var props = PropertiesService.getScriptProperties();
-    if (PLAT_TABS_.indexOf(name) >= 0) {
+    if (PLAT_TABS_.indexOf(name) >= 0 || name === 'MASTER') {
       var lk = LockService.getScriptLock();
       lk.waitLock(25000);
       try { platEdit_(e, name); } finally { lk.releaseLock(); }
