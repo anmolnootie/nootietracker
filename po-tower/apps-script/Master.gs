@@ -256,6 +256,16 @@ function cleanVal_(v, numeric) {
   return t;
 }
 
+
+// Every typed change that is carried across (or refused) is noted on ACTIVITY, so "my entry disappeared" can be traced.
+var ACT_BUF_ = [];
+function actNote_(po, detail, who, plat) { ACT_BUF_.push([Utilities.formatDate(new Date(), 'Asia/Kolkata', 'yyyy-MM-dd HH:mm'), po, 'Sheet edit', detail, who || '', plat || '']); }
+function actFlush_(ss) {
+  if (!ACT_BUF_.length) return;
+  try { var sh = ss.getSheetByName('ACTIVITY'); if (sh) { var rows = ACT_BUF_.splice(0, 200); sh.getRange(sh.getLastRow() + 1, 1, rows.length, 6).setValues(rows); } } catch (x) { console.error('activity: ' + x); }
+  ACT_BUF_ = [];
+}
+
 var INV_ALL_ = [24, 25, 26, 27, 28, 47, 48];   // MASTER columns that describe the whole PO: copied onto every invoice of it
 
 // Something was typed on MASTER or on a platform tab: carry it to where the data really lives (MASTER for PO details, INVOICES for dispatch and GRN), then the normal refresh redraws every tab.
@@ -263,6 +273,7 @@ function platEdit_(e, name) {
   var ss = e.source || SpreadsheetApp.openById(MASTER_ID);
   var sh = ss.getSheetByName(name), master = ss.getSheetByName('MASTER'), inv = ss.getSheetByName('INVOICES');
   var isMaster = name === 'MASTER';
+  var who = ''; try { who = (e.user && e.user.getEmail()) || Session.getActiveUser().getEmail() || ''; } catch (x) {}
   var r = e.range, r1 = r.getRow(), c1 = r.getColumn(), nr = r.getNumRows(), nc = r.getNumColumns();
   if (r1 + nr - 1 < 3) return;
   if (nr * nc > 800) { try { ss.toast('That is a large paste. Paste invoice, dispatch and GRN columns into the INVOICES tab so every row is carried across.', 'PO Control Tower', 10); } catch (x) {} return; }                                   // title and header rows
@@ -295,6 +306,7 @@ function platEdit_(e, name) {
       var val = vals[i][j];
       if (EDIT_MAP_[h]) {
         if (!isMaster) master.getRange(row, mc).setValue(cleanVal_(val, MASTER_NUM_.indexOf(mc) >= 0));
+        actNote_(rawPo, name + ': ' + h + ' = ' + String(val).slice(0, 60) + ' (saved to MASTER)', who, '');
       } else if (INV_MAP_[mc]) {
         var list = iRows[po] || [], ic = INV_MAP_[mc], put = cleanVal_(val, [15, 16, 17, 18, 20, 21, 23, 26].indexOf(ic) >= 0), targets = [];
         if (list.length === 1) targets = list;
@@ -303,13 +315,15 @@ function platEdit_(e, name) {
           targets = list.filter(function (x) { var cell = (iData[x - 2] || [])[ic - 1]; return cell === undefined || cell === ''; });
           if (targets.length !== 1) targets = [];
         }
-        if (targets.length) targets.forEach(function (x) { inv.getRange(x, ic).setValue(put); });
-        else notes[h] = list.length ? po + ' has ' + list.length + ' invoices and ' + h + ' could belong to any of them: enter it on the INVOICES tab' : po + ' has no invoice yet: add it on INVOICES first';
+        if (targets.length) { targets.forEach(function (x) { inv.getRange(x, ic).setValue(put); }); actNote_(rawPo, name + ': ' + h + ' = ' + String(val).slice(0, 60) + ' (saved to ' + targets.length + ' invoice' + (targets.length > 1 ? 's' : '') + ')', who, ''); }
+        else { actNote_(rawPo, name + ': ' + h + ' = ' + String(val).slice(0, 60) + ' NOT SAVED (could be any of ' + list.length + ' invoices)', who, ''); }
+        if (!targets.length) notes[h] = list.length ? po + ' has ' + list.length + ' invoices and ' + h + ' could belong to any of them: enter it on the INVOICES tab' : po + ' has no invoice yet: add it on INVOICES first';
       } else if (val !== '' || e.value === undefined) {
-        notes[h] = h + ' is calculated and cannot be typed';
+        notes[h] = h + ' is calculated and cannot be typed'; actNote_(rawPo, name + ': ' + h + ' = ' + String(val).slice(0, 60) + ' NOT SAVED (calculated column)', who, '');
       }
     }
   }
+  actFlush_(ss);
   var msgs = Object.keys(notes).slice(0, 3).map(function (k) { return notes[k]; });
   if (msgs.length) { try { ss.toast(msgs.join('. ') + '. It will go back to the calculated value.', 'PO Control Tower', 8); } catch (x) {} }
 }
@@ -332,7 +346,7 @@ function onSheetEdit(e) {
       if (r && r.skipped) continue;                                       // rows moved while it was calculating: go round again
       if (props.getProperty('DIRTY_AT') === seen) return;                 // nothing newer arrived while we worked
     }
-  } catch (err) { console.error('onSheetEdit: ' + err); }
+  } catch (err) { console.error('onSheetEdit: ' + err); try { actNote_('', 'FAILED on ' + name + ': ' + err, '', ''); actFlush_(e.source || SpreadsheetApp.openById(MASTER_ID)); } catch (x2) {} }
 }
 function setupInstantRefresh() {
   ScriptApp.getProjectTriggers().forEach(function (t) { if (t.getHandlerFunction() === 'onSheetEdit') ScriptApp.deleteTrigger(t); });
