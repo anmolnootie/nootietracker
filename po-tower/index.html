@@ -505,6 +505,38 @@ th{background:#fbf6f0}
 .icat.nest .icat>summary{padding:8px 0}
 .icard .ihd{margin:6px 0 0;padding:6px 0 0}
 
+/* ---- calm drawer ---- */
+.secs{display:flex;flex-direction:column;gap:10px}
+.sec{background:var(--surface2);border-radius:16px;padding:0 4px}
+.sec>summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:10px;padding:14px 14px}
+.sec>summary::-webkit-details-marker,.more>summary::-webkit-details-marker{display:none}
+.sec>summary b{font-weight:600;font-size:15px;color:var(--ink)}
+.sec .peek,.more .peek,.invt .peek{margin-left:auto;color:var(--ink3);font-size:12.5px;font-weight:400;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:55%}
+.sec .chev,.more .chev{display:inline-block;width:16px;text-align:center;color:var(--ink3);font-size:12px;transition:transform .15s;transform:rotate(-90deg)}
+.sec[open]>summary .chev,.more[open]>summary .chev{transform:none}
+.secb{padding:2px 14px 16px}
+.sec .form{gap:12px 14px}
+.sec .form label{font-weight:500;font-size:12px;color:var(--ink3);gap:5px}
+.sec .form input,.sec .form select,.sec .form textarea{border:1px solid transparent;background:var(--surface);border-radius:10px;min-height:38px;padding:8px 11px;font-size:14px;color:var(--ink);box-shadow:0 0 0 1px rgba(60,35,15,.06)}
+.sec .form input:focus,.sec .form select:focus,.sec .form textarea:focus{outline:none;box-shadow:0 0 0 2px var(--accent)}
+.sec .form textarea{min-height:64px}
+.sec .dline .btn{border:0;background:transparent;color:var(--accent);padding:0 6px;font-weight:600;box-shadow:none}
+.grp{margin-top:16px}.grp:first-child{margin-top:4px}
+.grp .gt{font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--ink3);font-weight:600;margin:0 0 8px}
+.inv{padding:12px 0 4px}.inv+.inv,.inv+.more{border-top:1px solid rgba(60,35,15,.08);margin-top:6px}
+.invt{display:flex;align-items:center;gap:10px;margin-bottom:6px}
+.invt .mono{font-size:13.5px;font-weight:600}
+.more{margin-top:14px}
+.more>summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:8px;color:var(--accent);font-weight:600;font-size:13px;padding:6px 0}
+.more>summary .peek{color:var(--ink3);font-weight:400}
+.savebar{position:sticky;bottom:-1px;background:var(--surface);padding:14px 0 6px;margin:6px 0 0;border:0;box-shadow:0 -10px 14px -10px rgba(60,35,15,.12);z-index:2;display:flex;gap:8px}
+.sec .form{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+.sec .form label{min-width:0}
+.sec .dline{display:flex;align-items:center;gap:2px;min-width:0}
+.sec .dline input{flex:1;min-width:0}
+.sec .dline .btn{flex:none}
+@media (max-width:640px){.sec .form{grid-template-columns:minmax(0,1fr)}}
+
 .keyov{position:fixed;inset:0;background:rgba(32,26,23,.55);display:grid;place-items:center;z-index:200}
 .keybox{background:#fff;border-radius:18px;padding:26px;width:min(380px,92vw);display:flex;flex-direction:column;gap:12px;box-shadow:0 20px 60px rgba(0,0,0,.3)}
 .keybox h2{font-size:20px}.keybox p{margin:0;color:var(--ink2)}.keybox input{height:42px;border:1px solid var(--line);border-radius:10px;padding:0 12px}
@@ -1361,20 +1393,24 @@ const UI={
       const p=x.pri,delivered=a.deliv>0;const lastDeliv=a.list.map(l=>l.deliv).filter(Boolean).sort().pop();
       const steps=this.poSteps(x);
       const T=(id,v,cl)=>'<input type="text" id="'+id+'"'+(cl?' class="'+cl+'"':'')+' value="'+esc(v==null?'':v)+'">',N=(id,v)=>'<input type="number" id="'+id+'" min="0" step="any" value="'+esc(v==null?'':v)+'">';
-      const cat=(title,peek,body,open,raw)=>'<details class="icat'+(raw?' nest':'')+'"'+(open?' open':'')+'><summary><span class="chev" aria-hidden="true">▾</span><b>'+title+'</b><span class="small">'+peek+'</span></summary>'+(raw?'<div>'+body+'</div>':'<div class="form">'+body+'</div>')+'</details>';
-      const invCats=(l,p,isNew)=>{const P=k=>p+'-'+k;return ''+
-        cat('Dispatch',esc([l.status,fd(l.disp)==='-'?'':fd(l.disp)].filter(Boolean).join(' · ')),(isNew?'<label>Invoice no.'+T(P('inv'),'','mono')+'</label>':'')+'<label>Invoice value ₹'+N(P('val'),l.val)+'</label><label>Dispatch date'+this.dateField(P('disp'),l.disp)+'</label><label>Dispatch status'+this.sel(P('status'),['Dispatched','In Transit','Arrived','Delivered','RTO'],l.status||'Dispatched')+'</label><label>Delivery partner'+T(P('partner'),l.partner)+'</label><label>AWB / vehicle no.'+T(P('awb'),l.awb,'mono')+'</label><label>Facility / hub'+T(P('loc'),l.loc)+'</label>',true)+
-        cat('Delivery',esc(l.deliv?'Delivered '+fd(l.deliv):''),'<label>Delivered on'+this.dateField(P('deliv'),l.deliv)+'</label>',false)+
-        cat('GRN',esc((l.grn||'')+(l.gamt?' · ₹'+inr(Math.round(l.gamt)):'')),'<label>GRN no.'+T(P('gno'),l.gno,'mono')+'</label><label>GRN date'+this.dateField(P('gdate'),l.gdate)+'</label><label>GRN amount ₹'+N(P('gamt'),l.gamt)+'</label>',true)+
-        cat('Short, damaged and excess',esc([l.sv?'short ₹'+inr(Math.round(l.sv)):'',l.dv?'damaged ₹'+inr(Math.round(l.dv)):'',l.ev?'excess ₹'+inr(Math.round(l.ev)):''].filter(Boolean).join(' · ')),'<label>Short qty'+N(P('sq'),l.sq)+'</label><label>Short value ₹'+N(P('sv'),l.sv)+'</label><label>Damage qty'+N(P('dq'),l.dq)+'</label><label>Damage value ₹ (worked out when GRN amount is filled)'+N(P('dv'),l.dv)+'</label><label>Excess qty'+N(P('eq'),l.eq)+'</label><label>Excess value ₹'+N(P('ev'),l.ev)+'</label>',false)+
-        cat('Credit note and RTO',esc([l.cn?'CN '+l.cn:'',l.rto?'RTO ₹'+inr(Math.round(l.rto)):''].filter(Boolean).join(' · ')),'<label>Credit note no.'+T(P('cn'),l.cn)+'</label><label>Credit note value ₹'+N(P('cnv'),l.cnv)+'</label><label>Goods received back through RTO ₹'+N(P('rto'),l.rto)+'</label>',false)+
-        cat('Invoice remarks',esc((l.gnote||l.comment||'').slice(0,50)),'<label class="full">GRN remarks<textarea id="'+P('gnote')+'">'+esc(l.gnote||'')+'</textarea></label><label class="full">Warehouse comment<textarea id="'+P('comment')+'">'+esc(l.comment||'')+'</textarea></label>',false);};
+      const cat=(title,peek,body,open,raw)=>'<details class="sec"'+(open?' open':'')+'><summary><span class="chev" aria-hidden="true">▾</span><b>'+title+'</b><span class="peek">'+peek+'</span></summary>'+(raw?'<div class="secb">'+body+'</div>':'<div class="secb"><div class="form">'+body+'</div></div>')+'</details>';
+      const grp=(t,body)=>'<div class="grp"><div class="gt">'+t+'</div><div class="form">'+body+'</div></div>';
+      const invCats=(l,p,isNew)=>{const P=k=>p+'-'+k;
+        const more=esc([l.sv?'short ₹'+inr(Math.round(l.sv)):'',l.dv?'damaged ₹'+inr(Math.round(l.dv)):'',l.ev?'excess ₹'+inr(Math.round(l.ev)):'',l.cn?'CN '+l.cn:'',l.rto?'RTO ₹'+inr(Math.round(l.rto)):''].filter(Boolean).join(' · '));
+        return ''+
+        grp('Dispatch',(isNew?'<label class="full">Invoice no.'+T(P('inv'),'','mono')+'</label>':'')+'<label>Invoice value ₹'+N(P('val'),l.val)+'</label><label>Dispatch date'+this.dateField(P('disp'),l.disp)+'</label><label>Status'+this.sel(P('status'),['Dispatched','In Transit','Arrived','Delivered','RTO'],l.status||'Dispatched')+'</label><label>Delivery partner'+T(P('partner'),l.partner)+'</label><label>AWB / vehicle no.'+T(P('awb'),l.awb,'mono')+'</label><label>Facility / hub'+T(P('loc'),l.loc)+'</label>')+
+        grp('Delivery and GRN','<label>Delivered on'+this.dateField(P('deliv'),l.deliv)+'</label><label>GRN no.'+T(P('gno'),l.gno,'mono')+'</label><label>GRN date'+this.dateField(P('gdate'),l.gdate)+'</label><label>GRN amount ₹'+N(P('gamt'),l.gamt)+'</label>')+
+        '<details class="more"><summary><span class="chev" aria-hidden="true">▾</span>Shortage, damage, credit note, remarks<span class="peek">'+more+'</span></summary>'+
+        grp('Short, damaged and excess','<label>Short qty'+N(P('sq'),l.sq)+'</label><label>Short value ₹'+N(P('sv'),l.sv)+'</label><label>Damage qty'+N(P('dq'),l.dq)+'</label><label>Damage value ₹'+N(P('dv'),l.dv)+'</label><label>Excess qty'+N(P('eq'),l.eq)+'</label><label>Excess value ₹'+N(P('ev'),l.ev)+'</label>')+
+        grp('Credit note and RTO','<label>Credit note no.'+T(P('cn'),l.cn)+'</label><label>Credit note value ₹'+N(P('cnv'),l.cnv)+'</label><label>Goods back through RTO ₹'+N(P('rto'),l.rto)+'</label>')+
+        grp('Remarks','<label class="full">GRN remarks<textarea id="'+P('gnote')+'">'+esc(l.gnote||'')+'</textarea></label><label class="full">Warehouse comment<textarea id="'+P('comment')+'">'+esc(l.comment||'')+'</textarea></label>')+
+        '</details>';};
       const blankL={po:x.po,chan:x.plat,loc:x.loc,status:'Dispatched'};
-      const inv=a.list.map((l,i)=>'<div class="icard"><div class="ihd"><span class="mono" style="font-size:14px">Invoice '+esc(l.inv)+'</span> <span class="small">· ₹'+inr(Math.round(l.val||0))+'</span></div>'+invCats(l,'v'+i)+'</div>').join('')+(a.list.length?cat('Add another invoice','',invCats(blankL,'vn',true),false,true):'<div class="icard"><div class="ihd small">No invoice yet. Fill in the invoice number below to add one when you save.</div>'+invCats(blankL,'vn',true)+'</div>');
+      const inv=a.list.map((l,i)=>'<div class="inv"><div class="invt"><span class="mono">'+esc(l.inv)+'</span><span class="peek">₹'+inr(Math.round(l.val||0))+(l.status?' · '+esc(l.status):'')+'</span></div>'+invCats(l,'v'+i)+'</div>').join('')+(a.list.length?'<details class="more addmore"><summary><span class="chev" aria-hidden="true">▾</span>Add another invoice</summary><div class="inv">'+invCats(blankL,'vn',true)+'</div></details>':'<div class="inv"><div class="invt"><span class="peek">No invoice yet. Fill in the invoice number to add one when you save.</span></div>'+invCats(blankL,'vn',true)+'</div>');
       const iss=S.issues.filter(i=>i.po===x.po);const hist=S.act.filter(r=>r.po===x.po).slice(-8).reverse();
       h='<div class="hd"><div><div class="mono" style="font-size:16px">'+esc(x.po)+'</div><div class="small">'+pn(x.plat)+(x.loc?' · '+esc(x.loc):'')+' · '+(x.value?money(x.value):'no value')+(x.qty?' · '+inr(x.qty)+' units':'')+'</div><div style="margin-top:6px"><span class="tag '+TONE_STAGE[x.stage]+'">Stage '+x.stage+': '+esc(STAGES[x.stage-1].name)+'</span> '+flagTag(x)+'</div></div><button class="btn sm" data-act="close" aria-label="Close">Close</button></div>'+
         '<div class="bd">'+(x.pri?'<div class="banner" style="margin:0"><b>'+esc(FLAGS[x.pri].team)+':</b> '+esc(FLAGS[x.pri].act)+'</div>':'')+steps+
-        '<div><h3 style="margin:0 0 8px">Everything on this PO</h3>'+
+        '<div class="secs">'+
         cat('Update this PO',esc(x.dec||''),'<label>Decision'+this.sel('e-dec',DECISIONS,x.dec)+'</label><label>Reason'+this.sel('e-reason',REASONS,x.reason,'—')+'</label><label>Accepted on'+this.dateField('e-printout',x.printout)+'</label><label>E-way bill no.<input type="text" id="e-ewb" class="mono" value="'+esc(x.ewb)+'"></label><label>Appointment date'+this.dateField('e-mAppt',c2.mAppt||x.appt)+'</label><label>Owner<input type="text" id="e-owner" value="'+esc(x.owner)+'"></label>',true)+
         cat('PO details',esc([x.plat,x.qty?inr(x.qty)+' units':'',x.value?money(x.value):''].filter(Boolean).join(' · ')),'<label>Platform'+this.sel('e-plat',PLATS,x.plat)+'</label><label>PO date'+this.dateField('e-date',x.orderDate)+'</label><label>PO expiry'+this.dateField('e-exp',x.exp)+'</label><label>Facility / hub<input type="text" id="e-loc" value="'+esc(x.loc)+'"></label><label>Quantity<input type="number" id="e-qty" min="0" value="'+esc(x.qty==null?'':x.qty)+'"></label><label>PO value ₹<input type="number" id="e-amt" min="0" value="'+esc(x.amt==null?'':x.amt)+'"></label>',false)+
         cat('Invoices, delivery and GRN',esc(a.list.length?a.list.length+' invoice'+(a.list.length>1?'s':''):'none yet'),inv,true,true)+
