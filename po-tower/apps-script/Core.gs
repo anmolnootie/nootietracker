@@ -230,7 +230,7 @@ function indexInvoices(I,cfg,asof){
     a.n++;a.val+=l.val||0;a.list.push(l);
     if(l.disp){if(!a.first||l.disp<a.first)a.first=l.disp;if(!a.last||l.disp>a.last)a.last=l.disp;}
     const s=l.status;
-    if(s==='Dispatched'||s==='In Transit')a.transit++;else if(s==='Delivered'||s==='Arrived')a.deliv++;else if(s==='RTO')a.rto++;
+    if(s==='Dispatched'||s==='In Transit'||s==='Arrived')a.transit++;else if(s==='Delivered')a.deliv++;else if(s==='RTO')a.rto++;
     if(l.grn==='Pending')a.grnP++;
     const loss=l.gapAuto?(l.dv||0):(l.sv||0)+(l.dv||0);a.loss+=loss;
     const days=l.disp?diff(asof,l.disp):null;
@@ -360,7 +360,7 @@ function parseInvoiceRows(rows){
   rows.forEach((r,i)=>{
     const po=normPo(cell(r,1));if(!po)return;
     const g=k=>cell(r,k).trim();
-    let st=g(8);st=st?st.toLowerCase().replace(/\b\w/g,c=>c.toUpperCase()):'';if(st==='Rto')st='RTO';if(st==='Arrived')st='Delivered';   // Arrived means it reached the platform: same as Delivered
+    let st=g(8);st=st?st.toLowerCase().replace(/\b\w/g,c=>c.toUpperCase()):'';if(st==='Rto')st='RTO';
     const gamt=num(g(14));let grn=g(11);
     if(st!=='RTO'&&st!=='Delivered'&&(pdate(g(9))||gamt!=null||g(12)||pdate(g(13))))st='Delivered';   // a delivery date or any GRN detail means it was delivered
     if(st==='RTO')grn='NA';else if(gamt!=null||g(12)||pdate(g(13)))grn='Done';else if(!grn&&st==='Delivered')grn='Pending';
