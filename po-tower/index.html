@@ -1311,7 +1311,7 @@ const UI={
   v_settings(){
     const names={sla_decision:'Decision SLA (days)',sla_handover:'Handover SLA (days)',sla_ack:'Warehouse acknowledgement SLA (days)',sla_dispatch:'Dispatch SLA from PO date (days)',expiry_warn:'Expiry warning (days)',sla_transit:'Transit overdue (days)',sla_grn:'GRN pending after dispatch (days)',legacy_days:'Legacy backlog after (days)',cn_days:'Credit-note window (days)'};
     const link=id=>'https://docs.google.com/spreadsheets/d/'+id+'/edit';
-    return '<div class="grid g2"><section class="card"><h2>Rules and deadlines</h2><div class="sub">Every flag in the app reads these. Saved to the Settings tab of the tracking sheet.</div><div class="form">'+Object.keys(names).map(k=>'<label>'+names[k]+'<input type="number" min="0" id="cfg-'+k+'" value="'+S.cfg[k]+'"></label>').join('')+'</div><p><button class="btn pri" data-act="savecfg">Save rules</button></p></section>'+
+    return '<div class="grid g2"><section class="card"><h2>Rules and deadlines</h2><div class="sub">Every flag in the app reads these. Saved to the SETTINGS tab of the MASTER sheet.</div><div class="form">'+Object.keys(names).map(k=>'<label>'+names[k]+'<input type="number" min="0" id="cfg-'+k+'" value="'+S.cfg[k]+'"></label>').join('')+'</div><p><button class="btn pri" data-act="savecfg">Save rules</button></p></section>'+
       '<section class="card"><h2>Connection</h2><div class="sub">'+(S.mode==='live'?'Connected to Google Sheets.':'Not connected. The app is showing its saved snapshot.')+'</div>'+
       '<dl class="kv"><dt>Access</dt><dd>'+(S.edit?'Editing as <b>'+esc(S.user)+'</b>':'View only')+'</dd><dt>Data</dt><dd class="links"><a href="'+link(TRK_ID)+'" target="_blank" rel="noopener">PO Control Tower - MASTER</a> (the only sheet: the app and the team both read and write it)</dd>'+(S.counts.pos?'<dt>Last read</dt><dd>'+S.counts.pos+' POs, '+S.counts.invoices+' invoices</dd>':'')+'</dl>'+
       '<p><button class="btn" data-act="reload"'+(S.busy?' disabled':'')+'>Reconnect and reload</button></p><div class="small">'+S.diag.map(esc).join('<br>')+'</div></section></div>'+
@@ -1956,7 +1956,7 @@ recompute();UI.render();
   const ok=await loadLive();
   if(S.mode==='live'&&S.pinHash&&!S.pinInSheet)savePin(S.pinHash);
   if(window.setEditPin&&S.mode==='live'){
-    if(S.edit){try{const r=await sheets('login',{spreadsheetId:TRK_ID});if(r&&r.ok&&r.role){S.role=r.role;try{sessionStorage.setItem('potower_role',r.role);}catch(e){}}else if(r&&r.ok){S.diag.push('The Apps Script is an old version (no access levels). Paste the latest Code.gs and deploy a new version.');}}catch(e){}}
+    if(S.edit){try{const r=await sheets('login',{spreadsheetId:TRK_ID});if(!r||!r.ok){S.edit=false;S.role='';S.user=S.user;try{sessionStorage.removeItem('potower_edit');sessionStorage.removeItem('potower_role');}catch(e){}S.diag.push('Your editing session ended when the page reloaded. Unlock editing again with your name and PIN.');}else if(r.role){S.role=r.role;try{sessionStorage.setItem('potower_role',r.role);}catch(e){}}else{S.diag.push('The Apps Script is an old version (no access levels). Paste the latest Code.gs and deploy a new version.');}}catch(e){}}
     loadUsers();
   }
   if(ok&&local&&local.trk){
