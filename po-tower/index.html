@@ -1208,7 +1208,13 @@ const UI={
       '<section class="card"><h2>Connection</h2><div class="sub">'+(S.mode==='live'?'Connected to Google Sheets.':'Not connected. The app is showing its saved snapshot.')+'</div>'+
       '<dl class="kv"><dt>Access</dt><dd>'+(S.edit?'Editing as <b>'+esc(S.user)+'</b>':'View only')+'</dd><dt>Reads from</dt><dd class="links"><a href="'+link(SRC_ID)+'" target="_blank" rel="noopener">Warehouse Master FY2627</a> (read only)</dd><dt>Writes to</dt><dd class="links"><a href="'+link(TRK_ID)+'" target="_blank" rel="noopener">PO Control Tower - Tracking</a></dd>'+(S.counts.pos?'<dt>Last read</dt><dd>'+S.counts.pos+' POs, '+S.counts.invoices+' invoices</dd>':'')+'</dl>'+
       '<p><button class="btn" data-act="reload"'+(S.busy?' disabled':'')+'>Reconnect and reload</button></p><div class="small">'+S.diag.map(esc).join('<br>')+'</div></section></div>'+
-      '<section class="card" style="margin-top:12px"><h2>Who can edit</h2><div class="sub">The app opens in view-only mode for everyone. An editor unlocks it with a name and PIN, and every change is logged under that name.</div>'+(S.edit?'<div class="form"><label>New editor PIN<input type="password" id="new-pin" autocomplete="off" placeholder="At least 4 characters"></label></div><p><button class="btn" data-act="savepin">Change PIN</button></p>':'<p><button class="btn pri" data-act="unlock">Unlock editing</button></p>')+'<div class="small">The PIN stops accidental edits. For a hard lock, share the tracking sheet with the checker as Viewer in Google Sheets.</div></section>'+
+      '<section class="card" style="margin-top:12px"><h2>Who can edit</h2><div class="sub">The app opens in view-only mode for everyone. Each editor unlocks it with their own name and PIN, and every change is logged under that name.</div>'+
+      (window.setEditPin&&S.mode==='live'?(S.edit&&S.role==='admin'?
+        '<table class="tbl" style="margin:8px 0"><thead><tr><th>Name</th><th>Role</th><th>Access</th><th></th></tr></thead><tbody>'+((S.users||[]).map(x=>'<tr><td>'+esc(x.name)+'</td><td>'+esc(x.role)+'</td><td>'+(x.active?'On':'Off')+'</td><td><button class="btn sm" data-act="useractive" data-arg="'+esc(x.name)+'">'+(x.active?'Switch off':'Switch on')+'</button></td></tr>').join('')||'<tr><td colspan="4" class="small">No one yet. Add the first person below.</td></tr>')+'</tbody></table>'+
+        '<div class="form"><label>Name<input type="text" id="nu-name" autocomplete="off" placeholder="e.g. Puneet"></label><label>PIN<input type="password" id="nu-pin" autocomplete="off" placeholder="At least 4 characters"></label><label>Role<select id="nu-role"><option value="editor">Editor</option><option value="admin">Admin (can manage people)</option></select></label></div><p><button class="btn pri" data-act="usersave">Add person or set a new PIN</button></p><div class="small">To change someone\'s PIN, type their name again with the new PIN. Switching someone off keeps their history.</div>'
+        :(S.edit?'<div class="small">Editing as <b>'+esc(S.user)+'</b>. Ask an admin to add people or change PINs.</div>':'<p><button class="btn pri" data-act="unlock">Unlock editing</button></p>'))
+      :(S.edit?'<div class="form"><label>New editor PIN<input type="password" id="new-pin" autocomplete="off" placeholder="At least 4 characters"></label></div><p><button class="btn" data-act="savepin">Change PIN</button></p>':'<p><button class="btn pri" data-act="unlock">Unlock editing</button></p>'))+
+      '<div class="small">The PIN stops accidental edits. For a hard lock, share the tracking sheet with the checker as Viewer in Google Sheets.</div></section>'+
       '<section class="card" style="margin-top:12px"><h2>How the app decides</h2><div class="sub">Plain-language rules</div><ul style="margin:0;padding-left:18px;line-height:1.7"><li>A PO with an invoice in DISPATCH + GRN counts as accepted and dispatched. Delivery and GRN come from the same row.</li><li>A PO with no invoice stays open until someone sets it to Declined, Cancelled or Expired with a reason. Nothing disappears silently.</li><li>Accepted POs must be handed to the warehouse, acknowledged, then dispatched within the SLAs above, or they show on the Worklist.</li><li>Your Warehouse Master is never edited. Everything entered here goes to the tracking sheet.</li></ul></section>';
   },
   /* ---------- DRAWER ---------- */
@@ -1406,10 +1412,10 @@ Object.assign(UI,{
   },
   /* ---------- editor access ---------- */
   unlockHtml(){
-    const first=!S.pinHash;
-    return '<div class="hd"><div><h2>'+(first?'Set up editing':'Unlock editing')+'</h2><div class="small">'+(first?'Choose a PIN for editors. Anyone who has it can change POs. Everyone else can only look.':'Enter your name and the editor PIN. Your name is saved with every change you make.')+'</div></div><button class="btn sm" data-act="close">Close</button></div>'+
-      '<div class="bd"><div class="form"><label class="full">Your name<input type="text" id="u-name" value="'+esc(S.user)+'" autocomplete="off"></label><label class="full">Editor PIN<input type="password" id="u-pin" autocomplete="off" placeholder="'+(first?'At least 4 characters':'')+'"></label>'+(first?'<label class="full">Repeat PIN<input type="password" id="u-pin2" autocomplete="off"></label>':'')+'</div>'+
-      '<p><button class="btn pri" data-act="dounlock">'+(first?'Save PIN and start editing':'Unlock')+'</button></p>'+(first?'':'<p class="small">Forgot the PIN? Ask the person who set it. They can change it from Settings while editing.</p>')+'</div>';
+    const first=!S.pinHash&&!(S.users&&S.users.length);
+    return '<div class="hd"><div><h2>'+(first?'Set up editing':'Unlock editing')+'</h2><div class="small">'+(first?'Choose a PIN for editors. Anyone who has it can change POs. Everyone else can only look.':'Enter your name and your own PIN. Your name is saved with every change you make.')+'</div></div><button class="btn sm" data-act="close">Close</button></div>'+
+      '<div class="bd"><div class="form"><label class="full">Your name<input type="text" id="u-name" value="'+esc(S.user)+'" autocomplete="off"'+(S.users&&S.users.length?' list="u-names"':'')+'></label>'+(S.users&&S.users.length?'<datalist id="u-names">'+S.users.filter(u=>u.active).map(u=>'<option value="'+esc(u.name)+'">').join('')+'</datalist>':'')+'<label class="full">Editor PIN<input type="password" id="u-pin" autocomplete="off" placeholder="'+(first?'At least 4 characters':'')+'"></label>'+(first?'<label class="full">Repeat PIN<input type="password" id="u-pin2" autocomplete="off"></label>':'')+'</div>'+
+      '<p><button class="btn pri" data-act="dounlock">'+(first?'Save PIN and start editing':'Unlock')+'</button></p>'+(first?'':'<p class="small">Forgot your PIN? Ask an admin to set a new one from Settings.</p>')+'</div>';
   }
 });
 (function(){
@@ -1532,8 +1538,8 @@ Object.assign(UI,{
 (function(){
   if(typeof claude!=='undefined'&&claude.use)return;            // running inside Claude: nothing to do
   const CFG=window.PO_CONFIG||{};
-  let pinSent='';try{pinSent=sessionStorage.getItem('potower_pin_raw')||'';}catch(e){}
-  window.setEditPin=function(p){pinSent=p||'';try{if(p)sessionStorage.setItem('potower_pin_raw',p);else sessionStorage.removeItem('potower_pin_raw');}catch(e){}};
+  let pinSent='',pinUser='';try{pinSent=sessionStorage.getItem('potower_pin_raw')||'';pinUser=sessionStorage.getItem('potower_pin_user')||'';}catch(e){}
+  window.setEditPin=function(p,u){pinSent=p||'';pinUser=p?(u==null?pinUser:u):'';try{if(p){sessionStorage.setItem('potower_pin_raw',p);sessionStorage.setItem('potower_pin_user',pinUser);}else{sessionStorage.removeItem('potower_pin_raw');sessionStorage.removeItem('potower_pin_user');}}catch(e){}};
   const KEYNAME='potower_viewkey';
   let pendingKey=null;
   function askKey(msg){
@@ -1551,7 +1557,7 @@ Object.assign(UI,{
     if(!CFG.backend)throw new Error('The website is not connected yet: set the backend URL in config.js');
     let key='';try{key=localStorage.getItem(KEYNAME)||'';}catch(e){}
     if(!key)key=await askKey();
-    const body={key,tool,args,pin:pinSent};
+    const body={key,tool,args,pin:pinSent,user:pinUser};
     const r=await fetch(CFG.backend,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(body)});
     const j=await r.json();
     if(j&&j.error==='unauthorized'){try{if(localStorage.getItem(KEYNAME)===key)localStorage.removeItem(KEYNAME);}catch(e){}await askKey('That key did not work. Try again.');return call(tool,args,false);}
@@ -1631,14 +1637,17 @@ function readIssue(base){
 function copyText(txt){
   try{navigator.clipboard.writeText(txt).then(()=>UI.toast('Copied. Paste into Sheets or Excel.'),()=>UI.toast('Copy was blocked by the browser.',true));}catch(e){UI.toast('Copy was blocked by the browser.',true);}
 }
+async function loadUsers(){try{const r=await sheets('user_list',{spreadsheetId:TRK_ID});S.users=r.users||[];}catch(e){S.users=S.users||[];}try{UI.render();}catch(e){}}
 async function doUnlock(){
-  const name=val('u-name'),pin=val('u-pin');
+  let name=val('u-name');const pin=val('u-pin');
   if(!name){UI.toast('Enter your name.',true);return;}
-  if(!S.pinHash){const p2=val('u-pin2');if(pin.length<4){UI.toast('The PIN needs at least 4 characters.',true);return;}if(pin!==p2){UI.toast('The two PINs do not match.',true);return;}savePin(await sha(pin));if(window.setEditPin)window.setEditPin(pin);}
-  else if(window.setEditPin&&S.mode==='live'){            // website: the server checks the PIN, the hash never leaves it
-    window.setEditPin(pin);
-    let ok=false;try{const r=await sheets('verify_pin',{spreadsheetId:TRK_ID});ok=!!(r&&r.ok);}catch(e){UI.toast('Could not check the PIN: '+e.message,true);window.setEditPin('');return;}
-    if(!ok){window.setEditPin('');UI.toast('Wrong PIN.',true);return;}
+  if(!S.pinHash){const p2=val('u-pin2');if(pin.length<4){UI.toast('The PIN needs at least 4 characters.',true);return;}if(pin!==p2){UI.toast('The two PINs do not match.',true);return;}savePin(await sha(pin));if(window.setEditPin){window.setEditPin(pin,name);S.role='admin';try{sessionStorage.setItem('potower_role','admin');}catch(e){}}}
+  else if(window.setEditPin&&S.mode==='live'){            // website: the server checks name + PIN, nothing secret is stored in the browser
+    window.setEditPin(pin,name);
+    let r=null;try{r=await sheets('login',{spreadsheetId:TRK_ID});}catch(e){UI.toast('Could not check the PIN: '+e.message,true);window.setEditPin('');return;}
+    if(!r||!r.ok){window.setEditPin('');UI.toast('Wrong name or PIN.',true);return;}
+    S.role=r.role||'editor';try{sessionStorage.setItem('potower_role',S.role);}catch(e){}
+    name=r.name||name;window.setEditPin(pin,name);
   }
   else if((await sha(pin))!==S.pinHash){UI.toast('Wrong PIN.',true);return;}
   S.edit=true;S.user=name;lsSet('potower_user',name);try{sessionStorage.setItem('potower_edit',name);}catch(e){}
@@ -1663,7 +1672,11 @@ function actionClick(act,arg,el){
     case 'copyreg':{const r=UI.regRows();copyText(['PO\tPlatform\tPO date\tFacility\tExpiry\tValue\tStage\tDecision\tProblem\tInvoices\tInvoice Nos\tAppointment\tDispatched\tDelivered\tPartner / AWB\tGRN Nos\tE-way Bill\tOwner'].concat(r.map(d=>[d.po,d.plat,d.date||'',d.loc,d.exp||'',Math.round(d.value||0),STAGES[d.stage-1].name,d.dec,d.pri?FLAGS[d.pri].name:'',d.inv.n||'',invCell(d).inv,d.appt||'',invCell(d).disp,invCell(d).deliv,invCell(d).awb,invCell(d).grn,d.ewb||'',d.owner].join('\t'))).join('\n'));break;}
     case 'unlock':UI.openDrawer({type:'unlock',back:UI.drawer&&UI.drawer.type!=='unlock'?UI.drawer:null});break;
     case 'dounlock':doUnlock();break;
-    case 'lock':if(window.setEditPin)window.setEditPin('');S.edit=false;try{sessionStorage.removeItem('potower_edit');}catch(e){}UI.drawer=null;UI.render();UI.toast('Locked. The app is view-only again.');break;
+    case 'usersave':{const n=val('nu-name'),p=val('nu-pin'),r=val('nu-role')||'editor';if(!n){UI.toast('Enter the person\'s name.',true);break;}
+      sheets('user_set',{spreadsheetId:TRK_ID,name:n,pin:p,role:r,active:true}).then(x=>{S.users=x.users||S.users;UI.toast('Saved '+n+'.');UI.render();}).catch(e=>UI.toast(e.message,true));break;}
+    case 'useractive':{const u=(S.users||[]).find(x=>x.name===arg);if(!u)break;
+      sheets('user_set',{spreadsheetId:TRK_ID,name:u.name,role:u.role,active:!u.active}).then(x=>{S.users=x.users||S.users;UI.toast((u.active?'Switched off ':'Switched on ')+u.name+'.');UI.render();}).catch(e=>UI.toast(e.message,true));break;}
+    case 'lock':if(window.setEditPin)window.setEditPin('');S.role='';S.edit=false;try{sessionStorage.removeItem('potower_edit');}catch(e){}UI.drawer=null;UI.render();UI.toast('Locked. The app is view-only again.');break;
     case 'savepin':{const p=val('new-pin');if(p.length<4){UI.toast('The PIN needs at least 4 characters.',true);break;}sha(p).then(async h=>{savePin(h);enqueue('pinset',async()=>{if(window.setEditPin)window.setEditPin(p);});UI.toast('Editor PIN changed.');UI.render();});break;}
     case 'po':UI.openDrawer({type:'po',po:arg});break;
     case 'accept':saveTrk(arg,{dec:'Accepted',printout:today},'Accepted','Accepted from worklist');UI.toast('Accepted '+arg);UI.render();break;
@@ -1754,7 +1767,7 @@ document.addEventListener('keydown',e=>{
 /* ---- start ---- */
 unpackSnapshot();loadLocal();
 S.pinHash=lsGet('potower_pin')||'';
-try{const n=sessionStorage.getItem('potower_edit');if(n){S.edit=true;S.user=n;}}catch(e){}
+try{const n=sessionStorage.getItem('potower_edit');if(n){S.edit=true;S.user=n;S.role=sessionStorage.getItem('potower_role')||'editor';}}catch(e){}
 UI.f.rg=UI.rgDefault();UI.setPeriod('fy');
 recompute();UI.render();
 (async function boot(){
@@ -1762,6 +1775,7 @@ recompute();UI.render();
   const local=lsGet('potower_local');
   const ok=await loadLive();
   if(S.mode==='live'&&S.pinHash&&!S.pinInSheet)savePin(S.pinHash);
+  if(window.setEditPin&&S.mode==='live')loadUsers();
   if(ok&&local&&local.trk){
     const keep=Object.keys(local.trk).filter(po=>!S.trk[po]);
     if(keep.length){bulkSave(keep.map(po=>({po,patch:local.trk[po]})),'Local entries synced',keep.length+' POs entered while offline');UI.toast(keep.length+' offline entries were saved to Google Sheets');}
