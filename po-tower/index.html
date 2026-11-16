@@ -516,7 +516,7 @@ function manualLines(I,trkMap){
     const grnDone=!!(t.mGrnNo||t.mGrnDate||num(t.mGrnAmt)!=null);
     const grn=st==='RTO'?'NA':(grnDone?'Done':(st==='Delivered'?'Pending':''));
     out.push({disp:t.mDisp||null,po,inv,chan:normPlat(t.plat||''),loc:t.loc||'',val:num(t.mInvVal),awb:t.mAwb||'',partner:t.mPartner||'',status:st,comment:'',expiry:null,
-      deliv:t.mDeliv||null,grn,sq:null,sv:null,dv:null,ev:null,cn:'',cnv:null,appt:null,dq:null,eq:null,gno:t.mGrnNo||'',gdate:t.mGrnDate||null,gamt:num(t.mGrnAmt),manual:true});
+      deliv:t.mDeliv||null,grn,sq:null,sv:null,dv:null,ev:null,cn:'',cnv:null,appt:t.mAppt||null,dq:null,eq:null,gno:t.mGrnNo||'',gdate:t.mGrnDate||null,gamt:num(t.mGrnAmt),manual:true});
   });
   return out;
 }
@@ -689,7 +689,7 @@ function buildPOs(ob,dg,tabs){
     if(!o&&L.length)note.push('Dispatched but NOT in Order Book');
     if(o&&o.n>1)note.push('Duplicate Order Book rows merged');
     if(o&&o.amt!=null&&o.amt>5e6)note.push('PO value looked like a PO number; cleared');
-    P.push({po:k,plat:chan,date,exp,loc,qty,amt,dec,reason,rem:[rem].concat(note).filter(x=>x).join(' | '),src:src.join(' + ')});
+    P.push({po:k,plat:chan,date,exp,loc,qty,amt,dec,reason,appt:(t&&t.appt)||null,rem:[rem].concat(note).filter(x=>x).join(' | '),src:src.join(' + ')});
   }
   return P;
 }
@@ -744,7 +744,7 @@ function derive(p,inv,trk,cfg,asof,openIssues){
   }
   const value=p.amt!=null&&p.amt>0?p.amt:(a.val||0);
   return {po:p.po,plat,date:pdt,orderDate:p.date,exp:p.exp,loc:p.loc,qty:p.qty,amt:p.amt,dec,reason:t.reason||p.reason||'',stage,pri,age,dte,
-    inv:a,invoiced:a.val,value,openIssues:openIssues||0,rem:[p.rem,t.rem].filter(x=>x).join(' | '),src:p.src,
+    appt:t.mAppt||(a.list.map(l=>l.appt).filter(Boolean).sort().pop())||p.appt||null,inv:a,invoiced:a.val,value,openIssues:openIssues||0,rem:[p.rem,t.rem].filter(x=>x).join(' | '),src:p.src,
     ewb:t.ewb||'',printout:t.printout||null,handed:K,handedTo:t.handedTo||'',ack:L,ackBy:t.ackBy||'',owner:t.owner||'',tracked:!!trk,
     fill:(p.amt>0)?a.val/p.amt:null};
 }
@@ -823,7 +823,7 @@ const NOOTIE_LOGO="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAWAAAABvCAYAAAD
 const SRC_ID='10vLMqODDWeo8g4wFCmYATH59hhg2s4W7VTWp1e8euQo';   // Warehouse Master (read only)
 const TRK_ID='1XkWpydTQPviypiN2-xmhfYzPyc_hTRHRFLKQDVLMT98';   // PO Control Tower - Tracking (app data)
 const SERVER='Google Sheets';
-const TRK_COLS=['po','dec','reason','printout','handed','ack','ackBy','owner','rem','updated','by','plat','date','exp','loc','qty','amt','created','handedTo','ewb','mInv','mInvVal','mDisp','mStatus','mPartner','mAwb','mDeliv','mGrnNo','mGrnDate','mGrnAmt'];
+const TRK_COLS=['po','dec','reason','printout','handed','ack','ackBy','owner','rem','updated','by','plat','date','exp','loc','qty','amt','created','handedTo','ewb','mInv','mInvVal','mDisp','mStatus','mPartner','mAwb','mDeliv','mGrnNo','mGrnDate','mGrnAmt','mAppt'];
 const ISS_COLS=['id','raised','po','plat','type','desc','by','owner','prio','status','next','updated','note','resolution','resolved'];
 
 const S={
@@ -879,7 +879,7 @@ function rowsToTrk(rows){
   rows.forEach((r,i)=>{
     const po=normPo(r[0]);if(!po)return;
     const o={po};TRK_COLS.forEach((k,j)=>{o[k]=(r[j]==null?'':String(r[j]));});
-    ['printout','handed','ack','date','exp','mDisp','mDeliv','mGrnDate'].forEach(k=>{o[k]=pdate(o[k])||'';});
+    ['printout','handed','ack','date','exp','mDisp','mDeliv','mGrnDate','mAppt'].forEach(k=>{o[k]=pdate(o[k])||'';});
     o.qty=num(o.qty);o.amt=num(o.amt);o.po=po;
     t[po]=o;rm[po]=i+2;
   });
@@ -921,7 +921,7 @@ async function loadLive(){
     if(!m){S.diag.push('Google Sheets access is not available in this view. Showing the saved snapshot.');S.busy=false;UI.status();return false;}
     S.mcp=m;
     const t0=Date.now();
-    const [trkR,issR,actR,setR]=await Promise.all([getRows(TRK_ID,'TRACKING!A2:AD5000'),getRows(TRK_ID,'ISSUES!A2:O3000'),getRows(TRK_ID,'ACTIVITY!A2:F6000'),getRows(TRK_ID,'SETTINGS!A2:B20')]);
+    const [trkR,issR,actR,setR]=await Promise.all([getRows(TRK_ID,'TRACKING!A2:AE5000'),getRows(TRK_ID,'ISSUES!A2:O3000'),getRows(TRK_ID,'ACTIVITY!A2:F6000'),getRows(TRK_ID,'SETTINGS!A2:B20')]);
     S.diag.push('Tracking sheet read: '+trkR.length+' PO rows, '+issR.length+' issues.');
     const [obR,dgR,grnR,blR,fkR,zpR,swR]=await Promise.all([
       getRows(SRC_ID,"'ORDER BOOK'!A4:N5500"),getRows(SRC_ID,"'DISPATCH + GRN'!A4:Y5000"),getRows(SRC_ID,'GRN!A2:Q5000'),
@@ -955,7 +955,7 @@ function enqueue(label,fn){
 function trkRowValues(t){return TRK_COLS.map(k=>{const v=t[k];return v==null?'':v;});}
 async function writeTrk(po){
   const t=S.trk[po];const vals=[trkRowValues(t)];
-  if(S.trkRow[po]){const r=S.trkRow[po];await sheets('update_values',{spreadsheetId:TRK_ID,range:'TRACKING!A'+r+':AD'+r,values:vals});}
+  if(S.trkRow[po]){const r=S.trkRow[po];await sheets('update_values',{spreadsheetId:TRK_ID,range:'TRACKING!A'+r+':AE'+r,values:vals});}
   else{
     const res=await sheets('append_values',{spreadsheetId:TRK_ID,range:'TRACKING!A1',values:vals});
     const up=(res.updates&&res.updates.updatedRange)||res.updatedRange||'';const m=String(up).match(/(\d+):[A-Z]+(\d+)$/);
@@ -1229,7 +1229,7 @@ const UI={
       const iss=S.issues.filter(i=>i.po===x.po);const hist=S.act.filter(r=>r.po===x.po).slice(-8).reverse();
       h='<div class="hd"><div><div class="mono" style="font-size:16px">'+esc(x.po)+'</div><div class="small">'+pn(x.plat)+(x.loc?' · '+esc(x.loc):'')+' · '+(x.value?money(x.value):'no value')+(x.qty?' · '+inr(x.qty)+' units':'')+'</div><div style="margin-top:6px"><span class="tag '+TONE_STAGE[x.stage]+'">Stage '+x.stage+': '+esc(STAGES[x.stage-1].name)+'</span> '+flagTag(x)+'</div></div><button class="btn sm" data-act="close" aria-label="Close">Close</button></div>'+
         '<div class="bd">'+(x.pri?'<div class="banner" style="margin:0"><b>'+esc(FLAGS[x.pri].team)+':</b> '+esc(FLAGS[x.pri].act)+'</div>':'')+steps+
-        '<div><h3 style="margin-bottom:8px">Update this PO</h3><div class="form"><label>Decision'+this.sel('e-dec',DECISIONS,x.dec)+'</label><label>Reason'+this.sel('e-reason',REASONS,x.reason,'—')+'</label><label>Printout received on'+this.dateField('e-printout',x.printout)+'</label><label>Handed to warehouse on'+this.dateField('e-handed',x.handed)+'</label><label>Handed to (person)<input type="text" id="e-handedTo" list="people-list" value="'+esc(x.handedTo)+'"></label><label>Warehouse acknowledged on'+this.dateField('e-ack',x.ack)+'</label><label>Acknowledged by<input type="text" id="e-ackBy" list="people-list" value="'+esc(x.ackBy)+'"></label><label>E-way bill no.<input type="text" id="e-ewb" class="mono" value="'+esc(x.ewb)+'"></label><h4 style="grid-column:1/-1;margin:14px 0 0;padding-top:10px;border-top:1px solid var(--line)">Invoice and dispatch</h4><label>Invoice no.<input type="text" id="e-mInv" class="mono" value="'+esc(c2.mInv)+'"></label><label>Invoice value ₹<input type="text" id="e-mInvVal" class="mono" value="'+esc(c2.mInvVal)+'"></label><label>Dispatch date'+this.dateField('e-mDisp',c2.mDisp)+'</label><label>Dispatch status'+this.sel('e-mStatus',['Dispatched','In Transit','Delivered','RTO'],c2.mStatus||'','—')+'</label><label>Delivery partner<input type="text" id="e-mPartner" value="'+esc(c2.mPartner)+'"></label><label>AWB / vehicle no.<input type="text" id="e-mAwb" class="mono" value="'+esc(c2.mAwb)+'"></label><h4 style="grid-column:1/-1;margin:14px 0 0;padding-top:10px;border-top:1px solid var(--line)">Delivery and GRN</h4><label>Delivered on'+this.dateField('e-mDeliv',c2.mDeliv)+'</label><label>GRN no.<input type="text" id="e-mGrnNo" class="mono" value="'+esc(c2.mGrnNo)+'"></label><label>GRN date'+this.dateField('e-mGrnDate',c2.mGrnDate)+'</label><label>GRN amount ₹<input type="text" id="e-mGrnAmt" class="mono" value="'+esc(c2.mGrnAmt)+'"></label><p class="small" style="grid-column:1/-1;margin:0">Use this when the Warehouse Master does not have the invoice yet. Once it appears there, the Warehouse Master row is used instead.</p><label>Owner<input type="text" id="e-owner" value="'+esc(x.owner)+'"></label><label>PO expiry'+this.dateField('e-exp',x.exp)+'</label><label class="full">Remarks<textarea id="e-rem">'+esc((S.trk[x.po]||{}).rem||'')+'</textarea></label></div><p><button class="btn pri" data-act="savepo" data-arg="'+esc(x.po)+'">Save</button> <button class="btn" data-act="newissue" data-arg="'+esc(x.po)+'">Log an issue</button></p></div>'+
+        '<div><h3 style="margin-bottom:8px">Update this PO</h3><div class="form"><label>Decision'+this.sel('e-dec',DECISIONS,x.dec)+'</label><label>Reason'+this.sel('e-reason',REASONS,x.reason,'—')+'</label><label>Printout received on'+this.dateField('e-printout',x.printout)+'</label><label>Handed to warehouse on'+this.dateField('e-handed',x.handed)+'</label><label>Handed to (person)<input type="text" id="e-handedTo" list="people-list" value="'+esc(x.handedTo)+'"></label><label>Warehouse acknowledged on'+this.dateField('e-ack',x.ack)+'</label><label>Acknowledged by<input type="text" id="e-ackBy" list="people-list" value="'+esc(x.ackBy)+'"></label><label>E-way bill no.<input type="text" id="e-ewb" class="mono" value="'+esc(x.ewb)+'"></label><h4 style="grid-column:1/-1;margin:14px 0 0;padding-top:10px;border-top:1px solid var(--line)">Invoice and dispatch</h4><label>Invoice no.<input type="text" id="e-mInv" class="mono" value="'+esc(c2.mInv)+'"></label><label>Invoice value ₹<input type="text" id="e-mInvVal" class="mono" value="'+esc(c2.mInvVal)+'"></label><label>Appointment date'+this.dateField('e-mAppt',c2.mAppt||x.appt)+'</label><label>Dispatch date'+this.dateField('e-mDisp',c2.mDisp)+'</label><label>Dispatch status'+this.sel('e-mStatus',['Dispatched','In Transit','Delivered','RTO'],c2.mStatus||'','—')+'</label><label>Delivery partner<input type="text" id="e-mPartner" value="'+esc(c2.mPartner)+'"></label><label>AWB / vehicle no.<input type="text" id="e-mAwb" class="mono" value="'+esc(c2.mAwb)+'"></label><h4 style="grid-column:1/-1;margin:14px 0 0;padding-top:10px;border-top:1px solid var(--line)">Delivery and GRN</h4><label>Delivered on'+this.dateField('e-mDeliv',c2.mDeliv)+'</label><label>GRN no.<input type="text" id="e-mGrnNo" class="mono" value="'+esc(c2.mGrnNo)+'"></label><label>GRN date'+this.dateField('e-mGrnDate',c2.mGrnDate)+'</label><label>GRN amount ₹<input type="text" id="e-mGrnAmt" class="mono" value="'+esc(c2.mGrnAmt)+'"></label><p class="small" style="grid-column:1/-1;margin:0">Use this when the Warehouse Master does not have the invoice yet. Once it appears there, the Warehouse Master row is used instead.</p><label>Owner<input type="text" id="e-owner" value="'+esc(x.owner)+'"></label><label>PO expiry'+this.dateField('e-exp',x.exp)+'</label><label class="full">Remarks<textarea id="e-rem">'+esc((S.trk[x.po]||{}).rem||'')+'</textarea></label></div><p><button class="btn pri" data-act="savepo" data-arg="'+esc(x.po)+'">Save</button> <button class="btn" data-act="newissue" data-arg="'+esc(x.po)+'">Log an issue</button></p></div>'+
         '<div><h3 style="margin-bottom:8px">Invoices and delivery</h3>'+inv+'</div>'+
         (iss.length?'<div><h3 style="margin-bottom:8px">Issues on this PO</h3>'+iss.map(i=>'<button class="pcard" data-act="issue" data-arg="'+esc(i.id)+'" style="width:100%;margin-bottom:6px"><span class="t"><b>'+esc(i.type)+'</b><span class="tag mute">'+esc(i.status)+'</span></span><span class="small">'+esc(i.desc)+'</span></button>').join('')+'</div>':'')+
         '<div><h3 style="margin-bottom:8px">Source and history</h3><dl class="kv"><dt>Source</dt><dd>'+esc(x.src)+'</dd>'+(x.rem?'<dt>Notes</dt><dd>'+esc(x.rem)+'</dd>':'')+'</dl>'+(hist.length?'<div class="small" style="margin-top:6px">'+hist.map(r=>esc(r.ts)+' · '+esc(r.action)+' · '+esc(r.detail)+(r.by?' · '+esc(r.by):'')).join('<br>')+'</div>':'')+'</div></div>';
@@ -1376,7 +1376,7 @@ Object.assign(UI,{
     const o=(cur,v,l)=>'<option value="'+esc(v)+'"'+(String(cur)===String(v)?' selected':'')+'>'+esc(l)+'</option>';
     const facs=Array.from(new Set(this.period().map(d=>d.loc||'(no facility)'))).sort();
     const filt=(g.gap||g.q||g.stage!=='ALL'||g.dec!=='ALL'||g.flag!=='ALL'||g.fac!=='ALL');
-    const body=shown.map(d=>'<tr class="click" data-act="po" data-arg="'+esc(d.po)+'"><td class="mono">'+esc(d.po)+'</td>'+(all?'<td>'+pn(d.plat)+'</td>':'')+'<td class="num">'+fd(d.date)+'</td><td>'+esc(d.loc)+'</td><td class="num">'+(d.exp?fd(d.exp):'')+'</td><td class="r num">'+(d.value?inr(d.value):'')+'</td><td><span class="tag '+TONE_STAGE[d.stage]+'">'+d.stage+'. '+esc(STAGES[d.stage-1].short)+'</span></td><td>'+esc(d.dec)+'</td><td>'+(d.pri?flagTag(d):'<span class="small">—</span>')+'</td><td class="r num">'+(d.inv.n||'')+'</td><td class="mono">'+esc(invCell(d).inv)+'</td><td class="num">'+esc(invCell(d).disp)+'</td><td class="num">'+esc(invCell(d).deliv)+'</td><td>'+esc(invCell(d).awb)+'</td><td class="mono">'+esc(invCell(d).grn)+'</td><td class="mono">'+esc(d.ewb||'')+'</td><td>'+esc(d.owner)+'</td></tr>').join('');
+    const body=shown.map(d=>'<tr class="click" data-act="po" data-arg="'+esc(d.po)+'"><td class="mono">'+esc(d.po)+'</td>'+(all?'<td>'+pn(d.plat)+'</td>':'')+'<td class="num">'+fd(d.date)+'</td><td>'+esc(d.loc)+'</td><td class="num">'+(d.exp?fd(d.exp):'')+'</td><td class="r num">'+(d.value?inr(d.value):'')+'</td><td><span class="tag '+TONE_STAGE[d.stage]+'">'+d.stage+'. '+esc(STAGES[d.stage-1].short)+'</span></td><td>'+esc(d.dec)+'</td><td>'+(d.pri?flagTag(d):'<span class="small">—</span>')+'</td><td class="r num">'+(d.inv.n||'')+'</td><td class="mono">'+esc(invCell(d).inv)+'</td><td class="num">'+fd(d.appt)+'</td><td class="num">'+esc(invCell(d).disp)+'</td><td class="num">'+esc(invCell(d).deliv)+'</td><td>'+esc(invCell(d).awb)+'</td><td class="mono">'+esc(invCell(d).grn)+'</td><td class="mono">'+esc(d.ewb||'')+'</td><td>'+esc(d.owner)+'</td></tr>').join('');
     const pager=pages>1?'<div class="toolbar" style="justify-content:center;margin-top:10px"><button class="btn sm" data-act="rgpage" data-arg="-1"'+(g.page?'':' disabled')+'>← Previous</button><span class="small">Page '+(g.page+1)+' of '+pages+'</span><button class="btn sm" data-act="rgpage" data-arg="1"'+(g.page<pages-1?'':' disabled')+'>Next →</button></div>':'';
     return '<div class="toolbar"><h2>All '+(all?'':esc(P)+' ')+'POs</h2><span class="small">Every PO in the period, with where it stands. Click a row for its full story.</span></div>'+
       (g.gap?'<div class="gapnote">Showing POs that reached “'+esc(JSTEPS.filter(x=>x.k===g.gap)[0].name)+'” but not the next step <button class="btn sm" data-act="rgreset">Clear</button></div>':'')+'<div class="filters"><input type="text" id="rg-q" placeholder="Search PO number" value="'+esc(g.q)+'" aria-label="Search PO number">'+
@@ -1387,7 +1387,7 @@ Object.assign(UI,{
       '<select id="rg-sort" aria-label="Sort">'+o(g.sort,'new','Newest first')+o(g.sort,'old','Oldest first')+o(g.sort,'val','Highest value')+o(g.sort,'age','Oldest open (days)')+'</select>'+
       (filt?'<button class="btn sm" data-act="rgreset">Clear filters</button>':'')+'<span class="grow"></span><button class="btn sm" data-act="copyreg">Copy list</button></div>'+
       '<div class="small" style="margin:6px 2px 8px"><b>'+inr(r.length)+'</b> POs · '+money(r.reduce((s,d)=>s+(d.value||0),0))+(r.length>PS?' · showing '+(g.page*PS+1)+'–'+Math.min(r.length,g.page*PS+PS):'')+' · '+this.periodLabel().toLowerCase()+'</div>'+
-      '<div class="tablewrap"><table><thead><tr><th>PO number</th>'+(all?'<th>Platform</th>':'')+'<th>PO date</th><th>Facility</th><th>Expiry</th><th class="r">Value ₹</th><th>Stage</th><th>Decision</th><th>Problem</th><th class="r">Invoices</th><th>Invoice No(s)</th><th>Dispatched</th><th>Delivered</th><th>Partner / AWB</th><th>GRN No(s)</th><th>E-way bill</th><th>Owner</th></tr></thead><tbody>'+(body||'<tr><td colspan="'+(all?17:16)+'" class="empty">No POs match these filters.</td></tr>')+'</tbody></table></div>'+pager;
+      '<div class="tablewrap"><table><thead><tr><th>PO number</th>'+(all?'<th>Platform</th>':'')+'<th>PO date</th><th>Facility</th><th>Expiry</th><th class="r">Value ₹</th><th>Stage</th><th>Decision</th><th>Problem</th><th class="r">Invoices</th><th>Invoice No(s)</th><th>Appointment</th><th>Dispatched</th><th>Delivered</th><th>Partner / AWB</th><th>GRN No(s)</th><th>E-way bill</th><th>Owner</th></tr></thead><tbody>'+(body||'<tr><td colspan="'+(all?18:17)+'" class="empty">No POs match these filters.</td></tr>')+'</tbody></table></div>'+pager;
   },
   people(){const m=new Set();Object.keys(S.trk).forEach(k=>{const t=S.trk[k];if(t.handedTo)m.add(t.handedTo);if(t.ackBy)m.add(t.ackBy);});return Array.from(m).sort();},
   holdTable(R){
@@ -1518,7 +1518,8 @@ Object.assign(UI,{
      mk('Invoiced',a.n?a.n+' invoice'+(a.n>1?'s':'')+' · '+inr(a.val):'',a.n?'done':(p===5?'late':''),a.n?uniq(l=>l.inv).map(esc).join(', '):'')+
      mk('E-way bill',x.ewb?esc(x.ewb):'',x.ewb?'done':'',a.n&&!x.ewb?'Add the number below':'')+
      mk('Dispatched',a.n?fd(a.first)+(a.last&&a.last!==a.first?' to '+fd(a.last):''):'',a.n?'done':(p===1||p===2?'late':''),a.n?uniq(l=>l.partner).map(esc).join(', ')+(uniq(l=>l.awb).length?' · AWB '+uniq(l=>l.awb).slice(0,3).map(esc).join(', '):''):'')+
-     mk('Delivered',delivered?(lastD?fd(lastD):a.deliv+' delivered'):(a.transit?'In transit':''),delivered?'done':(p===6?'late':''),appt.length?'Appointment '+appt.join(', '):'')+
+     mk('Appointment',x.appt?fd(x.appt):'',x.appt?'done':'')+
+     mk('Delivered',delivered?(lastD?fd(lastD):a.deliv+' delivered'):(a.transit?'In transit':''),delivered?'done':(p===6?'late':''),'')+
      mk('GRN',grnDone?grnDone+' of '+a.n+' done':(a.grnP?a.grnP+' pending':''),grnDone&&!a.grnP?'done':(p===8?'late':''),(gno.length?'GRN '+gno.slice(0,2).map(esc).join(', ')+' · ':'')+(gamt?'₹'+inr(Math.round(gamt)):''))+
      (sq||dq||eq?mk('Discrepancy',inr(sq)+' short · '+inr(dq)+' damaged · '+inr(eq)+' excess','late',inr((a.loss||0))+' value at stake'):'')+
      (a.rto?mk('Returned (RTO)',a.rto+' shipment'+(a.rto>1?'s':'')+' came back','late'):'')+
@@ -1655,7 +1656,7 @@ function actionClick(act,arg,el){
     case 'applyrange':{const fr=$('#f-from').value,to=$('#f-to').value;if(!fr||!to){UI.toast&&UI.toast('Pick both dates','err');break;}UI.setPeriod('custom',fr,to);UI.f.rg.page=0;UI.render();break;}
     case 'period':UI.setPeriod(arg);UI.f.rg.page=0;UI.render();break;
     case 'rgreset':UI.f.rg=UI.rgDefault();UI.render();break;
-    case 'copyreg':{const r=UI.regRows();copyText(['PO\tPlatform\tPO date\tFacility\tExpiry\tValue\tStage\tDecision\tProblem\tInvoices\tInvoice Nos\tDispatched\tDelivered\tPartner / AWB\tGRN Nos\tE-way Bill\tOwner'].concat(r.map(d=>[d.po,d.plat,d.date||'',d.loc,d.exp||'',Math.round(d.value||0),STAGES[d.stage-1].name,d.dec,d.pri?FLAGS[d.pri].name:'',d.inv.n||'',invCell(d).inv,invCell(d).disp,invCell(d).deliv,invCell(d).awb,invCell(d).grn,d.ewb||'',d.owner].join('\t'))).join('\n'));break;}
+    case 'copyreg':{const r=UI.regRows();copyText(['PO\tPlatform\tPO date\tFacility\tExpiry\tValue\tStage\tDecision\tProblem\tInvoices\tInvoice Nos\tAppointment\tDispatched\tDelivered\tPartner / AWB\tGRN Nos\tE-way Bill\tOwner'].concat(r.map(d=>[d.po,d.plat,d.date||'',d.loc,d.exp||'',Math.round(d.value||0),STAGES[d.stage-1].name,d.dec,d.pri?FLAGS[d.pri].name:'',d.inv.n||'',invCell(d).inv,d.appt||'',invCell(d).disp,invCell(d).deliv,invCell(d).awb,invCell(d).grn,d.ewb||'',d.owner].join('\t'))).join('\n'));break;}
     case 'unlock':UI.openDrawer({type:'unlock',back:UI.drawer&&UI.drawer.type!=='unlock'?UI.drawer:null});break;
     case 'dounlock':doUnlock();break;
     case 'lock':S.edit=false;try{sessionStorage.removeItem('potower_edit');}catch(e){}UI.drawer=null;UI.render();UI.toast('Locked. The app is view-only again.');break;
@@ -1674,7 +1675,7 @@ function actionClick(act,arg,el){
     case 'today':{const e=document.getElementById(arg);if(e)e.value=today;break;}
     case 'savepo':{
       const x=S.byPo.get(arg);const cur=S.trk[arg]||{};
-      const patch={dec:val('e-dec'),reason:val('e-reason'),printout:val('e-printout'),handed:val('e-handed'),handedTo:val('e-handedTo'),ack:val('e-ack'),ackBy:val('e-ackBy'),owner:val('e-owner'),ewb:val('e-ewb'),exp:val('e-exp'),rem:val('e-rem')};['mInv','mInvVal','mDisp','mStatus','mPartner','mAwb','mDeliv','mGrnNo','mGrnDate','mGrnAmt'].forEach(k=>{patch[k]=val('e-'+k);});
+      const patch={dec:val('e-dec'),reason:val('e-reason'),printout:val('e-printout'),handed:val('e-handed'),handedTo:val('e-handedTo'),ack:val('e-ack'),ackBy:val('e-ackBy'),owner:val('e-owner'),ewb:val('e-ewb'),exp:val('e-exp'),rem:val('e-rem')};['mInv','mInvVal','mDisp','mStatus','mPartner','mAwb','mDeliv','mGrnNo','mGrnDate','mGrnAmt','mAppt'].forEach(k=>{patch[k]=val('e-'+k);});
       const changed=Object.keys(patch).filter(k=>String((k==='dec'||k==='reason'?(x&&x[k]):(k==='exp'?(x&&x.exp):(cur[k]!=null?cur[k]:(x&&x[k]))))||'')!==String(patch[k]||''));
       if(!changed.length){UI.toast('No changes to save.');break;}
       if(patch.dec==='Declined'&&!patch.reason){UI.toast('Pick a reason before declining.',true);break;}

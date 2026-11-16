@@ -8,7 +8,7 @@ function manualLines(I,trkMap){
     const grnDone=!!(t.mGrnNo||t.mGrnDate||num(t.mGrnAmt)!=null);
     const grn=st==='RTO'?'NA':(grnDone?'Done':(st==='Delivered'?'Pending':''));
     out.push({disp:t.mDisp||null,po,inv,chan:normPlat(t.plat||''),loc:t.loc||'',val:num(t.mInvVal),awb:t.mAwb||'',partner:t.mPartner||'',status:st,comment:'',expiry:null,
-      deliv:t.mDeliv||null,grn,sq:null,sv:null,dv:null,ev:null,cn:'',cnv:null,appt:null,dq:null,eq:null,gno:t.mGrnNo||'',gdate:t.mGrnDate||null,gamt:num(t.mGrnAmt),manual:true});
+      deliv:t.mDeliv||null,grn,sq:null,sv:null,dv:null,ev:null,cn:'',cnv:null,appt:t.mAppt||null,dq:null,eq:null,gno:t.mGrnNo||'',gdate:t.mGrnDate||null,gamt:num(t.mGrnAmt),manual:true});
   });
   return out;
 }
@@ -181,7 +181,7 @@ function buildPOs(ob,dg,tabs){
     if(!o&&L.length)note.push('Dispatched but NOT in Order Book');
     if(o&&o.n>1)note.push('Duplicate Order Book rows merged');
     if(o&&o.amt!=null&&o.amt>5e6)note.push('PO value looked like a PO number; cleared');
-    P.push({po:k,plat:chan,date,exp,loc,qty,amt,dec,reason,rem:[rem].concat(note).filter(x=>x).join(' | '),src:src.join(' + ')});
+    P.push({po:k,plat:chan,date,exp,loc,qty,amt,dec,reason,appt:(t&&t.appt)||null,rem:[rem].concat(note).filter(x=>x).join(' | '),src:src.join(' + ')});
   }
   return P;
 }
@@ -236,7 +236,7 @@ function derive(p,inv,trk,cfg,asof,openIssues){
   }
   const value=p.amt!=null&&p.amt>0?p.amt:(a.val||0);
   return {po:p.po,plat,date:pdt,orderDate:p.date,exp:p.exp,loc:p.loc,qty:p.qty,amt:p.amt,dec,reason:t.reason||p.reason||'',stage,pri,age,dte,
-    inv:a,invoiced:a.val,value,openIssues:openIssues||0,rem:[p.rem,t.rem].filter(x=>x).join(' | '),src:p.src,
+    appt:t.mAppt||(a.list.map(l=>l.appt).filter(Boolean).sort().pop())||p.appt||null,inv:a,invoiced:a.val,value,openIssues:openIssues||0,rem:[p.rem,t.rem].filter(x=>x).join(' | '),src:p.src,
     ewb:t.ewb||'',printout:t.printout||null,handed:K,handedTo:t.handedTo||'',ack:L,ackBy:t.ackBy||'',owner:t.owner||'',tracked:!!trk,
     fill:(p.amt>0)?a.val/p.amt:null};
 }

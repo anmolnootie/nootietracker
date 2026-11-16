@@ -6,8 +6,8 @@
  * using the exact same logic as the website (Core.gs is the website's core.js).
  * Run setupMasterSync() once from the editor to install the timer.
  */
-var MASTER_COLS_ = 41;
-var MASTER_TEXT_ = [1,2,3,4,5,8,9,10,11,12,13,14,15,16,17,19,20,21,24,25,26,27,28,29,35,37,38,41];
+var MASTER_COLS_ = 42;
+var MASTER_TEXT_ = [1,2,3,4,5,8,9,10,11,12,13,14,15,16,17,19,20,21,24,25,26,27,28,29,35,37,38,41,42];
 var MASTER_NUM_ = [6,7,18,22,30,31,32,33,34,36,39,40];
 
 function setupMasterSync() {
@@ -44,7 +44,7 @@ function buildMaster_(D, I, stages, stamp) {
       jn_(ls, 'awb'), jn_(ls, 'partner'), jn_(ls, 'status'), dl[dl.length - 1],
       jn_(ls, 'grn'), jn_(ls, 'gno'), sm_(ls, 'gamt'), sm_(ls, 'sq'), sm_(ls, 'sv'), sm_(ls, 'dv'), sm_(ls, 'ev'),
       jn_(ls, 'cn'), sm_(ls, 'cnv'), d.inv.rto ? 'Yes' : '',
-      st[d.stage], d.age, d.dte, stamp];
+      st[d.stage], d.age, d.dte, stamp, d.appt];
     return r.map(nz_);
   });
   var inv = I.slice().sort(function (a, b) { var x = a.disp || '', y = b.disp || ''; return x < y ? -1 : x > y ? 1 : 0; }).map(function (l) {
@@ -65,13 +65,13 @@ function loadAll_() {
   var ob = parseOrderBook(obR, asof), gm = parseGrnTab(grnR), gi = parseGrnInfo(grnR);
   var I = parseDispatch(dgR, gm, gi), P = buildPOs(ob, I, tabs);
   if (P.length < 200) throw new Error('Warehouse Master looked too small (' + P.length + ' POs): not syncing');
-  var TC = ['po','dec','reason','printout','handed','ack','ackBy','owner','rem','updated','by','plat','date','exp','loc','qty','amt','created','handedTo','ewb','mInv','mInvVal','mDisp','mStatus','mPartner','mAwb','mDeliv','mGrnNo','mGrnDate','mGrnAmt'];
+  var TC = ['po','dec','reason','printout','handed','ack','ackBy','owner','rem','updated','by','plat','date','exp','loc','qty','amt','created','handedTo','ewb','mInv','mInvVal','mDisp','mStatus','mPartner','mAwb','mDeliv','mGrnNo','mGrnDate','mGrnAmt','mAppt'];
   var trkMap = {};
-  readRange_(trk, 'TRACKING!A2:AD5000').forEach(function (r) {
+  readRange_(trk, 'TRACKING!A2:AE5000').forEach(function (r) {
     var po = normPo(r[0]); if (!po) return;
     var o = { po: po };
     TC.forEach(function (k, j) { o[k] = (r[j] == null ? '' : String(r[j])); });
-    ['printout', 'handed', 'ack', 'date', 'exp', 'mDisp', 'mDeliv', 'mGrnDate'].forEach(function (k) { o[k] = pdate(o[k]) || ''; });
+    ['printout', 'handed', 'ack', 'date', 'exp', 'mDisp', 'mDeliv', 'mGrnDate', 'mAppt'].forEach(function (k) { o[k] = pdate(o[k]) || ''; });
     o.qty = num(o.qty); o.amt = num(o.amt); o.po = po;
     trkMap[po] = o;
   });
