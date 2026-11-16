@@ -503,7 +503,7 @@ th{background:#fbf6f0}
 <div class="scrim" id="scrim" hidden></div>
 <aside class="drawer" id="drawer" hidden aria-label="Details"></aside>
 <script>
-const SNAP={"asOf":"2026-11-15","P":[],"I":[]};
+const SNAP={"asOf":"2026-11-16","P":[],"I":[]};
 </script>
 <script>
 /* ===== CORE: parsing, merging and PO logic. No DOM here so it can be tested in Node. ===== */
@@ -1231,6 +1231,7 @@ const UI={
   }
 };
 
+function invCell(d){const L=(d.inv&&d.inv.list)||[];const u=k=>Array.from(new Set(L.map(l=>l[k]).filter(Boolean)));const dl=L.map(l=>l.deliv).filter(Boolean).sort().pop();const dp=L.map(l=>l.disp).filter(Boolean).sort();const aw=u('awb'),pa=u('partner');return {inv:u('inv').join(', '),disp:dp.length?(dp[0]===dp[dp.length-1]?fd(dp[0]):fd(dp[0])+' to '+fd(dp[dp.length-1])):'',deliv:dl?fd(dl):'',awb:pa.concat(aw).join(' / '),grn:u('gno').join(', ')};}
 /* ===== Shell: sidebar, top bar, home, PO register, editor / view-only access ===== */
 const PERIODS=[['fy','This financial year'],['90d','Last 90 days'],['30d','Last 30 days'],['7d','Last 7 days'],['month','This month'],['all','All time']];
 const WRITE_ACTS=['accept','handed','ack','savepo','newissue','saveissue','newpo','savenewpo','happly','happlynew','savecfg','savepin','dohand1'];
@@ -1360,7 +1361,7 @@ Object.assign(UI,{
     const o=(cur,v,l)=>'<option value="'+esc(v)+'"'+(String(cur)===String(v)?' selected':'')+'>'+esc(l)+'</option>';
     const facs=Array.from(new Set(this.period().map(d=>d.loc||'(no facility)'))).sort();
     const filt=(g.gap||g.q||g.stage!=='ALL'||g.dec!=='ALL'||g.flag!=='ALL'||g.fac!=='ALL');
-    const body=shown.map(d=>'<tr class="click" data-act="po" data-arg="'+esc(d.po)+'"><td class="mono">'+esc(d.po)+'</td>'+(all?'<td>'+pn(d.plat)+'</td>':'')+'<td class="num">'+fd(d.date)+'</td><td>'+esc(d.loc)+'</td><td class="num">'+(d.exp?fd(d.exp):'')+'</td><td class="r num">'+(d.value?inr(d.value):'')+'</td><td><span class="tag '+TONE_STAGE[d.stage]+'">'+d.stage+'. '+esc(STAGES[d.stage-1].short)+'</span></td><td>'+esc(d.dec)+'</td><td>'+(d.pri?flagTag(d):'<span class="small">—</span>')+'</td><td class="r num">'+(d.inv.n||'')+'</td><td>'+esc(d.owner)+'</td></tr>').join('');
+    const body=shown.map(d=>'<tr class="click" data-act="po" data-arg="'+esc(d.po)+'"><td class="mono">'+esc(d.po)+'</td>'+(all?'<td>'+pn(d.plat)+'</td>':'')+'<td class="num">'+fd(d.date)+'</td><td>'+esc(d.loc)+'</td><td class="num">'+(d.exp?fd(d.exp):'')+'</td><td class="r num">'+(d.value?inr(d.value):'')+'</td><td><span class="tag '+TONE_STAGE[d.stage]+'">'+d.stage+'. '+esc(STAGES[d.stage-1].short)+'</span></td><td>'+esc(d.dec)+'</td><td>'+(d.pri?flagTag(d):'<span class="small">—</span>')+'</td><td class="r num">'+(d.inv.n||'')+'</td><td class="mono">'+esc(invCell(d).inv)+'</td><td class="num">'+esc(invCell(d).disp)+'</td><td class="num">'+esc(invCell(d).deliv)+'</td><td>'+esc(invCell(d).awb)+'</td><td class="mono">'+esc(invCell(d).grn)+'</td><td class="mono">'+esc(d.ewb||'')+'</td><td>'+esc(d.owner)+'</td></tr>').join('');
     const pager=pages>1?'<div class="toolbar" style="justify-content:center;margin-top:10px"><button class="btn sm" data-act="rgpage" data-arg="-1"'+(g.page?'':' disabled')+'>← Previous</button><span class="small">Page '+(g.page+1)+' of '+pages+'</span><button class="btn sm" data-act="rgpage" data-arg="1"'+(g.page<pages-1?'':' disabled')+'>Next →</button></div>':'';
     return '<div class="toolbar"><h2>All '+(all?'':esc(P)+' ')+'POs</h2><span class="small">Every PO in the period, with where it stands. Click a row for its full story.</span></div>'+
       (g.gap?'<div class="gapnote">Showing POs that reached “'+esc(JSTEPS.filter(x=>x.k===g.gap)[0].name)+'” but not the next step <button class="btn sm" data-act="rgreset">Clear</button></div>':'')+'<div class="filters"><input type="text" id="rg-q" placeholder="Search PO number" value="'+esc(g.q)+'" aria-label="Search PO number">'+
@@ -1371,7 +1372,7 @@ Object.assign(UI,{
       '<select id="rg-sort" aria-label="Sort">'+o(g.sort,'new','Newest first')+o(g.sort,'old','Oldest first')+o(g.sort,'val','Highest value')+o(g.sort,'age','Oldest open (days)')+'</select>'+
       (filt?'<button class="btn sm" data-act="rgreset">Clear filters</button>':'')+'<span class="grow"></span><button class="btn sm" data-act="copyreg">Copy list</button></div>'+
       '<div class="small" style="margin:6px 2px 8px"><b>'+inr(r.length)+'</b> POs · '+money(r.reduce((s,d)=>s+(d.value||0),0))+(r.length>PS?' · showing '+(g.page*PS+1)+'–'+Math.min(r.length,g.page*PS+PS):'')+' · '+this.periodLabel().toLowerCase()+'</div>'+
-      '<div class="tablewrap"><table><thead><tr><th>PO number</th>'+(all?'<th>Platform</th>':'')+'<th>PO date</th><th>Facility</th><th>Expiry</th><th class="r">Value ₹</th><th>Stage</th><th>Decision</th><th>Problem</th><th class="r">Invoices</th><th>Owner</th></tr></thead><tbody>'+(body||'<tr><td colspan="'+(all?11:10)+'" class="empty">No POs match these filters.</td></tr>')+'</tbody></table></div>'+pager;
+      '<div class="tablewrap"><table><thead><tr><th>PO number</th>'+(all?'<th>Platform</th>':'')+'<th>PO date</th><th>Facility</th><th>Expiry</th><th class="r">Value ₹</th><th>Stage</th><th>Decision</th><th>Problem</th><th class="r">Invoices</th><th>Invoice No(s)</th><th>Dispatched</th><th>Delivered</th><th>Partner / AWB</th><th>GRN No(s)</th><th>E-way bill</th><th>Owner</th></tr></thead><tbody>'+(body||'<tr><td colspan="'+(all?17:16)+'" class="empty">No POs match these filters.</td></tr>')+'</tbody></table></div>'+pager;
   },
   people(){const m=new Set();Object.keys(S.trk).forEach(k=>{const t=S.trk[k];if(t.handedTo)m.add(t.handedTo);if(t.ackBy)m.add(t.ackBy);});return Array.from(m).sort();},
   holdTable(R){
@@ -1639,7 +1640,7 @@ function actionClick(act,arg,el){
     case 'applyrange':{const fr=$('#f-from').value,to=$('#f-to').value;if(!fr||!to){UI.toast&&UI.toast('Pick both dates','err');break;}UI.setPeriod('custom',fr,to);UI.f.rg.page=0;UI.render();break;}
     case 'period':UI.setPeriod(arg);UI.f.rg.page=0;UI.render();break;
     case 'rgreset':UI.f.rg=UI.rgDefault();UI.render();break;
-    case 'copyreg':{const r=UI.regRows();copyText(['PO\tPlatform\tPO date\tFacility\tExpiry\tValue\tStage\tDecision\tProblem\tInvoices\tOwner'].concat(r.map(d=>[d.po,d.plat,d.date||'',d.loc,d.exp||'',Math.round(d.value||0),STAGES[d.stage-1].name,d.dec,d.pri?FLAGS[d.pri].name:'',d.inv.n||'',d.owner].join('\t'))).join('\n'));break;}
+    case 'copyreg':{const r=UI.regRows();copyText(['PO\tPlatform\tPO date\tFacility\tExpiry\tValue\tStage\tDecision\tProblem\tInvoices\tInvoice Nos\tDispatched\tDelivered\tPartner / AWB\tGRN Nos\tE-way Bill\tOwner'].concat(r.map(d=>[d.po,d.plat,d.date||'',d.loc,d.exp||'',Math.round(d.value||0),STAGES[d.stage-1].name,d.dec,d.pri?FLAGS[d.pri].name:'',d.inv.n||'',invCell(d).inv,invCell(d).disp,invCell(d).deliv,invCell(d).awb,invCell(d).grn,d.ewb||'',d.owner].join('\t'))).join('\n'));break;}
     case 'unlock':UI.openDrawer({type:'unlock',back:UI.drawer&&UI.drawer.type!=='unlock'?UI.drawer:null});break;
     case 'dounlock':doUnlock();break;
     case 'lock':S.edit=false;try{sessionStorage.removeItem('potower_edit');}catch(e){}UI.drawer=null;UI.render();UI.toast('Locked. The app is view-only again.');break;
