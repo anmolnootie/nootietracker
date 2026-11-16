@@ -214,7 +214,7 @@ function refreshMaster() {
     var pText = permIdx_(MASTER_TEXT_), pNum = permIdx_(MASTER_NUM_), pPct = permIdx_([23]);
     PLAT_TABS_.forEach(function (t) {
       var sh = ss.getSheetByName(t); if (!sh) return;
-      sh.getRange(1, 1).setValue(t + '  |  ' + byTab[t].length + ' POs  |  VIEW ONLY, rebuilt from MASTER every 10 minutes. Make changes in the MASTER tab or on the website');
+      sh.getRange(1, 1).setValue(t + '  |  ' + byTab[t].length + ' POs  |  TWO-WAY: type in the yellow columns and the change goes to MASTER and the website within seconds. Grey columns are calculated. Add a new PO in the first empty row.');
       ensureCols_(sh, MASTER_COLS_);
       sh.getRange(2, 1, 1, MASTER_COLS_).setValues([permute_(hdr)]);
       writeBlock_(sh, 3, byTab[t], MASTER_COLS_, pText, pNum);
@@ -222,7 +222,7 @@ function refreshMaster() {
     });
     var nClaims = claimsTab_(ss, a);
     styleTab_(m, 2, MASTER_HEADERS_, HIDE_COLS_, true);
-    PLAT_TABS_.forEach(function (t) { var sh = ss.getSheetByName(t); if (sh) styleTab_(sh, 2, permute_(MASTER_HEADERS_), permIdx_(HIDE_COLS_), false); });
+    PLAT_TABS_.forEach(function (t) { var sh = ss.getSheetByName(t); if (sh) styleTab_(sh, 2, permute_(MASTER_HEADERS_), permIdx_(HIDE_COLS_), true); });
     ensureCols_(isx, INV_HEADERS_.length);
     isx.getRange(1, 1, 1, INV_HEADERS_.length).setValues([INV_HEADERS_]);
     styleTab_(isx, 1, INV_HEADERS_, [], false);
@@ -244,17 +244,83 @@ function setupMasterSync() {
 // An installable edit trigger: when someone types in MASTER, INVOICES, CLAIM DATA or ISSUES, the calculated columns are
 // rebuilt straight away (about 20 to 40 seconds) instead of waiting for the 10-minute timer. Edits made while a refresh is
 // running are picked up by one extra pass. Typing in the view-only tabs is ignored (they are rebuilt anyway).
-var LIVE_TABS_ = { 'MASTER': 1, 'INVOICES': 1, 'CLAIM DATA': 1, 'ISSUES': 1, 'SETTINGS': 1 };
+var LIVE_TABS_ = { 'MASTER': 1, 'INVOICES': 1, 'CLAIM DATA': 1, 'ISSUES': 1, 'SETTINGS': 1, 'Blinkit': 1, 'Swiggy Instamart': 1, 'Zepto': 1, 'BigBasket': 1, 'Flipkart': 1, 'Other platforms': 1 };
+// MASTER column -> INVOICES column (1-based) for the invoice-level fields that can be typed on a platform tab
+var INV_MAP_ = { 24: 7, 25: 8, 26: 9, 27: 10, 28: 12, 29: 13, 30: 15, 31: 16, 32: 17, 34: 21, 35: 22, 36: 23, 43: 18, 44: 20, 47: 24, 48: 25, 53: 26 };
+
+function cleanVal_(v, numeric) {
+  if (v === null || v === undefined) return '';
+  if (v instanceof Date) return Utilities.formatDate(v, 'Asia/Kolkata', 'yyyy-MM-dd');
+  var t = String(v).trim();
+  if (numeric && /^-?[\d,]+(\.\d+)?$/.test(t)) return Number(t.replace(/,/g, ''));
+  return t;
+}
+
+// Something was typed on a platform tab: carry it back to MASTER (PO-level fields) or INVOICES (invoice-level fields), then the normal refresh redraws every tab.
+function platEdit_(e, name) {
+  var ss = e.source || SpreadsheetApp.openById(MASTER_ID);
+  var sh = ss.getSheetByName(name), master = ss.getSheetByName('MASTER'), inv = ss.getSheetByName('INVOICES');
+  var r = e.range, r1 = r.getRow(), c1 = r.getColumn(), nr = r.getNumRows(), nc = r.getNumColumns();
+  if (r1 + nr - 1 < 3) return;                                   // title and header rows
+  var skip = r1 < 3 ? 3 - r1 : 0; r1 += skip; nr -= skip;
+  var vals = (e.value !== undefined && nr === 1 && nc === 1 && !skip) ? [[e.value]] : sh.getRange(r1, c1, nr, nc).getDisplayValues();
+  if (e.value === undefined && nr === 1 && nc === 1) vals = [['']];   // a single cell was cleared
+  var pos = sh.getRange(r1, 1, nr, 1).getDisplayValues();
+  var mPos = readRange_(ss, 'MASTER!A3:A14000').map(function (x) { return normPo(x[0]); });
+  var mRow = {}; mPos.forEach(function (p, i) { if (p && !mRow[p]) mRow[p] = i + 3; });
+  var iPos = readRange_(ss, 'INVOICES!B2:B14000').map(function (x) { return normPo(x[0]); });
+  var iRows = {}; iPos.forEach(function (p, i) { if (p) (iRows[p] = iRows[p] || []).push(i + 2); });
+  var notes = {}, appended = 0, nextRow = Math.max(mPos.length, master.getLastRow() - 2) + 3;
+  for (var i = 0; i < nr; i++) {
+    var rawPo = String((c1 === 1 ? vals[i][0] : pos[i][0]) || '').trim(), po = normPo(rawPo);
+    if (!po) continue;
+    var row = mRow[po];
+    if (!row) {                                                  // a PO typed that MASTER has never seen: add it
+      row = nextRow++; appended++; mRow[po] = row;
+      ensureCols_(master, MASTER_COLS_);
+      if (master.getMaxRows() < row) master.insertRowsAfter(master.getMaxRows(), row - master.getMaxRows());
+      var base = []; for (var k = 0; k < MASTER_COLS_; k++) base.push('');
+      base[0] = rawPo; base[1] = name === 'Other platforms' ? '' : name; base[7] = 'Typed on ' + name + ' tab';
+      MASTER_TEXT_.forEach(function (c) { master.getRange(row, c).setNumberFormat('@'); });
+      master.getRange(row, 1, 1, MASTER_COLS_).setValues([base]);
+    }
+    for (var j = 0; j < nc; j++) {
+      var col = c1 + j, mc = PLAT_ORDER_[col - 1], h = MASTER_HEADERS_[mc - 1];
+      if (!mc || (c1 === 1 && col === 1)) continue;
+      if (EDIT_MAP_[h]) {
+        master.getRange(row, mc).setValue(cleanVal_(vals[i][j], MASTER_NUM_.indexOf(mc) >= 0));
+      } else if (INV_MAP_[mc]) {
+        var list = iRows[po] || [];
+        if (list.length === 1) {
+          inv.getRange(list[0], INV_MAP_[mc]).setValue(cleanVal_(vals[i][j], [15, 16, 17, 18, 20, 21, 23, 26].indexOf(INV_MAP_[mc]) >= 0));
+        } else {
+          notes[h] = list.length ? po + ' has ' + list.length + ' invoices: enter ' + h + ' on the INVOICES tab' : po + ' has no invoice yet: add it on INVOICES';
+        }
+      } else if (vals[i][j] !== '' || e.value === undefined) {
+        notes[h] = h + ' is calculated and cannot be typed';
+      }
+    }
+  }
+  var msgs = Object.keys(notes).slice(0, 3).map(function (k) { return notes[k]; });
+  if (msgs.length) { try { ss.toast(msgs.join('. ') + '. It will go back to the calculated value.', 'PO Control Tower', 8); } catch (x) {} }
+}
+
 function onSheetEdit(e) {
   try {
     var name = e && e.range ? e.range.getSheet().getName() : '';
     if (!LIVE_TABS_[name]) return;
     var props = PropertiesService.getScriptProperties();
+    if (PLAT_TABS_.indexOf(name) >= 0) {
+      var lk = LockService.getScriptLock();
+      lk.waitLock(25000);
+      try { platEdit_(e, name); } finally { lk.releaseLock(); }
+    }
     props.setProperty('DIRTY_AT', String(Date.now()));
-    for (var pass = 0; pass < 3; pass++) {
+    for (var pass = 0; pass < 4; pass++) {
       var seen = props.getProperty('DIRTY_AT');
       var r = refreshMaster();
       if (r && r.skipped && /already running/.test(r.skipped)) return;   // the running pass will see DIRTY_AT change and loop
+      if (r && r.skipped) continue;                                       // rows moved while it was calculating: go round again
       if (props.getProperty('DIRTY_AT') === seen) return;                 // nothing newer arrived while we worked
     }
   } catch (err) { console.error('onSheetEdit: ' + err); }
