@@ -99,6 +99,7 @@ function checkPin_(user, pin, tool, range) {
   var who = auth_(user, pin);
   if (!who) throw new Error('wrong name or PIN');
   if (/^'?SETTINGS'?!/i.test(range || '') && who.role !== 'admin') throw new Error('only an admin can change settings');
+  if (who.role === 'claims' && !/^'?(CLAIMS|ACTIVITY)'?!/i.test(range || '')) throw new Error('your access level is Claims only');
 }
 
 // Same hash the website computes: SHA-256 of 'potower|' + PIN. The browser sends the PIN, never the hash.
@@ -143,7 +144,7 @@ function setUser_(user, pin, a) {
   var name = String(a.name || '').trim();
   if (!name || name.length > 40) throw new Error('enter a name (up to 40 characters)');
   var role = String(a.role || 'editor').toLowerCase();
-  if (role !== 'admin' && role !== 'editor') throw new Error('role must be admin or editor');
+  if (role !== 'admin' && role !== 'editor' && role !== 'claims') throw new Error('access level must be admin, editor or claims');
   var newPin = a.pin == null ? '' : String(a.pin);
   var lock = LockService.getScriptLock(); lock.waitLock(20000);
   try {

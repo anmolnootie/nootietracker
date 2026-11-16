@@ -1273,9 +1273,9 @@ const UI={
       '<p><button class="btn" data-act="reload"'+(S.busy?' disabled':'')+'>Reconnect and reload</button></p><div class="small">'+S.diag.map(esc).join('<br>')+'</div></section></div>'+
       '<section class="card" style="margin-top:12px"><h2>Who can edit</h2><div class="sub">The app opens in view-only mode for everyone. Each editor unlocks it with their own name and PIN, and every change is logged under that name.</div>'+
       (window.setEditPin&&S.mode==='live'?(S.edit&&S.role==='admin'?
-        '<table class="tbl" style="margin:8px 0"><thead><tr><th>Name</th><th>Role</th><th>Access</th><th></th></tr></thead><tbody>'+((S.users||[]).map(x=>'<tr><td>'+esc(x.name)+'</td><td>'+esc(x.role)+'</td><td>'+(x.active?'On':'Off')+'</td><td><button class="btn sm" data-act="useractive" data-arg="'+esc(x.name)+'">'+(x.active?'Switch off':'Switch on')+'</button></td></tr>').join('')||'<tr><td colspan="4" class="small">No one yet. Add the first person below.</td></tr>')+'</tbody></table>'+
-        '<div class="form"><label>Name<input type="text" id="nu-name" autocomplete="off" placeholder="e.g. Puneet"></label><label>PIN<input type="password" id="nu-pin" autocomplete="off" placeholder="At least 4 characters"></label><label>Role<select id="nu-role"><option value="editor">Editor</option><option value="admin">Admin (can manage people)</option></select></label></div><p><button class="btn pri" data-act="usersave">Add person or set a new PIN</button></p><div class="small">To change someone\'s PIN, type their name again with the new PIN. Switching someone off keeps their history.</div>'
-        :(S.edit?'<div class="small">Editing as <b>'+esc(S.user)+'</b>. Ask an admin to add people or change PINs.</div>':'<p><button class="btn pri" data-act="unlock">Unlock editing</button></p>'))
+        '<table class="tbl" style="margin:8px 0"><thead><tr><th>Name</th><th>Role</th><th>Access</th><th></th></tr></thead><tbody>'+((S.users||[]).map((x,i)=>'<tr><td>'+esc(x.name)+'</td><td><select id="ur-'+i+'" data-name="'+esc(x.name)+'" aria-label="Access level for '+esc(x.name)+'">'+[['admin','Admin'],['editor','Editor'],['claims','Claims only']].map(r=>'<option value="'+r[0]+'"'+(x.role===r[0]?' selected':'')+'>'+r[1]+'</option>').join('')+'</select></td><td>'+(x.active?'On':'Off')+'</td><td><button class="btn sm" data-act="useractive" data-arg="'+esc(x.name)+'">'+(x.active?'Switch off':'Switch on')+'</button></td></tr>').join('')||'<tr><td colspan="4" class="small">No one yet. Add the first person below.</td></tr>')+'</tbody></table>'+
+        '<div class="form"><label>Name<input type="text" id="nu-name" autocomplete="off" placeholder="e.g. Puneet"></label><label>PIN<input type="password" id="nu-pin" autocomplete="off" placeholder="At least 4 characters"></label><label>Role<select id="nu-role"><option value="editor">Editor</option><option value="admin">Admin</option><option value="claims">Claims only</option></select></label></div><div class="small" style="margin:6px 0"><b>Admin</b>: everything, plus add people, change PINs and access levels, and change settings. <b>Editor</b>: change POs, issues and claims. <b>Claims only</b>: record claims and nothing else.</div><p><button class="btn pri" data-act="usersave">Add person or set a new PIN</button></p><div class="small">To change someone\'s PIN, type their name again with the new PIN. Switching someone off keeps their history.</div>'
+        :(S.edit?'<div class="small">Editing as <b>'+esc(S.user)+'</b> ('+esc(S.role==='claims'?'Claims only':S.role==='admin'?'Admin':'Editor')+'). Ask an admin to add people, change PINs or change your access level.</div>':'<p><button class="btn pri" data-act="unlock">Unlock editing</button></p>'))
       :(S.edit?'<div class="form"><label>New editor PIN<input type="password" id="new-pin" autocomplete="off" placeholder="At least 4 characters"></label></div><p><button class="btn" data-act="savepin">Change PIN</button></p>':'<p><button class="btn pri" data-act="unlock">Unlock editing</button></p>'))+
       '<div class="small">The PIN stops accidental edits. For a hard lock, share the tracking sheet with the checker as Viewer in Google Sheets.</div></section>'+
       '<section class="card" style="margin-top:12px"><h2>How the app decides</h2><div class="sub">Plain-language rules</div><ul style="margin:0;padding-left:18px;line-height:1.7"><li>A PO with an invoice in DISPATCH + GRN counts as accepted and dispatched. Delivery and GRN come from the same row.</li><li>A PO with no invoice stays open until someone sets it to Declined, Cancelled or Expired with a reason. Nothing disappears silently.</li><li>Accepted POs must be handed to the warehouse, acknowledged, then dispatched within the SLAs above, or they show on the Worklist.</li><li>Your Warehouse Master is never edited. Everything entered here goes to the tracking sheet.</li></ul></section>';
@@ -1752,6 +1752,7 @@ async function doUnlock(){
     window.setEditPin(pin,name);
     let r=null;try{r=await sheets('login',{spreadsheetId:TRK_ID});}catch(e){UI.toast('Could not check the PIN: '+e.message,true);window.setEditPin('');return;}
     if(!r||!r.ok){window.setEditPin('');UI.toast('Wrong name or PIN.',true);return;}
+    if(!r.role)UI.toast('The Apps Script is an old version, so access levels are unavailable. Paste the latest Code.gs and deploy a new version.',true);
     S.role=r.role||'editor';try{sessionStorage.setItem('potower_role',S.role);}catch(e){}
     name=r.name||name;window.setEditPin(pin,name);
   }
@@ -1761,6 +1762,7 @@ async function doUnlock(){
 }
 function actionClick(act,arg,el){
   const today=S.asof;
+  if(WRITE_ACTS.indexOf(act)>=0&&S.edit&&S.role==='claims'&&act!=='saveclaim'){UI.toast('Your access level is Claims only. Ask an admin for Editor access to change POs.',true);return;}
   if(WRITE_ACTS.indexOf(act)>=0&&!S.edit){UI.toast('This is view-only. Unlock editing first.',true);UI.openDrawer({type:'unlock',back:UI.drawer&&UI.drawer.type!=='unlock'?UI.drawer:null});return;}
   switch(act){
     case 'tab':UI.view=arg;UI.render();window.scrollTo(0,0);break;
@@ -1795,6 +1797,8 @@ function actionClick(act,arg,el){
       sheets('user_set',{spreadsheetId:TRK_ID,name:n,pin:p,role:r,active:true}).then(x=>{S.users=x.users||S.users;UI.toast('Saved '+n+'.');UI.render();}).catch(e=>UI.toast(e.message,true));break;}
     case 'useractive':{const u=(S.users||[]).find(x=>x.name===arg);if(!u)break;
       sheets('user_set',{spreadsheetId:TRK_ID,name:u.name,role:u.role,active:!u.active}).then(x=>{S.users=x.users||S.users;UI.toast((u.active?'Switched off ':'Switched on ')+u.name+'.');UI.render();}).catch(e=>UI.toast(e.message,true));break;}
+    case 'userrole':{const [nm,rl]=JSON.parse(arg);const u=(S.users||[]).find(x=>x.name===nm);if(!u)break;
+      sheets('user_set',{spreadsheetId:TRK_ID,name:u.name,role:rl,active:u.active}).then(x=>{S.users=x.users||S.users;UI.toast(u.name+' is now '+rl+'.');UI.render();}).catch(e=>{UI.toast(e.message,true);UI.render();});break;}
     case 'lock':if(window.setEditPin)window.setEditPin('');S.role='';S.edit=false;try{sessionStorage.removeItem('potower_edit');}catch(e){}UI.drawer=null;UI.render();UI.toast('Locked. The app is view-only again.');break;
     case 'savepin':{const p=val('new-pin');if(p.length<4){UI.toast('The PIN needs at least 4 characters.',true);break;}sha(p).then(async h=>{savePin(h);enqueue('pinset',async()=>{if(window.setEditPin)window.setEditPin(p);});UI.toast('Editor PIN changed.');UI.render();});break;}
     case 'po':UI.openDrawer({type:'po',po:arg});break;
@@ -1852,6 +1856,7 @@ document.addEventListener('change',e=>{
   else if(id==='wl-team'){UI.f.team=e.target.value;UI.f.wlLimit=100;UI.render();}
   else if(id==='h-reason'){UI.hand.reason=e.target.value;}
   else if(id==='f-period'){UI.setPeriod(e.target.value);UI.f.rg.page=0;UI.render();}
+  else if(id&&id.indexOf('ur-')===0){const nm=e.target.getAttribute('data-name');actionClick('userrole',JSON.stringify([nm,e.target.value]),e.target);}
   else if(id&&id.indexOf('cl-')===0&&id!=='cl-q'){const g=UI.f.cl||(UI.f.cl=UI.clDefault());g[id.slice(3)]=e.target.value;g.page=0;UI.render();}
   else if(id&&id.indexOf('rg-')===0&&id!=='rg-q'){UI.f.rg[id.slice(3)]=e.target.value;UI.f.rg.page=0;UI.render();}
   else if(id==='user-name'){S.user=e.target.value.trim();lsSet('potower_user',S.user);}
@@ -1896,7 +1901,10 @@ recompute();UI.render();
   const local=lsGet('potower_local');
   const ok=await loadLive();
   if(S.mode==='live'&&S.pinHash&&!S.pinInSheet)savePin(S.pinHash);
-  if(window.setEditPin&&S.mode==='live')loadUsers();
+  if(window.setEditPin&&S.mode==='live'){
+    if(S.edit){try{const r=await sheets('login',{spreadsheetId:TRK_ID});if(r&&r.ok&&r.role){S.role=r.role;try{sessionStorage.setItem('potower_role',r.role);}catch(e){}}else if(r&&r.ok){S.diag.push('The Apps Script is an old version (no access levels). Paste the latest Code.gs and deploy a new version.');}}catch(e){}}
+    loadUsers();
+  }
   if(ok&&local&&local.trk){
     const keep=Object.keys(local.trk).filter(po=>!S.trk[po]);
     if(keep.length){bulkSave(keep.map(po=>({po,patch:local.trk[po]})),'Local entries synced',keep.length+' POs entered while offline');UI.toast(keep.length+' offline entries were saved to Google Sheets');}
