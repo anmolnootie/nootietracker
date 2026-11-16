@@ -1044,7 +1044,7 @@ const UI={
   render(){
     this.status();
     const D=S.D;const act=D.filter(d=>d.pri>=1&&d.pri<=6&&(this.f.plat==='ALL'||d.plat===this.f.plat)).length;
-    const tabs=[['overview','Overview'],['pipeline','Pipeline'],['worklist','Worklist',act],['platforms','Platforms'],['recon','Daily recon'],['issues','Issues (CRM)',S.issues.filter(i=>i.status!=='Resolved').length],['settings','Settings']];
+    const tabs=[['overview','Overview'],['pipeline','Pipeline'],['worklist','Worklist',act],['platforms','Platforms'],['claims','Claims'],['recon','Daily recon'],['issues','Issues (CRM)',S.issues.filter(i=>i.status!=='Resolved').length],['settings','Settings']];
     $('#tabs').innerHTML=tabs.map(t=>'<button role="tab" aria-selected="'+(this.view===t[0])+'" data-act="tab" data-v="'+t[0]+'">'+t[1]+(t[2]?' <span class="cnt">'+t[2]+'</span>':'')+'</button>').join('');
     const bn=[];
     if(S.mode!=='live')bn.push('<div class="banner">'+(S.err?esc(S.err)+' ':'')+'You are looking at the saved snapshot from '+fd(SNAP.asOf)+'. Entries you make are kept on this device only until the app is connected to Google Sheets (see Settings).</div>');
@@ -1256,7 +1256,7 @@ function invCell(d){const L=(d.inv&&d.inv.list)||[];const u=k=>Array.from(new Se
 /* ===== Shell: sidebar, top bar, home, PO register, editor / view-only access ===== */
 const PERIODS=[['fy','This financial year'],['90d','Last 90 days'],['30d','Last 30 days'],['7d','Last 7 days'],['month','This month'],['all','All time']];
 const WRITE_ACTS=['accept','handed','ack','savepo','newissue','saveissue','newpo','savenewpo','happly','happlynew','savecfg','savepin','dohand1'];
-const TABS=[['overview','Overview'],['pipeline','Pipeline'],['register','All POs'],['worklist','Worklist'],['recon','Daily recon'],['issues','Issues'],['platforms','Compare platforms']];
+const TABS=[['overview','Overview'],['pipeline','Pipeline'],['register','All POs'],['worklist','Worklist'],['claims','Claims'],['recon','Daily recon'],['issues','Issues'],['platforms','Compare platforms']];
 const ICON={
   home:'<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/></svg>',
   all:'<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>',
@@ -1532,6 +1532,41 @@ Object.assign(UI,{
   }
 });
 
+/* ===== Claims: every invoice where the GRN amount is below the invoice amount ===== */
+Object.assign(UI,{
+  clDefault(){return {q:'',sort:'amt',min:'0',page:0};},
+  claimRows(){
+    const g=this.f.cl||(this.f.cl=this.clDefault());const q=(g.q||'').trim().toLowerCase(),min=+g.min||0;const out=[];
+    this.rows().forEach(d=>{(d.inv&&d.inv.list||[]).forEach(l=>{
+      if(l.status==='RTO'||!(l.val>0)||!(l.gamt>0))return;
+      const claim=Math.round((l.val-l.gamt)*100)/100;if(claim<=1||claim<min)return;
+      const base=l.deliv||l.disp||null;
+      out.push({po:d.po,plat:d.plat,loc:d.loc,inv:l.inv,disp:l.disp,deliv:l.deliv,gno:l.gno,gdate:l.gdate,val:l.val,gamt:l.gamt,claim,pct:claim/l.val,age:base?diff(S.asof,base):null,cn:l.cn||'',cnv:l.cnv||0,note:[l.gnote,l.comment].filter(Boolean).join(' | '),why:[d.dmgReason,d.shortReason].filter(Boolean).join(' / ')});
+    });});
+    const hit=r=>!q||(r.po+' '+r.inv+' '+r.gno).toLowerCase().indexOf(q)>=0;
+    const rs=out.filter(hit);
+    rs.sort(g.sort==='old'?(a,b)=>(b.age||0)-(a.age||0):g.sort==='pct'?(a,b)=>b.pct-a.pct:(a,b)=>b.claim-a.claim);
+    return rs;
+  },
+  v_claims(){
+    const g=this.f.cl||(this.f.cl=this.clDefault()),PS=50,all=this.f.plat==='ALL';
+    const r=this.claimRows(),pages=Math.max(1,Math.ceil(r.length/PS));if(g.page>=pages)g.page=pages-1;
+    const shown=r.slice(g.page*PS,g.page*PS+PS);const tot=r.reduce((s,x)=>s+x.claim,0),invT=r.reduce((s,x)=>s+x.val,0);
+    const o=(cur,v,l)=>'<option value="'+esc(v)+'"'+(String(cur)===String(v)?' selected':'')+'>'+esc(l)+'</option>';
+    const by={};r.forEach(x=>{const b=by[x.plat]||(by[x.plat]={n:0,v:0});b.n++;b.v+=x.claim;});
+    const plat=Object.keys(by).sort((a,b)=>by[b].v-by[a].v).map(p=>'<tr><td>'+pn(p)+'</td><td class="r num">'+inr(by[p].n)+'</td><td class="r num">₹'+inr(by[p].v)+'</td></tr>').join('');
+    const body=shown.map(x=>'<tr class="click" data-act="po" data-arg="'+esc(x.po)+'"><td class="mono">'+esc(x.po)+'</td>'+(all?'<td>'+pn(x.plat)+'</td>':'')+'<td class="mono">'+esc(x.inv)+'</td><td class="num">'+fd(x.disp)+'</td><td class="num">'+fd(x.deliv)+'</td><td class="mono">'+esc(x.gno)+'</td><td class="r num">'+inr(x.val)+'</td><td class="r num">'+inr(Math.round(x.gamt))+'</td><td class="r num"><b>'+inr(Math.round(x.claim))+'</b></td><td class="r num">'+(x.pct*100).toFixed(1)+'%</td><td class="r num">'+(x.age==null?'':x.age)+'</td><td>'+esc(x.cn)+(x.cnv?' · '+inr(Math.round(x.cnv)):'')+'</td><td>'+esc(x.why)+'</td><td>'+esc(x.note)+'</td></tr>').join('')||'<tr><td colspan="14" class="small">No invoice has a GRN amount below its invoice amount for this selection.</td></tr>';
+    const pager=pages>1?'<div class="toolbar" style="justify-content:center;margin-top:10px"><button class="btn sm" data-act="clpage" data-arg="-1"'+(g.page?'':' disabled')+'>← Previous</button><span class="small">Page '+(g.page+1)+' of '+pages+'</span><button class="btn sm" data-act="clpage" data-arg="1"'+(g.page<pages-1?'':' disabled')+'>Next →</button></div>':'';
+    return '<div class="toolbar"><h2>Claims to raise</h2><span class="small">Invoices where the platform\'s GRN amount is lower than what we invoiced. The claim amount is invoice minus GRN. Click a row to open the PO.</span></div>'+
+      '<div class="grid g3" style="margin-bottom:12px"><section class="card"><div class="small">Invoices to claim</div><h2>'+inr(r.length)+'</h2></section><section class="card"><div class="small">Total claim amount</div><h2>'+money(tot)+'</h2></section><section class="card"><div class="small">Share of invoiced value</div><h2>'+(invT?(tot/invT*100).toFixed(2):'0')+'%</h2></section></div>'+
+      '<div class="filters"><input type="text" id="cl-q" placeholder="Search PO, invoice or GRN no." value="'+esc(g.q)+'" aria-label="Search">'+
+      '<select id="cl-min" aria-label="Minimum claim">'+o(g.min,'0','Any amount')+o(g.min,'500','₹500 and above')+o(g.min,'2000','₹2,000 and above')+o(g.min,'10000','₹10,000 and above')+'</select>'+
+      '<select id="cl-sort" aria-label="Sort">'+o(g.sort,'amt','Highest claim')+o(g.sort,'pct','Highest % of invoice')+o(g.sort,'old','Oldest first')+'</select><span class="grow"></span><button class="btn sm" data-act="copycl">Copy list</button></div>'+
+      (plat&&all?'<div class="tablewrap" style="margin-bottom:12px"><table><thead><tr><th>Platform</th><th class="r">Invoices</th><th class="r">Claim amount</th></tr></thead><tbody>'+plat+'</tbody></table></div>':'')+
+      '<div class="tablewrap"><table><thead><tr><th>PO number</th>'+(all?'<th>Platform</th>':'')+'<th>Invoice</th><th>Dispatched</th><th>Delivered</th><th>GRN no.</th><th class="r">Invoice ₹</th><th class="r">GRN ₹</th><th class="r">Claim ₹</th><th class="r">% short</th><th class="r">Days since delivery</th><th>Credit note</th><th>Damage / shortage reason</th><th>Remarks</th></tr></thead><tbody>'+body+'</tbody></table></div>'+pager;
+  }
+});
+
 /* ===== Website mode: replaces the Claude connector with the Apps Script backend ===== */
 (function(){
   if(typeof claude!=='undefined'&&claude.use)return;            // running inside Claude: nothing to do
@@ -1666,6 +1701,8 @@ function actionClick(act,arg,el){
     case 'gap':UI.f.rg=UI.rgDefault();UI.f.rg.gap=arg;UI.view='register';UI.render();window.scrollTo(0,0);break;
     case 'applyrange':{const fr=$('#f-from').value,to=$('#f-to').value;if(!fr||!to){UI.toast&&UI.toast('Pick both dates','err');break;}UI.setPeriod('custom',fr,to);UI.f.rg.page=0;UI.render();break;}
     case 'period':UI.setPeriod(arg);UI.f.rg.page=0;UI.render();break;
+    case 'clpage':{const g=UI.f.cl||(UI.f.cl=UI.clDefault());g.page=Math.max(0,g.page+(+arg));UI.render();break;}
+    case 'copycl':{const r=UI.claimRows();copyText(['PO\tPlatform\tInvoice\tDispatched\tDelivered\tGRN No\tInvoice Amount\tGRN Amount\tClaim Amount\t% Short\tDays Since Delivery\tCredit Note\tReason\tRemarks'].concat(r.map(x=>[x.po,x.plat,x.inv,x.disp||'',x.deliv||'',x.gno,Math.round(x.val),Math.round(x.gamt),Math.round(x.claim),(x.pct*100).toFixed(1),x.age==null?'':x.age,x.cn,x.why,x.note].join('\t'))).join('\n'));UI.toast('Copied '+r.length+' claims');break;}
     case 'rgreset':UI.f.rg=UI.rgDefault();UI.render();break;
     case 'copyreg':{const r=UI.regRows();copyText(['PO\tPlatform\tPO date\tFacility\tExpiry\tValue\tStage\tDecision\tProblem\tInvoices\tInvoice Nos\tAppointment\tDispatched\tDelivered\tPartner / AWB\tGRN Nos\tE-way Bill\tOwner'].concat(r.map(d=>[d.po,d.plat,d.date||'',d.loc,d.exp||'',Math.round(d.value||0),STAGES[d.stage-1].name,d.dec,d.pri?FLAGS[d.pri].name:'',d.inv.n||'',invCell(d).inv,d.appt||'',invCell(d).disp,invCell(d).deliv,invCell(d).awb,invCell(d).grn,d.ewb||'',d.owner].join('\t'))).join('\n'));break;}
     case 'unlock':UI.openDrawer({type:'unlock',back:UI.drawer&&UI.drawer.type!=='unlock'?UI.drawer:null});break;
@@ -1731,6 +1768,7 @@ document.addEventListener('change',e=>{
   else if(id==='wl-team'){UI.f.team=e.target.value;UI.f.wlLimit=100;UI.render();}
   else if(id==='h-reason'){UI.hand.reason=e.target.value;}
   else if(id==='f-period'){UI.setPeriod(e.target.value);UI.f.rg.page=0;UI.render();}
+  else if(id&&id.indexOf('cl-')===0&&id!=='cl-q'){const g=UI.f.cl||(UI.f.cl=UI.clDefault());g[id.slice(3)]=e.target.value;g.page=0;UI.render();}
   else if(id&&id.indexOf('rg-')===0&&id!=='rg-q'){UI.f.rg[id.slice(3)]=e.target.value;UI.f.rg.page=0;UI.render();}
   else if(id==='user-name'){S.user=e.target.value.trim();lsSet('potower_user',S.user);}
 });
@@ -1740,6 +1778,7 @@ document.addEventListener('input',e=>{
   if(id==='wl-q'){UI.f.q=e.target.value;clearTimeout(tmr);tmr=setTimeout(()=>{const p=e.target.selectionStart;UI.f.wlLimit=100;UI.render();const n=$('#wl-q');if(n){n.focus();n.setSelectionRange(p,p);}},250);}
   else if(id==='h-person'){UI.hand.person=e.target.value;}
   else if(id==='h-text'){UI.hand.text=e.target.value;handPreview();}
+  else if(id==='cl-q'){const g=UI.f.cl||(UI.f.cl=UI.clDefault());g.q=e.target.value;g.page=0;clearTimeout(tmr);tmr=setTimeout(()=>{const p=e.target.selectionStart;UI.render();const n=$('#cl-q');if(n){n.focus();n.setSelectionRange(p,p);}},250);}
   else if(id==='rg-q'){UI.f.rg.q=e.target.value;UI.f.rg.page=0;clearTimeout(tmr);tmr=setTimeout(()=>{const p=e.target.selectionStart;UI.render();const n=$('#rg-q');if(n){n.focus();n.setSelectionRange(p,p);}},250);}
   else if(id==='q')searchBox(e.target);
 });
