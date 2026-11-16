@@ -6,10 +6,10 @@
  * using the exact same logic as the website (Core.gs is the website's core.js).
  * Run setupMasterSync() once from the editor to install the timer.
  */
-var MASTER_COLS_ = 52;
+var MASTER_COLS_ = 53;
 var MASTER_TEXT_ = [1,2,3,4,5,8,9,10,11,12,13,14,15,16,17,19,20,21,24,25,26,27,28,29,35,37,38,41,42,45,46,47,48];
-var MASTER_NUM_ = [6,7,18,22,30,31,32,33,34,36,39,40,43,44,49,50,51,52];
-var MASTER_HEADERS_ = ['PO Number','Platform','PO Date','PO Expiry','Facility','PO Qty','PO Value','Source','Decision','Decision Reason','Handed to WH On','Handed To (Person)','WH Ack On','WH Ack By','Owner','E-way Bill No','Remarks','Invoices','Invoice Nos','First Dispatch','Last Dispatch','Invoiced Value','Fill %','AWB / Vehicle','Delivery Partner','Dispatch Status','Delivered On','GRN Status','GRN Nos','GRN Amount','Short Qty','Short Value','Damaged Amount (Inv - GRN)','Excess Value','Credit Note','CN Value','RTO','Stage','Age (days)','Days to Expiry','Last Refreshed','Appointment Date','Damage Qty','Excess Qty','Damage Reason','Shortage Reason','GRN Remarks','Warehouse Comment','Open Issues','Claimable (Inv - GRN or RTO)','Claim Raised','Claim Settled'];
+var MASTER_NUM_ = [6,7,18,22,30,31,32,33,34,36,39,40,43,44,49,50,51,52,53];
+var MASTER_HEADERS_ = ['PO Number','Platform','PO Date','PO Expiry','Facility','PO Qty','PO Value','Source','Decision','Decision Reason','Handed to WH On','Handed To (Person)','WH Ack On','WH Ack By','Owner','E-way Bill No','Remarks','Invoices','Invoice Nos','First Dispatch','Last Dispatch','Invoiced Value','Fill %','AWB / Vehicle','Delivery Partner','Dispatch Status','Delivered On','GRN Status','GRN Nos','GRN Amount','Short Qty','Short Value','Damaged Amount (Inv - GRN)','Excess Value','Credit Note','CN Value','RTO','Stage','Age (days)','Days to Expiry','Last Refreshed','Appointment Date','Damage Qty','Excess Qty','Damage Reason','Shortage Reason','GRN Remarks','Warehouse Comment','Open Issues','Claim Left (Inv - GRN - RTO)','Claim Raised','Claim Settled','RTO Goods Received'];
 var INV_HEADERS_ = ['Dispatch Date','PO Number','Invoice No','Platform','Facility','Invoice Value','AWB / Vehicle','Delivery Partner','Dispatch Status','Delivered On','Appointment Date','GRN Status','GRN No','GRN Date','GRN Amount','Short Qty','Short Value','Damage Qty','Damaged Amount (Inv - GRN)','Excess Qty','Excess Value','Credit Note','CN Value','GRN Remarks','Warehouse Comment'];
 
 
@@ -20,7 +20,7 @@ var EDIT_DATES_ = { handed: 1, ack: 1, mAppt: 1 };
 var EDIT_MASTER_IDX_ = { dec: 8, reason: 9, owner: 14, ewb: 15, rem: 16, mAppt: 41, dmgReason: 44, shortReason: 45 };   // 0-based in a MASTER row
 var TRK_COLS_ = ['po','dec','reason','printout','handed','ack','ackBy','owner','rem','updated','by','plat','date','exp','loc','qty','amt','created','handedTo','ewb','mInv','mInvVal','mDisp','mStatus','mPartner','mAwb','mDeliv','mGrnNo','mGrnDate','mGrnAmt','mAppt','dmgReason','shortReason'];
 var PLAT_TABS_ = ['Blinkit', 'Swiggy Instamart', 'Zepto', 'BigBasket', 'Flipkart', 'Other platforms'];
-var PLAT_ORDER_ = [1,2,3,4,42,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,43,44,45,46,47,48,49,50,51,52];   // MASTER column shown in each platform-tab column
+var PLAT_ORDER_ = [1,2,3,4,42,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,43,44,45,46,47,48,49,50,51,52,53];   // MASTER column shown in each platform-tab column
 var MAX_EDITS_AT_ONCE_ = 300;
 
 function platTab_(p) { return PLAT_TABS_.slice(0, 5).indexOf(p) >= 0 ? p : 'Other platforms'; }
@@ -161,7 +161,7 @@ function organiseTabs_(ss) {
 }
 
 
-var CLAIM_HEADERS_ = ['PO Number', 'Platform', 'Invoice No', 'Claim Type', 'Delivered / Dispatched', 'Invoice Value', 'GRN Amount', 'Claim Amount', 'Claim Status', 'Claim Raised', 'Settled', 'Still To Raise', 'Waiting For Payout', 'Reference', 'Raised On', 'Settled On', 'Remarks'];
+var CLAIM_HEADERS_ = ['PO Number', 'Platform', 'Invoice No', 'Claim Type', 'Delivered / Dispatched', 'Invoice Value', 'GRN Amount', 'Missing (Inv - GRN)', 'RTO Received', 'Claim Left', 'Claim Status', 'Claim Raised', 'Settled', 'Still To Raise', 'Waiting For Payout', 'Reference', 'Raised On', 'Settled On', 'Remarks'];
 
 // A read-only list of every claimable invoice with what has been raised and settled. Claims are entered in the app.
 function claimsTab_(ss, a) {
@@ -169,15 +169,15 @@ function claimsTab_(ss, a) {
   var platOf = {}; a.D.forEach(function (d) { platOf[d.po] = d.plat; });
   var rows = [];
   a.I.forEach(function (l) {
-    var c = claimOf(l); if (!c) return;
-    var rec = a.claims[claimKey_(l.po, l.inv)] || {}, m = claimMath(c.amt, rec);
-    rows.push([l.po, platOf[l.po] || l.chan || '', l.inv, c.type, l.deliv || l.disp || '', l.val, l.gamt || '', c.amt, rec.status || 'Not raised', m.claimed || '', m.settled || '', m.toRaise || '', m.waiting || '',
+    var rec = a.claims[claimKey_(l.po, l.inv)] || {}, c = claimOf(l, rec); if (!c) return;
+    var m = claimMath(c.amt, rec);
+    rows.push([l.po, platOf[l.po] || l.chan || '', l.inv, c.type, l.deliv || l.disp || '', l.val, l.gamt || '', c.gap, c.back || '', c.amt, rec.status || 'Not raised', m.claimed || '', m.settled || '', m.toRaise || '', m.waiting || '',
       rec.ref || '', rec.raisedOn || '', rec.settledOn || '', rec.note || '']);
   });
-  rows.sort(function (x, y) { return y[7] - x[7]; });
+  rows.sort(function (x, y) { return y[9] - x[9]; });
   ensureCols_(sh, CLAIM_HEADERS_.length);
   sh.getRange(1, 1, 1, CLAIM_HEADERS_.length).setValues([CLAIM_HEADERS_]);
-  writeBlock_(sh, 2, rows, CLAIM_HEADERS_.length, [1, 2, 3, 4, 5, 9, 14, 15, 16, 17], [6, 7, 8, 10, 11, 12, 13]);
+  writeBlock_(sh, 2, rows, CLAIM_HEADERS_.length, [1, 2, 3, 4, 5, 11, 16, 17, 18, 19], [6, 7, 8, 9, 10, 12, 13, 14, 15]);
   styleTab_(sh, 1, CLAIM_HEADERS_, []);
   return rows.length;
 }
@@ -211,8 +211,8 @@ function buildMaster_(D, I, stages, stamp, claims) {
   I.forEach(function (l) { (by[l.po] = by[l.po] || []).push(l); });
   var rows = D.map(function (d) {
     var ls = by[d.po] || [];
-    var cl = { amt: 0, claimed: 0, settled: 0 };
-    ls.forEach(function (l) { var c = claimOf(l); if (!c) return; var m = claimMath(c.amt, claims[claimKey_(d.po, l.inv)]); cl.amt += c.amt; cl.claimed += m.claimed; cl.settled += m.settled; });
+    var cl = { amt: 0, claimed: 0, settled: 0, back: 0 };
+    ls.forEach(function (l) { var rec = claims[claimKey_(d.po, l.inv)], c = claimOf(l, rec); if (!c) return; var m = claimMath(c.amt, rec); cl.amt += c.amt; cl.claimed += m.claimed; cl.settled += m.settled; cl.back += c.back; });
     var ds = ls.map(function (l) { return l.disp; }).filter(Boolean).sort();
     var dl = ls.map(function (l) { return l.deliv; }).filter(Boolean).sort();
     var r = [d.po, d.plat, d.orderDate, d.exp, d.loc, d.qty, d.amt, d.src,
@@ -224,7 +224,7 @@ function buildMaster_(D, I, stages, stamp, claims) {
       jn_(ls, 'cn'), sm_(ls, 'cnv'), d.inv.rto ? 'Yes' : '',
       st[d.stage], d.age, d.dte, stamp, d.appt,
       sm_(ls, 'dq'), sm_(ls, 'eq'), d.dmgReason, d.shortReason, jn_(ls, 'gnote'), jn_(ls, 'comment'), d.openIssues || '',
-      cl.amt || '', cl.claimed || '', cl.settled || ''];
+      cl.amt || '', cl.claimed || '', cl.settled || '', cl.back || ''];
     return r.map(nz_);
   });
   var inv = I.slice().sort(function (a, b) { var x = a.disp || '', y = b.disp || ''; return x < y ? -1 : x > y ? 1 : 0; }).map(function (l) {
@@ -243,7 +243,8 @@ function loadAll_() {
     zepto: readRange_(src, 'Zepto!A2:G400'), swiggy: readRange_(src, 'Swiggy!A2:E200')
   });
   var ob = parseOrderBook(obR, asof), gm = parseGrnTab(grnR), gi = parseGrnInfo(grnR);
-  var I = parseDispatch(dgR, gm, gi), P = buildPOs(ob, I, tabs);
+  var rtoR = []; try { rtoR = readRange_(src, "'RTO TRACKER'!A3:N1500"); } catch (e) { /* tab missing */ }
+  var I = parseDispatch(dgR, gm, gi, parseRto(rtoR)), P = buildPOs(ob, I, tabs);
   if (P.length < 200) throw new Error('Warehouse Master looked too small (' + P.length + ' POs): not syncing');
   var TC = ['po','dec','reason','printout','handed','ack','ackBy','owner','rem','updated','by','plat','date','exp','loc','qty','amt','created','handedTo','ewb','mInv','mInvVal','mDisp','mStatus','mPartner','mAwb','mDeliv','mGrnNo','mGrnDate','mGrnAmt','mAppt','dmgReason','shortReason'];
   var trkMap = {};
@@ -267,10 +268,10 @@ function loadAll_() {
   var D = deriveAll(P, I, trkMap, issues, cfg, asof);
   var claims = {};
   try {
-    readRange_(trk, 'CLAIMS!A2:M5000').forEach(function (r) {
+    readRange_(trk, 'CLAIMS!A2:N5000').forEach(function (r) {
       if (!r[0] || !r[1]) return;
       var po = normPo(r[0]);
-      claims[claimKey_(po, r[1])] = { po: po, inv: String(r[1]), status: String(r[4] || 'Not raised'), claimed: num(r[5]), raisedOn: r[6], ref: r[7], settled: num(r[8]), settledOn: r[9], note: r[10] };
+      claims[claimKey_(po, r[1])] = { po: po, inv: String(r[1]), status: String(r[4] || 'Not raised'), claimed: num(r[5]), raisedOn: r[6], ref: r[7], settled: num(r[8]), settledOn: r[9], note: r[10], rtoValue: (r[13] === '' || r[13] == null) ? null : num(r[13]) };
     });
   } catch (e) { /* no CLAIMS tab yet */ }
   return { D: D, I: I.concat(manualLines(I, trkMap)), asof: asof, claims: claims };

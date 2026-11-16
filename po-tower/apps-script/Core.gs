@@ -114,8 +114,19 @@ function parseGrnInfo(rows){
   return m;
 }
 // Damaged amount = invoice value minus GRN amount (when the GRN amount is known); otherwise the Warehouse Master's own damage value
-function gapFix(l){if(l.val>0&&l.gamt>0&&l.status!=='RTO'){l.dv=Math.max(0,Math.round((l.val-l.gamt)*100)/100);l.gapAuto=true;}return l;}
-function parseDispatch(rows,gmap,ginfo){
+function gapFix(l){if(l.val>0&&l.gamt>0&&l.status!=='RTO'){l.dv=Math.max(0,Math.round((l.val-l.gamt-(l.rto||0))*100)/100);l.gapAuto=true;}return l;}
+// RTO TRACKER: one row per returned shipment, matched to dispatch lines by docket / AWB number. Value = goods that came back.
+function parseRto(rows){
+  const m={};
+  for(const r of rows){
+    const awb=cell(r,6).trim();if(!awb)continue;const v=num(cell(r,5));
+    const o=m[awb]||(m[awb]={val:0,n:0,date:null,cond:'',cn:''});
+    o.val+=v||0;o.n++;const d=pdate(cell(r,1));if(d&&(!o.date||d>o.date))o.date=d;
+    o.cond=cell(r,9).trim()||o.cond;o.cn=cell(r,11).trim()||o.cn;
+  }
+  return m;
+}
+function parseDispatch(rows,gmap,ginfo,rto){
   const out=[];
   for(const r of rows){
     const po=normPo(cell(r,2));if(!po)continue;
@@ -134,6 +145,10 @@ function parseDispatch(rows,gmap,ginfo){
       partner:PART[cell(r,8).trim().toLowerCase()]||cell(r,8).trim(),status:st,comment:cm==='#N/A'?'':cm,expiry:pdate(cell(r,11)),
       deliv:pdate(cell(r,24)),grn,sq:num(cell(r,14)),sv:num(cell(r,15)),dv:num(cell(r,17)),dvw:num(cell(r,17)),ev:num(cell(r,19)),cn:cell(r,21).trim(),cnv:num(cell(r,22)),
       appt:pdate(cell(r,12)),dq:num(cell(r,16)),eq:num(cell(r,18)),gno:(ginfo&&ginfo[inv]?ginfo[inv].no:''),gdate:(ginfo&&ginfo[inv]?ginfo[inv].date:null),gamt:(ginfo&&ginfo[inv]?ginfo[inv].amt:null),gnote:(ginfo&&ginfo[inv]?ginfo[inv].rem:'')});
+  }
+  if(rto){
+    const by={};out.forEach(l=>{if(l.awb&&rto[l.awb]){(by[l.awb]=by[l.awb]||[]).push(l);}});
+    Object.keys(by).forEach(k=>{const ls=by[k],tot=ls.reduce((s,l)=>s+(l.val||0),0)||1;ls.forEach(l=>{l.rto=Math.round(rto[k].val*((l.val||0)/tot)*100)/100;l.rtoDate=rto[k].date;l.rtoCond=rto[k].cond;});});
   }
   out.forEach(l=>gapFix(l));
   return out;
@@ -192,12 +207,17 @@ function buildPOs(ob,dg,tabs){
 /* ---------- derived state ---------- */
 // What can be claimed on one invoice: an RTO claims the whole invoice, otherwise the gap between invoice and GRN amount
 const CLAIM_STATUS=['Not raised','Raised','Part settled','Settled','Rejected'];
-function claimOf(l){
+// gap = invoice minus GRN (the whole invoice when the shipment came back as RTO); the goods received back through RTO come off the gap; what is left is the claim.
+// The RTO value comes from the RTO TRACKER (matched by docket number) unless someone typed a value on the claim.
+function claimOf(l,rec){
   if(!(l.val>0))return null;
-  if(l.status==='RTO')return {type:'RTO',amt:Math.round(l.val*100)/100};
-  if(!(l.gamt>0))return null;
-  const c=Math.round((l.val-l.gamt)*100)/100;
-  return c>1?{type:'GRN short',amt:c}:null;
+  const wholeRto=l.status==='RTO';
+  if(!wholeRto&&!(l.gamt>0))return null;
+  const gap=Math.round((l.val-(wholeRto?0:l.gamt))*100)/100;
+  const ov=rec&&rec.rtoValue!=null&&rec.rtoValue!==''?num(rec.rtoValue):null;
+  const back=Math.min(gap,ov!=null?ov:(l.rto||0));
+  const c=Math.round((gap-back)*100)/100;
+  return c>1?{type:wholeRto?'RTO invoice':'GRN short',gap,back,amt:c,manual:ov!=null}:null;
 }
 function claimMath(amt,c){
   const claimed=c&&c.status!=='Not raised'?(num(c.claimed)||0):0,settled=c?(num(c.settled)||0):0,rej=c&&c.status==='Rejected';
