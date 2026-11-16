@@ -361,7 +361,7 @@ function parseInvoiceRows(rows){
     const po=normPo(cell(r,1));if(!po)return;
     const g=k=>cell(r,k).trim();
     let st=g(8);st=st?st.toLowerCase().replace(/\b\w/g,c=>c.toUpperCase()):'';if(st==='Rto')st='RTO';
-    const gamt=num(g(14));let grn=g(11);
+    const gamt=num(g(14));let grn=g(11);{const gk=String(grn||'').trim().toLowerCase();if(/done|complete|received/.test(gk))grn='Done';else if(/pend/.test(gk))grn='Pending';else if(/^n\.?\/?a\.?$/.test(gk))grn='NA';}
     if(st!=='RTO'&&st!=='Delivered'&&(pdate(g(9))||gamt!=null||g(12)||pdate(g(13))))st='Delivered';   // a delivery date or any GRN detail means it was delivered
     if(st==='RTO')grn='NA';else if(gamt!=null||g(12)||pdate(g(13)))grn='Done';else if(!grn&&st==='Delivered')grn='Pending';
     const l=gapFix({disp:pdate(g(0))||null,po,inv:g(2),chan:normChan(g(3)),loc:g(4),val:num(g(5)),awb:g(6),partner:PART[g(7).toLowerCase()]||g(7),status:st,comment:g(24),expiry:null,
