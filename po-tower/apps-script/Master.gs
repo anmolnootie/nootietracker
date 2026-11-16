@@ -6,10 +6,10 @@
  * using the exact same logic as the website (Core.gs is the website's core.js).
  * Run setupMasterSync() once from the editor to install the timer.
  */
-var MASTER_COLS_ = 49;
+var MASTER_COLS_ = 52;
 var MASTER_TEXT_ = [1,2,3,4,5,8,9,10,11,12,13,14,15,16,17,19,20,21,24,25,26,27,28,29,35,37,38,41,42,45,46,47,48];
-var MASTER_NUM_ = [6,7,18,22,30,31,32,33,34,36,39,40,43,44,49];
-var MASTER_HEADERS_ = ['PO Number','Platform','PO Date','PO Expiry','Facility','PO Qty','PO Value','Source','Decision','Decision Reason','Handed to WH On','Handed To (Person)','WH Ack On','WH Ack By','Owner','E-way Bill No','Remarks','Invoices','Invoice Nos','First Dispatch','Last Dispatch','Invoiced Value','Fill %','AWB / Vehicle','Delivery Partner','Dispatch Status','Delivered On','GRN Status','GRN Nos','GRN Amount','Short Qty','Short Value','Damaged Amount (Inv - GRN)','Excess Value','Credit Note','CN Value','RTO','Stage','Age (days)','Days to Expiry','Last Refreshed','Appointment Date','Damage Qty','Excess Qty','Damage Reason','Shortage Reason','GRN Remarks','Warehouse Comment','Open Issues'];
+var MASTER_NUM_ = [6,7,18,22,30,31,32,33,34,36,39,40,43,44,49,50,51,52];
+var MASTER_HEADERS_ = ['PO Number','Platform','PO Date','PO Expiry','Facility','PO Qty','PO Value','Source','Decision','Decision Reason','Handed to WH On','Handed To (Person)','WH Ack On','WH Ack By','Owner','E-way Bill No','Remarks','Invoices','Invoice Nos','First Dispatch','Last Dispatch','Invoiced Value','Fill %','AWB / Vehicle','Delivery Partner','Dispatch Status','Delivered On','GRN Status','GRN Nos','GRN Amount','Short Qty','Short Value','Damaged Amount (Inv - GRN)','Excess Value','Credit Note','CN Value','RTO','Stage','Age (days)','Days to Expiry','Last Refreshed','Appointment Date','Damage Qty','Excess Qty','Damage Reason','Shortage Reason','GRN Remarks','Warehouse Comment','Open Issues','Claimable (Inv - GRN or RTO)','Claim Raised','Claim Settled'];
 var INV_HEADERS_ = ['Dispatch Date','PO Number','Invoice No','Platform','Facility','Invoice Value','AWB / Vehicle','Delivery Partner','Dispatch Status','Delivered On','Appointment Date','GRN Status','GRN No','GRN Date','GRN Amount','Short Qty','Short Value','Damage Qty','Damaged Amount (Inv - GRN)','Excess Qty','Excess Value','Credit Note','CN Value','GRN Remarks','Warehouse Comment'];
 
 
@@ -20,7 +20,7 @@ var EDIT_DATES_ = { handed: 1, ack: 1, mAppt: 1 };
 var EDIT_MASTER_IDX_ = { dec: 8, reason: 9, owner: 14, ewb: 15, rem: 16, mAppt: 41, dmgReason: 44, shortReason: 45 };   // 0-based in a MASTER row
 var TRK_COLS_ = ['po','dec','reason','printout','handed','ack','ackBy','owner','rem','updated','by','plat','date','exp','loc','qty','amt','created','handedTo','ewb','mInv','mInvVal','mDisp','mStatus','mPartner','mAwb','mDeliv','mGrnNo','mGrnDate','mGrnAmt','mAppt','dmgReason','shortReason'];
 var PLAT_TABS_ = ['Blinkit', 'Swiggy Instamart', 'Zepto', 'BigBasket', 'Flipkart', 'Other platforms'];
-var PLAT_ORDER_ = [1,2,3,4,42,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,43,44,45,46,47,48,49];   // MASTER column shown in each platform-tab column
+var PLAT_ORDER_ = [1,2,3,4,42,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,43,44,45,46,47,48,49,50,51,52];   // MASTER column shown in each platform-tab column
 var MAX_EDITS_AT_ONCE_ = 300;
 
 function platTab_(p) { return PLAT_TABS_.slice(0, 5).indexOf(p) >= 0 ? p : 'Other platforms'; }
@@ -131,8 +131,8 @@ function appDataTab_(ss) {
   return sh;
 }
 
-var TAB_ORDER_ = ['MASTER', 'BY PLATFORM', 'Blinkit', 'Swiggy Instamart', 'Zepto', 'BigBasket', 'Flipkart', 'Other platforms', 'INVOICES', 'READ ME', 'APP DATA', '_SNAPSHOT'];
-var TAB_COLORS_ = { 'MASTER': '#1f2937', 'BY PLATFORM': '#475569', 'Blinkit': '#b45309', 'Swiggy Instamart': '#c2410c', 'Zepto': '#6d28d9', 'BigBasket': '#15803d', 'Flipkart': '#1d4ed8', 'Other platforms': '#64748b', 'INVOICES': '#0f766e', 'READ ME': '#94a3b8' };
+var TAB_ORDER_ = ['MASTER', 'BY PLATFORM', 'Blinkit', 'Swiggy Instamart', 'Zepto', 'BigBasket', 'Flipkart', 'Other platforms', 'INVOICES', 'CLAIMS', 'READ ME', 'APP DATA', '_SNAPSHOT'];
+var TAB_COLORS_ = { 'MASTER': '#1f2937', 'BY PLATFORM': '#475569', 'Blinkit': '#b45309', 'Swiggy Instamart': '#c2410c', 'Zepto': '#6d28d9', 'BigBasket': '#15803d', 'Flipkart': '#1d4ed8', 'Other platforms': '#64748b', 'INVOICES': '#0f766e', 'CLAIMS': '#b91c1c', 'READ ME': '#94a3b8' };
 var HIDE_COLS_ = [8, 11, 12, 13, 14, 41];   // Source, the four handover columns, Last Refreshed: kept for history, not shown
 
 // readable colours: dark header with white text, soft yellow with dark text for the columns people type in
@@ -160,6 +160,28 @@ function organiseTabs_(ss) {
   if (first) ss.setActiveSheet(first);
 }
 
+
+var CLAIM_HEADERS_ = ['PO Number', 'Platform', 'Invoice No', 'Claim Type', 'Delivered / Dispatched', 'Invoice Value', 'GRN Amount', 'Claim Amount', 'Claim Status', 'Claim Raised', 'Settled', 'Still To Raise', 'Waiting For Payout', 'Reference', 'Raised On', 'Settled On', 'Remarks'];
+
+// A read-only list of every claimable invoice with what has been raised and settled. Claims are entered in the app.
+function claimsTab_(ss, a) {
+  var sh = ss.getSheetByName('CLAIMS') || ss.insertSheet('CLAIMS');
+  var platOf = {}; a.D.forEach(function (d) { platOf[d.po] = d.plat; });
+  var rows = [];
+  a.I.forEach(function (l) {
+    var c = claimOf(l); if (!c) return;
+    var rec = a.claims[claimKey_(l.po, l.inv)] || {}, m = claimMath(c.amt, rec);
+    rows.push([l.po, platOf[l.po] || l.chan || '', l.inv, c.type, l.deliv || l.disp || '', l.val, l.gamt || '', c.amt, rec.status || 'Not raised', m.claimed || '', m.settled || '', m.toRaise || '', m.waiting || '',
+      rec.ref || '', rec.raisedOn || '', rec.settledOn || '', rec.note || '']);
+  });
+  rows.sort(function (x, y) { return y[7] - x[7]; });
+  ensureCols_(sh, CLAIM_HEADERS_.length);
+  sh.getRange(1, 1, 1, CLAIM_HEADERS_.length).setValues([CLAIM_HEADERS_]);
+  writeBlock_(sh, 2, rows, CLAIM_HEADERS_.length, [1, 2, 3, 4, 5, 9, 14, 15, 16, 17], [6, 7, 8, 10, 11, 12, 13]);
+  styleTab_(sh, 1, CLAIM_HEADERS_, []);
+  return rows.length;
+}
+
 function forceSyncEdits() { return syncMaster(true); }
 
 function setupMasterSync() {
@@ -180,13 +202,17 @@ function sm_(ls, k) {
 }
 function nz_(v) { return (v === null || v === undefined) ? '' : v; }
 
-function buildMaster_(D, I, stages, stamp) {
+function claimKey_(po, inv) { return po + '|' + String(inv || '').trim().toUpperCase(); }
+
+function buildMaster_(D, I, stages, stamp, claims) {
   var st = {};
   stages.forEach(function (s) { st[s.n] = s.short; });
   var by = {};
   I.forEach(function (l) { (by[l.po] = by[l.po] || []).push(l); });
   var rows = D.map(function (d) {
     var ls = by[d.po] || [];
+    var cl = { amt: 0, claimed: 0, settled: 0 };
+    ls.forEach(function (l) { var c = claimOf(l); if (!c) return; var m = claimMath(c.amt, claims[claimKey_(d.po, l.inv)]); cl.amt += c.amt; cl.claimed += m.claimed; cl.settled += m.settled; });
     var ds = ls.map(function (l) { return l.disp; }).filter(Boolean).sort();
     var dl = ls.map(function (l) { return l.deliv; }).filter(Boolean).sort();
     var r = [d.po, d.plat, d.orderDate, d.exp, d.loc, d.qty, d.amt, d.src,
@@ -197,7 +223,8 @@ function buildMaster_(D, I, stages, stamp) {
       jn_(ls, 'grn'), jn_(ls, 'gno'), sm_(ls, 'gamt'), sm_(ls, 'sq'), sm_(ls, 'sv'), sm_(ls, 'dv'), sm_(ls, 'ev'),
       jn_(ls, 'cn'), sm_(ls, 'cnv'), d.inv.rto ? 'Yes' : '',
       st[d.stage], d.age, d.dte, stamp, d.appt,
-      sm_(ls, 'dq'), sm_(ls, 'eq'), d.dmgReason, d.shortReason, jn_(ls, 'gnote'), jn_(ls, 'comment'), d.openIssues || ''];
+      sm_(ls, 'dq'), sm_(ls, 'eq'), d.dmgReason, d.shortReason, jn_(ls, 'gnote'), jn_(ls, 'comment'), d.openIssues || '',
+      cl.amt || '', cl.claimed || '', cl.settled || ''];
     return r.map(nz_);
   });
   var inv = I.slice().sort(function (a, b) { var x = a.disp || '', y = b.disp || ''; return x < y ? -1 : x > y ? 1 : 0; }).map(function (l) {
@@ -238,7 +265,15 @@ function loadAll_() {
   var issues = [];
   readRange_(trk, 'ISSUES!A2:O3000').forEach(function (r) { if (r[0]) issues.push({ id: String(r[0]), po: normPo(r[2]), status: String(r[9] == null ? '' : r[9]).trim() }); });
   var D = deriveAll(P, I, trkMap, issues, cfg, asof);
-  return { D: D, I: I.concat(manualLines(I, trkMap)), asof: asof };
+  var claims = {};
+  try {
+    readRange_(trk, 'CLAIMS!A2:M5000').forEach(function (r) {
+      if (!r[0] || !r[1]) return;
+      var po = normPo(r[0]);
+      claims[claimKey_(po, r[1])] = { po: po, inv: String(r[1]), status: String(r[4] || 'Not raised'), claimed: num(r[5]), raisedOn: r[6], ref: r[7], settled: num(r[8]), settledOn: r[9], note: r[10] };
+    });
+  } catch (e) { /* no CLAIMS tab yet */ }
+  return { D: D, I: I.concat(manualLines(I, trkMap)), asof: asof, claims: claims };
 }
 
 function writeBlock_(sh, startRow, rows, ncols, textCols, numCols) {
@@ -270,7 +305,7 @@ function syncMaster(force) {
     }
     var a = loadAll_();
     var stamp = Utilities.formatDate(new Date(), 'Asia/Kolkata', 'yyyy-MM-dd HH:mm');
-    var out = buildMaster_(a.D, a.I, STAGES, stamp);
+    var out = buildMaster_(a.D, a.I, STAGES, stamp, a.claims);
     var m = ss.getSheetByName('MASTER');
     ensureCols_(m, MASTER_COLS_);
     m.getRange(2, 1, 1, MASTER_COLS_).setValues([MASTER_HEADERS_]);
@@ -294,6 +329,7 @@ function syncMaster(force) {
     ensureCols_(isx, 25);
     isx.getRange(1, 1, 1, 25).setValues([INV_HEADERS_]);
     writeBlock_(isx, 2, out.invoices, 25, [1,2,3,4,5,7,8,9,10,11,12,13,14,22,24,25], [6,15,16,17,18,19,20,21,23]);
+    var nClaims = claimsTab_(ss, a);
     appDataTab_(ss);
 styleTab_(m, 2, MASTER_HEADERS_, HIDE_COLS_);
     PLAT_TABS_.forEach(function (t) { var sh = ss.getSheetByName(t); if (sh) styleTab_(sh, 2, permute_(MASTER_HEADERS_), permIdx_(HIDE_COLS_)); });
@@ -302,6 +338,6 @@ styleTab_(m, 2, MASTER_HEADERS_, HIDE_COLS_);
     organiseTabs_(ss);
     var rm = ss.getSheetByName('READ ME');
     if (rm) rm.getRange('A4').setValue('Auto-refreshed every 10 minutes. Last refresh: ' + stamp + ' IST' + (merged.applied ? '. Sheet edits applied: ' + merged.applied : ''));
-    return { ok: true, pos: out.master.length, invoices: out.invoices.length, at: stamp, edits: merged };
+    return { ok: true, claims: nClaims, pos: out.master.length, invoices: out.invoices.length, at: stamp, edits: merged };
   } finally { lock.releaseLock(); }
 }

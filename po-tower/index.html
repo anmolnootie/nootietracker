@@ -698,6 +698,19 @@ function buildPOs(ob,dg,tabs){
 }
 
 /* ---------- derived state ---------- */
+// What can be claimed on one invoice: an RTO claims the whole invoice, otherwise the gap between invoice and GRN amount
+const CLAIM_STATUS=['Not raised','Raised','Part settled','Settled','Rejected'];
+function claimOf(l){
+  if(!(l.val>0))return null;
+  if(l.status==='RTO')return {type:'RTO',amt:Math.round(l.val*100)/100};
+  if(!(l.gamt>0))return null;
+  const c=Math.round((l.val-l.gamt)*100)/100;
+  return c>1?{type:'GRN short',amt:c}:null;
+}
+function claimMath(amt,c){
+  const claimed=c&&c.status!=='Not raised'?(num(c.claimed)||0):0,settled=c?(num(c.settled)||0):0,rej=c&&c.status==='Rejected';
+  return {claimed,settled,toRaise:rej?0:Math.max(0,Math.round((amt-claimed)*100)/100),waiting:rej?0:Math.max(0,Math.round((claimed-settled)*100)/100)};
+}
 function indexInvoices(I,cfg,asof){
   const m=new Map();
   for(const l of I){
@@ -825,11 +838,12 @@ const SRC_ID='10vLMqODDWeo8g4wFCmYATH59hhg2s4W7VTWp1e8euQo';   // Warehouse Mast
 const TRK_ID='1XkWpydTQPviypiN2-xmhfYzPyc_hTRHRFLKQDVLMT98';   // PO Control Tower - Tracking (app data)
 const SERVER='Google Sheets';
 const TRK_COLS=['po','dec','reason','printout','handed','ack','ackBy','owner','rem','updated','by','plat','date','exp','loc','qty','amt','created','handedTo','ewb','mInv','mInvVal','mDisp','mStatus','mPartner','mAwb','mDeliv','mGrnNo','mGrnDate','mGrnAmt','mAppt','dmgReason','shortReason'];
+const CLAIM_COLS=['po','inv','plat','type','status','claimed','raisedOn','ref','settled','settledOn','note','updated','by'];
 const ISS_COLS=['id','raised','po','plat','type','desc','by','owner','prio','status','next','updated','note','resolution','resolved'];
 
 const S={
   mode:'snapshot',busy:false,err:'',diag:[],lastSync:null,counts:{},
-  P:[],I:[],trk:{},trkRow:{},issues:[],issRow:{},act:[],cfg:Object.assign({},DEFAULT_CFG),
+  P:[],I:[],trk:{},trkRow:{},issues:[],issRow:{},claims:{},claimRow:{},act:[],cfg:Object.assign({},DEFAULT_CFG),
   user:'',asof:'',mcp:null,D:[],edit:false,pinHash:'',
 };
 function todayIso(){const d=new Date();return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());}
@@ -911,9 +925,9 @@ function recompute(){
 function loadLocal(){
   const L=lsGet('potower_local');
   S.user=lsGet('potower_user')||'';
-  if(L){S.trk=L.trk||{};S.issues=L.issues||[];S.act=L.act||[];if(L.cfg)S.cfg=Object.assign({},DEFAULT_CFG,L.cfg);}
+  if(L){S.trk=L.trk||{};S.claims=L.claims||{};S.issues=L.issues||[];S.act=L.act||[];if(L.cfg)S.cfg=Object.assign({},DEFAULT_CFG,L.cfg);}
 }
-function saveLocal(){lsSet('potower_local',{trk:S.trk,issues:S.issues,act:S.act.slice(-500),cfg:S.cfg});}
+function saveLocal(){lsSet('potower_local',{trk:S.trk,claims:S.claims,issues:S.issues,act:S.act.slice(-500),cfg:S.cfg});}
 
 async function loadLive(){
   S.busy=true;S.err='';S.diag=[];UI.status();
@@ -923,9 +937,10 @@ async function loadLive(){
     S.mcp=m;
     const t0=Date.now();
     const [trkR,issR,actR,setR]=await Promise.all([getRows(TRK_ID,'TRACKING!A2:AG5000'),getRows(TRK_ID,'ISSUES!A2:O3000'),getRows(TRK_ID,'ACTIVITY!A2:F6000'),getRows(TRK_ID,'SETTINGS!A2:B20')]);
+    try{const cl=rowsToClaims(await getRows(TRK_ID,'CLAIMS!A2:M5000'));S.claims=cl.m;S.claimRow=cl.rm;}catch(e){S.claims={};S.claimRow={};S.diag.push('Claims tab not found in the tracking sheet.');}
     S.diag.push('Tracking sheet read: '+trkR.length+' PO rows, '+issR.length+' issues.');
     const [obR,dgR,grnR,blR,fkR,zpR,swR]=await Promise.all([
-      getRows(SRC_ID,"'ORDER BOOK'!A4:N5500"),getRows(SRC_ID,"'DISPATCH + GRN'!A4:Y5000"),getRows(SRC_ID,'GRN!A2:Q5000'),
+      getRows(SRC_ID,"'ORDER BOOK'!A4:N5500"),getRows(SRC_ID,"'DISPATCH + GRN'!A4:Y5000"),getRows(SRC_ID,'GRN!A2:Z5000'),
       getRows(SRC_ID,'Blinkit!A2:H400'),getRows(SRC_ID,"'Flipkart '!A2:G120"),getRows(SRC_ID,'Zepto!A2:G400'),getRows(SRC_ID,'Swiggy!A2:E200')]);
     S.asof=todayIso();
     const ob=parseOrderBook(obR,S.asof),gm=parseGrnTab(grnR),gi=parseGrnInfo(grnR),I=parseDispatch(dgR,gm,gi),tabs=parseTabs({blinkit:blR,flipkart:fkR,zepto:zpR,swiggy:swR});
@@ -977,6 +992,33 @@ function saveTrk(po,patch,action,detail){
   recompute();
   enqueue('tracking',()=>writeTrk(po));
   if(action)logAct(po,action,detail,t.plat);
+  if(S.mode!=='live')saveLocal();
+}
+function claimKey(po,inv){return po+'|'+String(inv||'').trim().toUpperCase();}
+function rowsToClaims(rows){
+  const m={},rm={};
+  rows.forEach((r,i)=>{
+    if(!r[0]||!r[1])return;const o={};CLAIM_COLS.forEach((k,j)=>{o[k]=(r[j]==null?'':String(r[j]));});
+    ['raisedOn','settledOn'].forEach(k=>{o[k]=pdate(o[k])||'';});o.po=normPo(o.po);o.claimed=num(o.claimed);o.settled=num(o.settled);
+    const k=claimKey(o.po,o.inv);m[k]=o;rm[k]=i+2;
+  });
+  return {m,rm};
+}
+function claimRowValues(x){return CLAIM_COLS.map(k=>{const v=x[k];return v==null?'':v;});}
+async function writeClaim(x){
+  const k=claimKey(x.po,x.inv),vals=[claimRowValues(x)];
+  if(S.claimRow[k]){const r=S.claimRow[k];await sheets('update_values',{spreadsheetId:TRK_ID,range:'CLAIMS!A'+r+':M'+r,values:vals});}
+  else{
+    const res=await sheets('append_values',{spreadsheetId:TRK_ID,range:'CLAIMS!A1',values:vals});
+    const up=(res.updates&&res.updates.updatedRange)||res.updatedRange||'';const m=String(up).match(/(\d+):[A-Z]+(\d+)$/);
+    if(m)S.claimRow[k]=+m[1];else{const rows=await getRows(TRK_ID,'CLAIMS!A2:B5000');rows.forEach((r,i)=>{S.claimRow[claimKey(normPo(r[0]),r[1])]=i+2;});}
+  }
+}
+function saveClaim(x){
+  x.updated=nowStamp();x.by=S.user||'';
+  S.claims[claimKey(x.po,x.inv)]=x;
+  enqueue('claim',()=>writeClaim(x));
+  logAct(x.po,'Claim '+(x.status||'updated'),x.inv+' · '+x.type+' · raised '+(x.claimed||0)+' · settled '+(x.settled||0),x.plat);
   if(S.mode!=='live')saveLocal();
 }
 function issRowValues(x){return ISS_COLS.map(k=>x[k]==null?'':x[k]);}
@@ -1242,6 +1284,9 @@ const UI={
     }else if(d.type==='issue'){
       const x=d.issue;
       h='<div class="hd"><div><h2>'+(x.isNew?'Log an issue':esc(x.id))+'</h2><div class="small">Anything that cannot be fixed in a day gets an owner and a follow-up date.</div></div><button class="btn sm" data-act="close">Close</button></div><div class="bd"><div class="form"><label>PO number<input type="text" id="i-po" class="mono" value="'+esc(x.po)+'"></label><label>Issue type'+this.sel('i-type',ISSUE_TYPES,x.type)+'</label><label class="full">What happened<textarea id="i-desc">'+esc(x.desc)+'</textarea></label><label>Owner<input type="text" id="i-owner" value="'+esc(x.owner)+'"></label><label>Priority'+this.sel('i-prio',PRIORITIES,x.prio)+'</label><label>Status'+this.sel('i-status',ISSUE_STATUS,x.status)+'</label><label>Next follow-up'+this.dateField('i-next',x.next)+'</label><label class="full">Latest note<textarea id="i-note">'+esc(x.note)+'</textarea></label><label class="full">Resolution<textarea id="i-res">'+esc(x.resolution)+'</textarea></label></div><p><button class="btn pri" data-act="saveissue">Save</button></p></div>';
+    }else if(d.type==='claim'){
+      const x=d.claim,L=d.line,cm=claimMath(d.amt,x);
+      h='<div class="hd"><div><h2>Claim on '+esc(x.inv)+'</h2><div class="small">PO '+esc(x.po)+' · '+esc(x.type)+' · invoice ₹'+inr(L.val)+(L.gamt?' · GRN ₹'+inr(Math.round(L.gamt)):'')+'</div></div><button class="btn sm" data-act="close">Close</button></div><div class="bd"><div class="grid g3" style="margin-bottom:10px"><section class="card"><div class="small">To claim</div><h2>₹'+inr(Math.round(d.amt))+'</h2></section><section class="card"><div class="small">Still to raise</div><h2>₹'+inr(Math.round(cm.toRaise))+'</h2></section><section class="card"><div class="small">Waiting for payout</div><h2>₹'+inr(Math.round(cm.waiting))+'</h2></section></div><div class="form"><label>Status'+this.sel('c-status',CLAIM_STATUS,x.status||'Not raised')+'</label><label>Claim raised ₹<input type="number" id="c-claimed" min="0" value="'+esc(x.claimed==null?'':x.claimed)+'" placeholder="'+Math.round(d.amt)+'"></label><label>Raised on'+this.dateField('c-raisedOn',x.raisedOn)+'</label><label>Claim / ticket reference<input type="text" id="c-ref" class="mono" value="'+esc(x.ref)+'"></label><label>Amount settled ₹<input type="number" id="c-settled" min="0" value="'+esc(x.settled==null?'':x.settled)+'"></label><label>Settled on'+this.dateField('c-settledOn',x.settledOn)+'</label><label class="full">Remarks<textarea id="c-note">'+esc(x.note)+'</textarea></label></div><p class="small">Leave "Claim raised" empty when you set the status to Raised and the full claim amount is used.</p><p><button class="btn pri" data-act="saveclaim">Save</button> <button class="btn" data-act="po" data-arg="'+esc(x.po)+'">Open PO</button></p></div>';
     }else if(d.type==='newpo'){
       h='<div class="hd"><div><h2>Add a PO</h2><div class="small">Use this for a PO that is not in the Order Book yet. It is tracked from now on.</div></div><button class="btn sm" data-act="close">Close</button></div><div class="bd"><div class="form"><label>PO number<input type="text" id="n-po" class="mono"></label><label>Platform'+this.sel('n-plat',PLATS,this.f.plat==='ALL'?'Blinkit':this.f.plat)+'</label><label>PO date'+this.dateField('n-date',S.asof)+'</label><label>PO expiry'+this.dateField('n-exp','')+'</label><label>Facility / hub<input type="text" id="n-loc"></label><label>Quantity<input type="number" id="n-qty" min="0"></label><label>PO value ₹<input type="number" id="n-amt" min="0"></label><label>Decision'+this.sel('n-dec',DECISIONS,'Accepted')+'</label></div><p><button class="btn pri" data-act="savenewpo">Add PO</button></p></div>';
     }else if(d.type==='day'){
@@ -1255,7 +1300,7 @@ const UI={
 function invCell(d){const L=(d.inv&&d.inv.list)||[];const u=k=>Array.from(new Set(L.map(l=>l[k]).filter(Boolean)));const dl=L.map(l=>l.deliv).filter(Boolean).sort().pop();const dp=L.map(l=>l.disp).filter(Boolean).sort();const aw=u('awb'),pa=u('partner');return {inv:u('inv').join(', '),disp:dp.length?(dp[0]===dp[dp.length-1]?fd(dp[0]):fd(dp[0])+' to '+fd(dp[dp.length-1])):'',deliv:dl?fd(dl):'',awb:pa.concat(aw).join(' / '),grn:u('gno').join(', ')};}
 /* ===== Shell: sidebar, top bar, home, PO register, editor / view-only access ===== */
 const PERIODS=[['fy','This financial year'],['90d','Last 90 days'],['30d','Last 30 days'],['7d','Last 7 days'],['month','This month'],['all','All time']];
-const WRITE_ACTS=['accept','handed','ack','savepo','newissue','saveissue','newpo','savenewpo','happly','happlynew','savecfg','savepin','dohand1'];
+const WRITE_ACTS=['accept','handed','ack','savepo','newissue','saveissue','newpo','savenewpo','happly','happlynew','savecfg','savepin','dohand1','saveclaim'];
 const TABS=[['overview','Overview'],['pipeline','Pipeline'],['register','All POs'],['worklist','Worklist'],['claims','Claims'],['recon','Daily recon'],['issues','Issues'],['platforms','Compare platforms']];
 const ICON={
   home:'<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/></svg>',
@@ -1425,7 +1470,7 @@ Object.assign(UI,{
     const d=this.drawer,dr=$('#drawer');if(!d)return;
     if(d.type==='hand1'){dr.innerHTML=this.hand1Html(d);setTimeout(()=>{const e=document.getElementById('h1-person');if(e)e.focus();},40);return;}
     if(d.type==='unlock'){dr.innerHTML=this.unlockHtml();setTimeout(()=>{const e=document.getElementById(S.user?'u-pin':'u-name');if(e)e.focus();},40);return;}
-    if(!S.edit&&(d.type==='po'||d.type==='issue')){
+    if(!S.edit&&(d.type==='po'||d.type==='issue'||d.type==='claim')){
       dr.querySelectorAll('.bd input,.bd select,.bd textarea').forEach(e=>e.disabled=true);
       dr.querySelectorAll(WRITE_ACTS.map(a=>'[data-act="'+a+'"]').join(',')+',.dline .btn').forEach(e=>e.hidden=true);
       const bd=dr.querySelector('.bd');if(bd)bd.insertAdjacentHTML('afterbegin','<div class="lockbar">'+ICON.lock+'<span><b>View only.</b> Unlock editing to change this.</span><button class="btn sm pri" data-act="unlock">Unlock editing</button></div>');
@@ -1532,38 +1577,45 @@ Object.assign(UI,{
   }
 });
 
-/* ===== Claims: every invoice where the GRN amount is below the invoice amount ===== */
+/* ===== Claims: invoices where the GRN amount is below the invoice amount, and RTOs; with what has been claimed and settled ===== */
 Object.assign(UI,{
-  clDefault(){return {q:'',sort:'amt',min:'0',page:0};},
-  claimRows(){
-    const g=this.f.cl||(this.f.cl=this.clDefault());const q=(g.q||'').trim().toLowerCase(),min=+g.min||0;const out=[];
+  clDefault(){return {q:'',sort:'amt',min:'0',status:'todo',type:'ALL',page:0};},
+  claimRows(all){
+    const g=this.f.cl||(this.f.cl=this.clDefault()),q=(g.q||'').trim().toLowerCase(),min=+g.min||0;let out=[];
     this.rows().forEach(d=>{(d.inv&&d.inv.list||[]).forEach(l=>{
-      if(l.status==='RTO'||!(l.val>0)||!(l.gamt>0))return;
-      const claim=Math.round((l.val-l.gamt)*100)/100;if(claim<=1||claim<min)return;
-      const base=l.deliv||l.disp||null;
-      out.push({po:d.po,plat:d.plat,loc:d.loc,inv:l.inv,disp:l.disp,deliv:l.deliv,gno:l.gno,gdate:l.gdate,val:l.val,gamt:l.gamt,claim,pct:claim/l.val,age:base?diff(S.asof,base):null,cn:l.cn||'',cnv:l.cnv||0,note:[l.gnote,l.comment].filter(Boolean).join(' | '),why:[d.dmgReason,d.shortReason].filter(Boolean).join(' / ')});
+      const c=claimOf(l);if(!c)return;
+      const key=claimKey(d.po,l.inv),rec=S.claims[key],m=claimMath(c.amt,rec),base=l.deliv||l.disp||null;
+      out.push({key,line:l,po:d.po,plat:d.plat,inv:l.inv,disp:l.disp,deliv:l.deliv,gno:l.gno,val:l.val,gamt:l.gamt||0,type:c.type,claim:c.amt,pct:c.amt/l.val,age:base?diff(S.asof,base):null,
+        status:(rec&&rec.status)||'Not raised',claimed:m.claimed,settled:m.settled,toRaise:m.toRaise,waiting:m.waiting,ref:(rec&&rec.ref)||'',cn:l.cn||'',cnv:l.cnv||0,
+        note:[l.gnote,l.comment].filter(Boolean).join(' | '),why:[d.dmgReason,d.shortReason].filter(Boolean).join(' / ')});
     });});
-    const hit=r=>!q||(r.po+' '+r.inv+' '+r.gno).toLowerCase().indexOf(q)>=0;
-    const rs=out.filter(hit);
+    if(all)return out;
+    out=out.filter(r=>(!q||(r.po+' '+r.inv+' '+r.gno+' '+r.ref).toLowerCase().indexOf(q)>=0)&&r.claim>=min&&(g.type==='ALL'||r.type===g.type));
+    out.base=out.slice();
+    const f=g.status;let rs=out.filter(r=>f==='all'||(f==='todo'&&r.toRaise>0)||(f==='waiting'&&r.waiting>0)||(f==='settled'&&r.status==='Settled')||(f==='rejected'&&r.status==='Rejected'));
     rs.sort(g.sort==='old'?(a,b)=>(b.age||0)-(a.age||0):g.sort==='pct'?(a,b)=>b.pct-a.pct:(a,b)=>b.claim-a.claim);
-    return rs;
+    rs.base=out;return rs;
   },
   v_claims(){
     const g=this.f.cl||(this.f.cl=this.clDefault()),PS=50,all=this.f.plat==='ALL';
-    const r=this.claimRows(),pages=Math.max(1,Math.ceil(r.length/PS));if(g.page>=pages)g.page=pages-1;
-    const shown=r.slice(g.page*PS,g.page*PS+PS);const tot=r.reduce((s,x)=>s+x.claim,0),invT=r.reduce((s,x)=>s+x.val,0);
+    const r=this.claimRows(),B=r.base,pages=Math.max(1,Math.ceil(r.length/PS));if(g.page>=pages)g.page=pages-1;
+    const shown=r.slice(g.page*PS,g.page*PS+PS),sum=k=>B.reduce((s,x)=>s+(x[k]||0),0);
     const o=(cur,v,l)=>'<option value="'+esc(v)+'"'+(String(cur)===String(v)?' selected':'')+'>'+esc(l)+'</option>';
-    const by={};r.forEach(x=>{const b=by[x.plat]||(by[x.plat]={n:0,v:0});b.n++;b.v+=x.claim;});
-    const plat=Object.keys(by).sort((a,b)=>by[b].v-by[a].v).map(p=>'<tr><td>'+pn(p)+'</td><td class="r num">'+inr(by[p].n)+'</td><td class="r num">₹'+inr(by[p].v)+'</td></tr>').join('');
-    const body=shown.map(x=>'<tr class="click" data-act="po" data-arg="'+esc(x.po)+'"><td class="mono">'+esc(x.po)+'</td>'+(all?'<td>'+pn(x.plat)+'</td>':'')+'<td class="mono">'+esc(x.inv)+'</td><td class="num">'+fd(x.disp)+'</td><td class="num">'+fd(x.deliv)+'</td><td class="mono">'+esc(x.gno)+'</td><td class="r num">'+inr(x.val)+'</td><td class="r num">'+inr(Math.round(x.gamt))+'</td><td class="r num"><b>'+inr(Math.round(x.claim))+'</b></td><td class="r num">'+(x.pct*100).toFixed(1)+'%</td><td class="r num">'+(x.age==null?'':x.age)+'</td><td>'+esc(x.cn)+(x.cnv?' · '+inr(Math.round(x.cnv)):'')+'</td><td>'+esc(x.why)+'</td><td>'+esc(x.note)+'</td></tr>').join('')||'<tr><td colspan="14" class="small">No invoice has a GRN amount below its invoice amount for this selection.</td></tr>';
+    const by={};r.forEach(x=>{const b=by[x.plat]||(by[x.plat]={n:0,v:0});b.n++;b.v+=x.toRaise||x.claim;});
+    const plat=Object.keys(by).sort((a,b)=>by[b].v-by[a].v).map(p=>'<tr><td>'+pn(p)+'</td><td class="r num">'+inr(by[p].n)+'</td><td class="r num">₹'+inr(Math.round(by[p].v))+'</td></tr>').join('');
+    const tag=s=>'<span class="tag '+(s==='Settled'?'ok':s==='Rejected'?'crit':s==='Not raised'?'warn':'info')+'">'+esc(s)+'</span>';
+    const body=shown.map(x=>'<tr class="click" data-act="claim" data-arg="'+esc(x.key)+'"><td class="mono">'+esc(x.po)+'</td>'+(all?'<td>'+pn(x.plat)+'</td>':'')+'<td class="mono">'+esc(x.inv)+'</td><td>'+esc(x.type)+'</td><td class="num">'+fd(x.deliv||x.disp)+'</td><td class="r num">'+inr(x.val)+'</td><td class="r num">'+(x.gamt?inr(Math.round(x.gamt)):'')+'</td><td class="r num"><b>'+inr(Math.round(x.claim))+'</b></td><td>'+tag(x.status)+'</td><td class="r num">'+(x.claimed?inr(Math.round(x.claimed)):'')+'</td><td class="r num">'+(x.settled?inr(Math.round(x.settled)):'')+'</td><td class="r num"><b>'+(x.toRaise?inr(Math.round(x.toRaise)):'')+'</b></td><td class="r num">'+(x.age==null?'':x.age)+'</td><td>'+esc(x.ref)+'</td><td>'+esc(x.cn)+(x.cnv?' · '+inr(Math.round(x.cnv)):'')+'</td><td>'+esc(x.why)+'</td></tr>').join('')||'<tr><td colspan="16" class="small">Nothing here for this selection.</td></tr>';
     const pager=pages>1?'<div class="toolbar" style="justify-content:center;margin-top:10px"><button class="btn sm" data-act="clpage" data-arg="-1"'+(g.page?'':' disabled')+'>← Previous</button><span class="small">Page '+(g.page+1)+' of '+pages+'</span><button class="btn sm" data-act="clpage" data-arg="1"'+(g.page<pages-1?'':' disabled')+'>Next →</button></div>':'';
-    return '<div class="toolbar"><h2>Claims to raise</h2><span class="small">Invoices where the platform\'s GRN amount is lower than what we invoiced. The claim amount is invoice minus GRN. Click a row to open the PO.</span></div>'+
-      '<div class="grid g3" style="margin-bottom:12px"><section class="card"><div class="small">Invoices to claim</div><h2>'+inr(r.length)+'</h2></section><section class="card"><div class="small">Total claim amount</div><h2>'+money(tot)+'</h2></section><section class="card"><div class="small">Share of invoiced value</div><h2>'+(invT?(tot/invT*100).toFixed(2):'0')+'%</h2></section></div>'+
-      '<div class="filters"><input type="text" id="cl-q" placeholder="Search PO, invoice or GRN no." value="'+esc(g.q)+'" aria-label="Search">'+
+    const tile=(l,v,sub)=>'<section class="card"><div class="small">'+l+'</div><h2>'+v+'</h2>'+(sub?'<div class="small">'+sub+'</div>':'')+'</section>';
+    return '<div class="toolbar"><h2>Claims</h2><span class="small">Every invoice where the GRN amount is below the invoice amount, plus every RTO. Click a row to record the claim and the payout. The list shows what is still left to raise.</span></div>'+
+      '<div class="grid g3" style="margin-bottom:12px">'+tile('Total claimable','₹'+inr(Math.round(sum('claim'))),inr(B.length)+' invoices')+tile('Claims raised','₹'+inr(Math.round(sum('claimed'))),'settled ₹'+inr(Math.round(sum('settled'))))+tile('Still to raise','₹'+inr(Math.round(sum('toRaise'))),inr(B.filter(x=>x.toRaise>0).length)+' invoices')+'</div>'+
+      '<div class="filters"><input type="text" id="cl-q" placeholder="Search PO, invoice, GRN or reference" value="'+esc(g.q)+'" aria-label="Search">'+
+      '<select id="cl-status" aria-label="Claim status">'+o(g.status,'todo','Still to raise')+o(g.status,'waiting','Raised, waiting for payout')+o(g.status,'settled','Settled')+o(g.status,'rejected','Rejected')+o(g.status,'all','Everything')+'</select>'+
+      '<select id="cl-type" aria-label="Type">'+o(g.type,'ALL','GRN short and RTO')+o(g.type,'GRN short','GRN short only')+o(g.type,'RTO','RTO only')+'</select>'+
       '<select id="cl-min" aria-label="Minimum claim">'+o(g.min,'0','Any amount')+o(g.min,'500','₹500 and above')+o(g.min,'2000','₹2,000 and above')+o(g.min,'10000','₹10,000 and above')+'</select>'+
       '<select id="cl-sort" aria-label="Sort">'+o(g.sort,'amt','Highest claim')+o(g.sort,'pct','Highest % of invoice')+o(g.sort,'old','Oldest first')+'</select><span class="grow"></span><button class="btn sm" data-act="copycl">Copy list</button></div>'+
-      (plat&&all?'<div class="tablewrap" style="margin-bottom:12px"><table><thead><tr><th>Platform</th><th class="r">Invoices</th><th class="r">Claim amount</th></tr></thead><tbody>'+plat+'</tbody></table></div>':'')+
-      '<div class="tablewrap"><table><thead><tr><th>PO number</th>'+(all?'<th>Platform</th>':'')+'<th>Invoice</th><th>Dispatched</th><th>Delivered</th><th>GRN no.</th><th class="r">Invoice ₹</th><th class="r">GRN ₹</th><th class="r">Claim ₹</th><th class="r">% short</th><th class="r">Days since delivery</th><th>Credit note</th><th>Damage / shortage reason</th><th>Remarks</th></tr></thead><tbody>'+body+'</tbody></table></div>'+pager;
+      (plat&&all?'<div class="tablewrap" style="margin-bottom:12px"><table><thead><tr><th>Platform</th><th class="r">Invoices</th><th class="r">Amount</th></tr></thead><tbody>'+plat+'</tbody></table></div>':'')+
+      '<div class="tablewrap"><table><thead><tr><th>PO number</th>'+(all?'<th>Platform</th>':'')+'<th>Invoice</th><th>Type</th><th>Delivered</th><th class="r">Invoice ₹</th><th class="r">GRN ₹</th><th class="r">Claim ₹</th><th>Status</th><th class="r">Raised ₹</th><th class="r">Settled ₹</th><th class="r">Still to raise ₹</th><th class="r">Days</th><th>Reference</th><th>Credit note</th><th>Reason</th></tr></thead><tbody>'+body+'</tbody></table></div>'+pager;
   }
 });
 
@@ -1701,8 +1753,18 @@ function actionClick(act,arg,el){
     case 'gap':UI.f.rg=UI.rgDefault();UI.f.rg.gap=arg;UI.view='register';UI.render();window.scrollTo(0,0);break;
     case 'applyrange':{const fr=$('#f-from').value,to=$('#f-to').value;if(!fr||!to){UI.toast&&UI.toast('Pick both dates','err');break;}UI.setPeriod('custom',fr,to);UI.f.rg.page=0;UI.render();break;}
     case 'period':UI.setPeriod(arg);UI.f.rg.page=0;UI.render();break;
+    case 'claim':{const row=UI.claimRows(true).find(r=>r.key===arg);if(row)UI.openDrawer({type:'claim',claim:Object.assign({po:row.po,inv:row.inv,plat:row.plat,type:row.type,status:'Not raised'},S.claims[row.key]||{}),amt:row.claim,line:row.line});break;}
+    case 'saveclaim':{
+      const x=Object.assign({},UI.drawer.claim);x.status=val('c-status');
+      const cl=val('c-claimed'),st=val('c-settled');x.claimed=cl===''?null:+cl;x.settled=st===''?null:+st;x.raisedOn=val('c-raisedOn');x.ref=val('c-ref').trim();x.settledOn=val('c-settledOn');x.note=val('c-note');
+      if(x.status!=='Not raised'&&x.claimed==null)x.claimed=UI.drawer.amt;
+      if(x.status!=='Not raised'&&!x.raisedOn)x.raisedOn=todayIso();
+      if(x.status==='Settled'&&x.settled==null)x.settled=x.claimed;
+      if(x.status==='Settled'&&!x.settledOn)x.settledOn=todayIso();
+      if(x.claimed!=null&&x.claimed>UI.drawer.amt+1&&x.type!=='RTO'){UI.toast('Claim raised is more than the amount to claim (₹'+Math.round(UI.drawer.amt)+').',true);break;}
+      saveClaim(x);UI.toast('Claim saved');UI.drawer=null;UI.render();break;}
     case 'clpage':{const g=UI.f.cl||(UI.f.cl=UI.clDefault());g.page=Math.max(0,g.page+(+arg));UI.render();break;}
-    case 'copycl':{const r=UI.claimRows();copyText(['PO\tPlatform\tInvoice\tDispatched\tDelivered\tGRN No\tInvoice Amount\tGRN Amount\tClaim Amount\t% Short\tDays Since Delivery\tCredit Note\tReason\tRemarks'].concat(r.map(x=>[x.po,x.plat,x.inv,x.disp||'',x.deliv||'',x.gno,Math.round(x.val),Math.round(x.gamt),Math.round(x.claim),(x.pct*100).toFixed(1),x.age==null?'':x.age,x.cn,x.why,x.note].join('\t'))).join('\n'));UI.toast('Copied '+r.length+' claims');break;}
+    case 'copycl':{const r=UI.claimRows();copyText(['PO\tPlatform\tInvoice\tType\tDelivered\tInvoice Amount\tGRN Amount\tClaim Amount\tStatus\tRaised\tSettled\tStill To Raise\tDays\tReference\tCredit Note\tReason\tRemarks'].concat(r.map(x=>[x.po,x.plat,x.inv,x.type,x.deliv||x.disp||'',Math.round(x.val),Math.round(x.gamt),Math.round(x.claim),x.status,Math.round(x.claimed),Math.round(x.settled),Math.round(x.toRaise),x.age==null?'':x.age,x.ref,x.cn,x.why,x.note].join('\t'))).join('\n'));UI.toast('Copied '+r.length+' claims');break;}
     case 'rgreset':UI.f.rg=UI.rgDefault();UI.render();break;
     case 'copyreg':{const r=UI.regRows();copyText(['PO\tPlatform\tPO date\tFacility\tExpiry\tValue\tStage\tDecision\tProblem\tInvoices\tInvoice Nos\tAppointment\tDispatched\tDelivered\tPartner / AWB\tGRN Nos\tE-way Bill\tOwner'].concat(r.map(d=>[d.po,d.plat,d.date||'',d.loc,d.exp||'',Math.round(d.value||0),STAGES[d.stage-1].name,d.dec,d.pri?FLAGS[d.pri].name:'',d.inv.n||'',invCell(d).inv,d.appt||'',invCell(d).disp,invCell(d).deliv,invCell(d).awb,invCell(d).grn,d.ewb||'',d.owner].join('\t'))).join('\n'));break;}
     case 'unlock':UI.openDrawer({type:'unlock',back:UI.drawer&&UI.drawer.type!=='unlock'?UI.drawer:null});break;

@@ -190,6 +190,19 @@ function buildPOs(ob,dg,tabs){
 }
 
 /* ---------- derived state ---------- */
+// What can be claimed on one invoice: an RTO claims the whole invoice, otherwise the gap between invoice and GRN amount
+const CLAIM_STATUS=['Not raised','Raised','Part settled','Settled','Rejected'];
+function claimOf(l){
+  if(!(l.val>0))return null;
+  if(l.status==='RTO')return {type:'RTO',amt:Math.round(l.val*100)/100};
+  if(!(l.gamt>0))return null;
+  const c=Math.round((l.val-l.gamt)*100)/100;
+  return c>1?{type:'GRN short',amt:c}:null;
+}
+function claimMath(amt,c){
+  const claimed=c&&c.status!=='Not raised'?(num(c.claimed)||0):0,settled=c?(num(c.settled)||0):0,rej=c&&c.status==='Rejected';
+  return {claimed,settled,toRaise:rej?0:Math.max(0,Math.round((amt-claimed)*100)/100),waiting:rej?0:Math.max(0,Math.round((claimed-settled)*100)/100)};
+}
 function indexInvoices(I,cfg,asof){
   const m=new Map();
   for(const l of I){
