@@ -8,7 +8,7 @@ function manualLines(I,trkMap){
     const grnDone=!!(t.mGrnNo||t.mGrnDate||num(t.mGrnAmt)!=null);
     const grn=st==='RTO'?'NA':(grnDone?'Done':(st==='Delivered'?'Pending':''));
     out.push({disp:t.mDisp||null,po,inv,chan:normPlat(t.plat||''),loc:t.loc||'',val:num(t.mInvVal),awb:t.mAwb||'',partner:t.mPartner||'',status:st,comment:'',expiry:null,
-      deliv:t.mDeliv||null,grn,sq:null,sv:null,dv:null,ev:null,cn:'',cnv:null,appt:t.mAppt||null,dq:null,eq:null,gno:t.mGrnNo||'',gdate:t.mGrnDate||null,gamt:num(t.mGrnAmt),manual:true});
+      deliv:t.mDeliv||null,grn,sq:null,sv:null,dv:null,ev:null,cn:'',cnv:null,appt:t.mAppt||null,dq:null,eq:null,gno:t.mGrnNo||'',gdate:t.mGrnDate||null,gamt:num(t.mGrnAmt),gnote:'',manual:true});
   });
   return out;
 }
@@ -110,7 +110,7 @@ function parseGrnTab(rows){
 }
 function parseGrnInfo(rows){
   const m={};
-  for(const r of rows){const inv=cell(r,3).trim();if(!inv)continue;m[inv]={no:cell(r,13).trim(),date:pdate(cell(r,14)),amt:num(cell(r,15))};}
+  for(const r of rows){const inv=cell(r,3).trim();if(!inv)continue;m[inv]={no:cell(r,13).trim(),date:pdate(cell(r,14)),amt:num(cell(r,15)),rem:cell(r,22).trim()};}
   return m;
 }
 function parseDispatch(rows,gmap,ginfo){
@@ -131,7 +131,7 @@ function parseDispatch(rows,gmap,ginfo){
     out.push({disp:pdate(cell(r,1)),po,inv,chan:normChan(cell(r,4)),loc:cell(r,5).trim(),val:num(cell(r,6)),awb:cell(r,7).trim(),
       partner:PART[cell(r,8).trim().toLowerCase()]||cell(r,8).trim(),status:st,comment:cm==='#N/A'?'':cm,expiry:pdate(cell(r,11)),
       deliv:pdate(cell(r,24)),grn,sq:num(cell(r,14)),sv:num(cell(r,15)),dv:num(cell(r,17)),ev:num(cell(r,19)),cn:cell(r,21).trim(),cnv:num(cell(r,22)),
-      appt:pdate(cell(r,12)),dq:num(cell(r,16)),eq:num(cell(r,18)),gno:(ginfo&&ginfo[inv]?ginfo[inv].no:''),gdate:(ginfo&&ginfo[inv]?ginfo[inv].date:null),gamt:(ginfo&&ginfo[inv]?ginfo[inv].amt:null)});
+      appt:pdate(cell(r,12)),dq:num(cell(r,16)),eq:num(cell(r,18)),gno:(ginfo&&ginfo[inv]?ginfo[inv].no:''),gdate:(ginfo&&ginfo[inv]?ginfo[inv].date:null),gamt:(ginfo&&ginfo[inv]?ginfo[inv].amt:null),gnote:(ginfo&&ginfo[inv]?ginfo[inv].rem:'')});
   }
   return out;
 }
@@ -237,7 +237,7 @@ function derive(p,inv,trk,cfg,asof,openIssues){
   const value=p.amt!=null&&p.amt>0?p.amt:(a.val||0);
   return {po:p.po,plat,date:pdt,orderDate:p.date,exp:p.exp,loc:p.loc,qty:p.qty,amt:p.amt,dec,reason:t.reason||p.reason||'',stage,pri,age,dte,
     appt:t.mAppt||(a.list.map(l=>l.appt).filter(Boolean).sort().pop())||p.appt||null,inv:a,invoiced:a.val,value,openIssues:openIssues||0,rem:[p.rem,t.rem].filter(x=>x).join(' | '),src:p.src,
-    ewb:t.ewb||'',printout:t.printout||null,handed:K,handedTo:t.handedTo||'',ack:L,ackBy:t.ackBy||'',owner:t.owner||'',tracked:!!trk,
+    ewb:t.ewb||'',dmgReason:t.dmgReason||'',shortReason:t.shortReason||'',printout:t.printout||null,handed:K,handedTo:t.handedTo||'',ack:L,ackBy:t.ackBy||'',owner:t.owner||'',tracked:!!trk,
     fill:(p.amt>0)?a.val/p.amt:null};
 }
 function deriveAll(P,I,trkMap,issues,cfg,asof){
