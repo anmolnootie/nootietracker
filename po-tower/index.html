@@ -926,6 +926,7 @@ function parseInvoiceRows(rows){
     const g=k=>cell(r,k).trim();
     let st=g(8);st=st?st.toLowerCase().replace(/\b\w/g,c=>c.toUpperCase()):'';if(st==='Rto')st='RTO';
     const gamt=num(g(14));let grn=g(11);
+    if(st!=='RTO'&&st!=='Delivered'&&(pdate(g(9))||gamt!=null||g(12)||pdate(g(13))))st='Delivered';   // a delivery date or any GRN detail means it was delivered
     if(st==='RTO')grn='NA';else if(gamt!=null||g(12)||pdate(g(13)))grn='Done';else if(!grn&&st==='Delivered')grn='Pending';
     const l=gapFix({disp:pdate(g(0))||null,po,inv:g(2),chan:normChan(g(3)),loc:g(4),val:num(g(5)),awb:g(6),partner:PART[g(7).toLowerCase()]||g(7),status:st,comment:g(24),expiry:null,
       deliv:pdate(g(9))||null,grn,sq:num(g(15)),sv:num(g(16)),dv:num(g(18)),dvw:num(g(18)),ev:num(g(20)),cn:g(21),cnv:num(g(22)),appt:pdate(g(10))||null,
@@ -1911,7 +1912,7 @@ async function doUnlock(){
   const back=UI.drawer&&UI.drawer.back;UI.drawer=back||null;UI.render();UI.toast('Editing unlocked. Changes are saved under '+name+'.');
 }
 const INV_KEYS=['disp','status','partner','awb','loc','deliv','gno','gdate','gamt','val','sq','sv','dq','dv','eq','ev','cn','cnv','rto','gnote','comment','asn','asnd'];
-function readInv(p,o,no){const g=k=>val(p+'-'+k);const st=g('status')||'Dispatched',gamt=num(g('gamt')),gno=g('gno'),gdate=g('gdate');
+function readInv(p,o,no){const g=k=>val(p+'-'+k);let st=g('status')||'Dispatched';const gamt=num(g('gamt')),gno=g('gno'),gdate=g('gdate');if(st!=='RTO'&&st!=='Delivered'&&(g('deliv')||gamt!=null||gno||gdate))st='Delivered';
   const grn=st==='RTO'?'NA':((gamt!=null||gno||gdate)?'Done':(st==='Delivered'?'Pending':''));
   return gapFix({disp:g('disp')||null,po:o.po,inv:no,chan:o.chan||'',loc:g('loc'),val:num(g('val')),awb:g('awb'),partner:g('partner'),status:st,comment:g('comment'),expiry:null,deliv:g('deliv')||null,grn,sq:num(g('sq')),sv:num(g('sv')),dv:num(g('dv')),dvw:num(g('dv')),ev:num(g('ev')),cn:g('cn'),cnv:num(g('cnv')),appt:o.appt||null,dq:num(g('dq')),eq:num(g('eq')),gno,gdate:gdate||null,gamt,gnote:g('gnote'),asn:document.getElementById(p+'-asn')?g('asn'):(o.asn||''),asnd:(document.getElementById(p+'-asnd')?g('asnd'):(o.asnd||''))||null,rto:num(g('rto'))});}
 function actionClick(act,arg,el){
