@@ -203,7 +203,7 @@ h2.sec .small{font:400 13px var(--body)}
 .pc-top{display:flex;gap:12px;align-items:center}.pc-top b{font:600 19px/1.2 var(--display);display:block}
 .allicon{width:44px;height:44px;border-radius:10px;background:var(--accent);color:var(--accent-ink);display:grid;place-items:center}.allicon .ic{width:24px;height:24px}
 .pc-stats{display:flex;gap:18px;flex-wrap:wrap}
-.pc .st{display:flex;flex-direction:column;min-width:80px}.pc .st b{font:600 24px/1.1 var(--display);font-variant-numeric:tabular-nums}.pc .st span{font-size:12px;color:var(--ink3)}
+.pc .st{display:flex;flex-direction:column;min-width:0}.pc .st b{font:600 24px/1.1 var(--display);font-variant-numeric:tabular-nums}.pc .st span{font-size:12px;color:var(--ink3)}
 .pc .st.warn b{color:var(--warn)}.pc .st.crit b{color:var(--crit)}
 .pc-bar{height:8px;border-radius:5px;background:var(--surface2);overflow:hidden}.pc-bar i{display:block;height:100%;background:var(--ok);border-radius:5px}
 .pc .go{font-weight:700;color:var(--accent);font-size:13.5px;margin-top:auto}
@@ -230,8 +230,8 @@ table{font-size:13.5px}td{padding:9px 10px}
 
 .grid.g4{grid-template-columns:repeat(4,minmax(0,1fr))}
 @media (max-width:1180px){.grid.g4{grid-template-columns:repeat(2,minmax(0,1fr))}}
-.pc-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px 10px}
-.pc-stats>*{min-width:0;overflow-wrap:anywhere}
+.pc-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(96px,1fr));gap:10px 12px}
+.pc-stats>*{min-width:0}
 .pc-stats .l,.pc-stats small,.pc-stats span{font-size:12px}
 .pc.big .pc-stats{grid-template-columns:repeat(5,minmax(0,1fr));max-width:900px}
 .plogo.xl{max-width:110px;object-fit:contain}
@@ -314,7 +314,7 @@ main{padding:26px 28px 48px;max-width:1600px}
 .pc.big .go{color:var(--gold)}.pc.big .pc-bar{background:rgba(255,255,255,.16)}
 .allicon{background:var(--gold);color:#1a1405;border-radius:14px;width:56px;height:56px}
 .pc-top{gap:14px}.pc-top b{font-size:18px}
-.pc .st b{font-size:22px}
+.pc .st b{font-size:20px}
 .pc-bar{height:6px}
 .hero{padding:18px 22px;background:linear-gradient(180deg,#fff,#f8fafc)}
 .hero .hl{gap:16px}.hero .hl h2{font-size:22px}
@@ -1340,7 +1340,14 @@ const UI={
       const c2=S.trk[x.po]||{};const a=x.inv;const mk=(t,v,st)=>'<div class="step '+(st||'')+'"><b>'+t+'</b><span>'+(v||'—')+'</span></div>';
       const p=x.pri,delivered=a.deliv>0;const lastDeliv=a.list.map(l=>l.deliv).filter(Boolean).sort().pop();
       const steps=this.poSteps(x);
-      const inv=a.list.length?'<div class="tablewrap"><table><thead><tr><th>Invoice</th><th>Dispatched</th><th class="r">Value</th><th>Partner / AWB</th><th>Status</th><th>Delivered</th><th>GRN</th><th class="r">GRN amount</th><th class="r">Short qty / ₹</th><th class="r">Damage qty / ₹</th><th class="r">Excess qty / ₹</th><th>Credit note</th><th>GRN remarks</th><th></th></tr></thead><tbody>'+a.list.map(l=>'<tr><td class="mono">'+esc(l.inv)+'</td><td class="num">'+fd(l.disp)+'</td><td class="r num">'+inr(l.val)+'</td><td>'+esc(l.partner||'')+(l.awb?' · '+esc(l.awb):'')+'</td><td>'+esc(l.status)+'</td><td class="num">'+fd(l.deliv)+'</td><td>'+esc(l.grn)+(l.gno?' · '+esc(l.gno):'')+'</td><td class="r num">'+(l.gamt?inr(Math.round(l.gamt)):'')+'</td><td class="r num">'+((l.sq||l.sv)?inr(l.sq||0)+' / '+inr(Math.round(l.sv||0)):'')+'</td><td class="r num">'+((l.dq||l.dv)?inr(l.dq||0)+' / '+inr(Math.round(l.dv||0)):'')+'</td><td class="r num">'+((l.eq||l.ev)?inr(l.eq||0)+' / '+inr(Math.round(l.ev||0)):'')+'</td><td>'+esc(l.cn||'')+(l.cnv?' · '+inr(Math.round(l.cnv)):'')+'</td><td>'+esc([l.gnote,l.comment].filter(Boolean).join(' | '))+'</td><td><button class="btn sm" data-act="inv" data-arg="'+esc(l.po+'|'+l.inv)+'">Edit</button></td></tr>').join('')+'</tbody></table></div>':'<div class="small">No invoice yet.</div>';
+      const fld=(k,v)=>'<div style="min-width:0"><div class="small" style="text-transform:uppercase;letter-spacing:.04em;font-size:10.5px">'+k+'</div><div style="font-weight:500;overflow-wrap:anywhere">'+(v===''||v==null?'<span class="small">-</span>':v)+'</div></div>';
+      const qv=(q,v)=>(q||v)?inr(q||0)+' units / ₹'+inr(Math.round(v||0)):'';
+      const inv=a.list.length?a.list.map(l=>'<div style="border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:10px"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px"><div><span class="mono" style="font-size:14px">'+esc(l.inv)+'</span> <span class="small">· invoice ₹'+inr(Math.round(l.val||0))+'</span></div><button class="btn sm" data-act="inv" data-arg="'+esc(l.po+'|'+l.inv)+'">Edit</button></div>'+
+        '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px 14px">'+
+        fld('Dispatch date',fd(l.disp))+fld('Dispatch status',esc(l.status))+fld('Delivery partner',esc(l.partner||''))+fld('AWB / vehicle',esc(l.awb||''))+fld('Facility',esc(l.loc||''))+fld('Delivered on',fd(l.deliv))+fld('Appointment',fd(l.appt))+
+        fld('GRN status',esc(l.grn||''))+fld('GRN no.',esc(l.gno||''))+fld('GRN date',fd(l.gdate))+fld('GRN amount',l.gamt?'₹'+inr(Math.round(l.gamt)):'')+
+        fld('Short',qv(l.sq,l.sv))+fld('Damaged (invoice - GRN)',qv(l.dq,l.dv))+fld('Excess',qv(l.eq,l.ev))+fld('Credit note',esc(l.cn||'')+(l.cnv?' · ₹'+inr(Math.round(l.cnv)):''))+fld('Goods back through RTO',l.rto?'₹'+inr(Math.round(l.rto)):'')+
+        '</div>'+((l.gnote||l.comment)?'<div style="margin-top:10px;display:grid;gap:8px">'+(l.gnote?fld('GRN remarks',esc(l.gnote)):'')+(l.comment?fld('Warehouse comment',esc(l.comment)):'')+'</div>':'')+'</div>').join(''):'<div class="small">No invoice, dispatch or GRN is recorded for this PO yet. Add one here, or add a row in the INVOICES tab of the sheet with this PO number.</div>';
       const iss=S.issues.filter(i=>i.po===x.po);const hist=S.act.filter(r=>r.po===x.po).slice(-8).reverse();
       h='<div class="hd"><div><div class="mono" style="font-size:16px">'+esc(x.po)+'</div><div class="small">'+pn(x.plat)+(x.loc?' · '+esc(x.loc):'')+' · '+(x.value?money(x.value):'no value')+(x.qty?' · '+inr(x.qty)+' units':'')+'</div><div style="margin-top:6px"><span class="tag '+TONE_STAGE[x.stage]+'">Stage '+x.stage+': '+esc(STAGES[x.stage-1].name)+'</span> '+flagTag(x)+'</div></div><button class="btn sm" data-act="close" aria-label="Close">Close</button></div>'+
         '<div class="bd">'+(x.pri?'<div class="banner" style="margin:0"><b>'+esc(FLAGS[x.pri].team)+':</b> '+esc(FLAGS[x.pri].act)+'</div>':'')+steps+
