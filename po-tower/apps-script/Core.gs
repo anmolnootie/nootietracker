@@ -1,3 +1,17 @@
+function manualLines(I,trkMap){
+  const have=new Set();I.forEach(l=>have.add(l.po+'|'+String(l.inv||'').toUpperCase()));
+  const out=[];
+  Object.keys(trkMap||{}).forEach(po=>{
+    const t=trkMap[po];const inv=String(t.mInv||'').trim();if(!inv)return;
+    const k=po+'|'+inv.toUpperCase();if(have.has(k))return;
+    const st=t.mStatus||(t.mDeliv?'Delivered':'Dispatched');
+    const grnDone=!!(t.mGrnNo||t.mGrnDate||num(t.mGrnAmt)!=null);
+    const grn=st==='RTO'?'NA':(grnDone?'Done':(st==='Delivered'?'Pending':''));
+    out.push({disp:t.mDisp||null,po,inv,chan:normPlat(t.plat||''),loc:t.loc||'',val:num(t.mInvVal),awb:t.mAwb||'',partner:t.mPartner||'',status:st,comment:'',expiry:null,
+      deliv:t.mDeliv||null,grn,sq:null,sv:null,dv:null,ev:null,cn:'',cnv:null,appt:null,dq:null,eq:null,gno:t.mGrnNo||'',gdate:t.mGrnDate||null,gamt:num(t.mGrnAmt),manual:true});
+  });
+  return out;
+}
 /* ===== CORE: parsing, merging and PO logic. No DOM here so it can be tested in Node. ===== */
 const MON={jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12};
 const PLATS=['Blinkit','Zepto','Swiggy Instamart','BigBasket','Flipkart','Amazon','Supertails','FirstClub','Tata 1mg','Other'];
@@ -227,6 +241,7 @@ function derive(p,inv,trk,cfg,asof,openIssues){
     fill:(p.amt>0)?a.val/p.amt:null};
 }
 function deriveAll(P,I,trkMap,issues,cfg,asof){
+  I=I.concat(manualLines(I,trkMap));
   const idx=indexInvoices(I,cfg,asof);
   const oi={};issues.forEach(x=>{if(x.status!=='Resolved'&&x.po)oi[x.po]=(oi[x.po]||0)+1;});
   return P.map(p=>derive(p,idx.get(p.po),trkMap[p.po],cfg,asof,oi[p.po]));

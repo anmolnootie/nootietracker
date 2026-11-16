@@ -65,13 +65,13 @@ function loadAll_() {
   var ob = parseOrderBook(obR, asof), gm = parseGrnTab(grnR), gi = parseGrnInfo(grnR);
   var I = parseDispatch(dgR, gm, gi), P = buildPOs(ob, I, tabs);
   if (P.length < 200) throw new Error('Warehouse Master looked too small (' + P.length + ' POs): not syncing');
-  var TC = ['po','dec','reason','printout','handed','ack','ackBy','owner','rem','updated','by','plat','date','exp','loc','qty','amt','created','handedTo','ewb'];
+  var TC = ['po','dec','reason','printout','handed','ack','ackBy','owner','rem','updated','by','plat','date','exp','loc','qty','amt','created','handedTo','ewb','mInv','mInvVal','mDisp','mStatus','mPartner','mAwb','mDeliv','mGrnNo','mGrnDate','mGrnAmt'];
   var trkMap = {};
-  readRange_(trk, 'TRACKING!A2:T5000').forEach(function (r) {
+  readRange_(trk, 'TRACKING!A2:AD5000').forEach(function (r) {
     var po = normPo(r[0]); if (!po) return;
     var o = { po: po };
     TC.forEach(function (k, j) { o[k] = (r[j] == null ? '' : String(r[j])); });
-    ['printout', 'handed', 'ack', 'date', 'exp'].forEach(function (k) { o[k] = pdate(o[k]) || ''; });
+    ['printout', 'handed', 'ack', 'date', 'exp', 'mDisp', 'mDeliv', 'mGrnDate'].forEach(function (k) { o[k] = pdate(o[k]) || ''; });
     o.qty = num(o.qty); o.amt = num(o.amt); o.po = po;
     trkMap[po] = o;
   });
@@ -83,7 +83,7 @@ function loadAll_() {
     if (t.created === 'Y' && !have[t.po]) { have[t.po] = 1; P.push({ po: t.po, plat: t.plat || 'Other', date: t.date || null, exp: t.exp || null, loc: t.loc || '', qty: t.qty, amt: t.amt, dec: 'Pending', reason: '', rem: '', src: 'Created in app' }); }
   });
   var D = deriveAll(P, I, trkMap, [], cfg, asof);
-  return { D: D, I: I, asof: asof };
+  return { D: D, I: I.concat(manualLines(I, trkMap)), asof: asof };
 }
 
 function writeBlock_(sh, startRow, rows, ncols, textCols, numCols) {

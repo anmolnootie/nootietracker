@@ -506,6 +506,20 @@ th{background:#fbf6f0}
 const SNAP={"asOf":"2026-11-16","P":[],"I":[]};
 </script>
 <script>
+function manualLines(I,trkMap){
+  const have=new Set();I.forEach(l=>have.add(l.po+'|'+String(l.inv||'').toUpperCase()));
+  const out=[];
+  Object.keys(trkMap||{}).forEach(po=>{
+    const t=trkMap[po];const inv=String(t.mInv||'').trim();if(!inv)return;
+    const k=po+'|'+inv.toUpperCase();if(have.has(k))return;
+    const st=t.mStatus||(t.mDeliv?'Delivered':'Dispatched');
+    const grnDone=!!(t.mGrnNo||t.mGrnDate||num(t.mGrnAmt)!=null);
+    const grn=st==='RTO'?'NA':(grnDone?'Done':(st==='Delivered'?'Pending':''));
+    out.push({disp:t.mDisp||null,po,inv,chan:normPlat(t.plat||''),loc:t.loc||'',val:num(t.mInvVal),awb:t.mAwb||'',partner:t.mPartner||'',status:st,comment:'',expiry:null,
+      deliv:t.mDeliv||null,grn,sq:null,sv:null,dv:null,ev:null,cn:'',cnv:null,appt:null,dq:null,eq:null,gno:t.mGrnNo||'',gdate:t.mGrnDate||null,gamt:num(t.mGrnAmt),manual:true});
+  });
+  return out;
+}
 /* ===== CORE: parsing, merging and PO logic. No DOM here so it can be tested in Node. ===== */
 const MON={jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12};
 const PLATS=['Blinkit','Zepto','Swiggy Instamart','BigBasket','Flipkart','Amazon','Supertails','FirstClub','Tata 1mg','Other'];
@@ -735,6 +749,7 @@ function derive(p,inv,trk,cfg,asof,openIssues){
     fill:(p.amt>0)?a.val/p.amt:null};
 }
 function deriveAll(P,I,trkMap,issues,cfg,asof){
+  I=I.concat(manualLines(I,trkMap));
   const idx=indexInvoices(I,cfg,asof);
   const oi={};issues.forEach(x=>{if(x.status!=='Resolved'&&x.po)oi[x.po]=(oi[x.po]||0)+1;});
   return P.map(p=>derive(p,idx.get(p.po),trkMap[p.po],cfg,asof,oi[p.po]));
@@ -808,7 +823,7 @@ const NOOTIE_LOGO="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAWAAAABvCAYAAAD
 const SRC_ID='10vLMqODDWeo8g4wFCmYATH59hhg2s4W7VTWp1e8euQo';   // Warehouse Master (read only)
 const TRK_ID='1XkWpydTQPviypiN2-xmhfYzPyc_hTRHRFLKQDVLMT98';   // PO Control Tower - Tracking (app data)
 const SERVER='Google Sheets';
-const TRK_COLS=['po','dec','reason','printout','handed','ack','ackBy','owner','rem','updated','by','plat','date','exp','loc','qty','amt','created','handedTo','ewb'];
+const TRK_COLS=['po','dec','reason','printout','handed','ack','ackBy','owner','rem','updated','by','plat','date','exp','loc','qty','amt','created','handedTo','ewb','mInv','mInvVal','mDisp','mStatus','mPartner','mAwb','mDeliv','mGrnNo','mGrnDate','mGrnAmt'];
 const ISS_COLS=['id','raised','po','plat','type','desc','by','owner','prio','status','next','updated','note','resolution','resolved'];
 
 const S={
@@ -864,7 +879,7 @@ function rowsToTrk(rows){
   rows.forEach((r,i)=>{
     const po=normPo(r[0]);if(!po)return;
     const o={po};TRK_COLS.forEach((k,j)=>{o[k]=(r[j]==null?'':String(r[j]));});
-    ['printout','handed','ack','date','exp'].forEach(k=>{o[k]=pdate(o[k])||'';});
+    ['printout','handed','ack','date','exp','mDisp','mDeliv','mGrnDate'].forEach(k=>{o[k]=pdate(o[k])||'';});
     o.qty=num(o.qty);o.amt=num(o.amt);o.po=po;
     t[po]=o;rm[po]=i+2;
   });
@@ -906,7 +921,7 @@ async function loadLive(){
     if(!m){S.diag.push('Google Sheets access is not available in this view. Showing the saved snapshot.');S.busy=false;UI.status();return false;}
     S.mcp=m;
     const t0=Date.now();
-    const [trkR,issR,actR,setR]=await Promise.all([getRows(TRK_ID,'TRACKING!A2:T5000'),getRows(TRK_ID,'ISSUES!A2:O3000'),getRows(TRK_ID,'ACTIVITY!A2:F6000'),getRows(TRK_ID,'SETTINGS!A2:B20')]);
+    const [trkR,issR,actR,setR]=await Promise.all([getRows(TRK_ID,'TRACKING!A2:AD5000'),getRows(TRK_ID,'ISSUES!A2:O3000'),getRows(TRK_ID,'ACTIVITY!A2:F6000'),getRows(TRK_ID,'SETTINGS!A2:B20')]);
     S.diag.push('Tracking sheet read: '+trkR.length+' PO rows, '+issR.length+' issues.');
     const [obR,dgR,grnR,blR,fkR,zpR,swR]=await Promise.all([
       getRows(SRC_ID,"'ORDER BOOK'!A4:N5500"),getRows(SRC_ID,"'DISPATCH + GRN'!A4:Y5000"),getRows(SRC_ID,'GRN!A2:Q5000'),
@@ -940,7 +955,7 @@ function enqueue(label,fn){
 function trkRowValues(t){return TRK_COLS.map(k=>{const v=t[k];return v==null?'':v;});}
 async function writeTrk(po){
   const t=S.trk[po];const vals=[trkRowValues(t)];
-  if(S.trkRow[po]){const r=S.trkRow[po];await sheets('update_values',{spreadsheetId:TRK_ID,range:'TRACKING!A'+r+':T'+r,values:vals});}
+  if(S.trkRow[po]){const r=S.trkRow[po];await sheets('update_values',{spreadsheetId:TRK_ID,range:'TRACKING!A'+r+':AD'+r,values:vals});}
   else{
     const res=await sheets('append_values',{spreadsheetId:TRK_ID,range:'TRACKING!A1',values:vals});
     const up=(res.updates&&res.updates.updatedRange)||res.updatedRange||'';const m=String(up).match(/(\d+):[A-Z]+(\d+)$/);
@@ -1207,14 +1222,14 @@ const UI={
     dr.hidden=false;sc.hidden=false;let h='';
     if(d.type==='po'){
       const x=S.byPo.get(d.po);if(!x){this.drawer=null;dr.hidden=true;sc.hidden=true;return;}
-      const a=x.inv;const mk=(t,v,st)=>'<div class="step '+(st||'')+'"><b>'+t+'</b><span>'+(v||'—')+'</span></div>';
+      const c2=S.trk[x.po]||{};const a=x.inv;const mk=(t,v,st)=>'<div class="step '+(st||'')+'"><b>'+t+'</b><span>'+(v||'—')+'</span></div>';
       const p=x.pri,delivered=a.deliv>0;const lastDeliv=a.list.map(l=>l.deliv).filter(Boolean).sort().pop();
       const steps=this.poSteps(x);
       const inv=a.list.length?'<div class="tablewrap"><table><thead><tr><th>Invoice</th><th>Dispatched</th><th class="r">Value</th><th>Partner / AWB</th><th>Status</th><th>Delivered</th><th>GRN</th><th class="r">Short / dmg / excess</th></tr></thead><tbody>'+a.list.map(l=>'<tr><td class="mono">'+esc(l.inv)+'</td><td class="num">'+fd(l.disp)+'</td><td class="r num">'+inr(l.val)+'</td><td>'+esc(l.status)+'</td><td>'+esc(l.grn)+'</td><td class="r num">'+inr((l.sv||0)+(l.dv||0))+'</td></tr>').join('')+'</tbody></table></div>':'<div class="small">No invoice yet.</div>';
       const iss=S.issues.filter(i=>i.po===x.po);const hist=S.act.filter(r=>r.po===x.po).slice(-8).reverse();
       h='<div class="hd"><div><div class="mono" style="font-size:16px">'+esc(x.po)+'</div><div class="small">'+pn(x.plat)+(x.loc?' · '+esc(x.loc):'')+' · '+(x.value?money(x.value):'no value')+(x.qty?' · '+inr(x.qty)+' units':'')+'</div><div style="margin-top:6px"><span class="tag '+TONE_STAGE[x.stage]+'">Stage '+x.stage+': '+esc(STAGES[x.stage-1].name)+'</span> '+flagTag(x)+'</div></div><button class="btn sm" data-act="close" aria-label="Close">Close</button></div>'+
         '<div class="bd">'+(x.pri?'<div class="banner" style="margin:0"><b>'+esc(FLAGS[x.pri].team)+':</b> '+esc(FLAGS[x.pri].act)+'</div>':'')+steps+
-        '<div><h3 style="margin-bottom:8px">Update this PO</h3><div class="form"><label>Decision'+this.sel('e-dec',DECISIONS,x.dec)+'</label><label>Reason'+this.sel('e-reason',REASONS,x.reason,'—')+'</label><label>Printout received on'+this.dateField('e-printout',x.printout)+'</label><label>Handed to warehouse on'+this.dateField('e-handed',x.handed)+'</label><label>Handed to (person)<input type="text" id="e-handedTo" list="people-list" value="'+esc(x.handedTo)+'"></label><label>Warehouse acknowledged on'+this.dateField('e-ack',x.ack)+'</label><label>Acknowledged by<input type="text" id="e-ackBy" list="people-list" value="'+esc(x.ackBy)+'"></label><label>E-way bill no.<input type="text" id="e-ewb" class="mono" value="'+esc(x.ewb)+'"></label><label>Owner<input type="text" id="e-owner" value="'+esc(x.owner)+'"></label><label>PO expiry'+this.dateField('e-exp',x.exp)+'</label><label class="full">Remarks<textarea id="e-rem">'+esc((S.trk[x.po]||{}).rem||'')+'</textarea></label></div><p><button class="btn pri" data-act="savepo" data-arg="'+esc(x.po)+'">Save</button> <button class="btn" data-act="newissue" data-arg="'+esc(x.po)+'">Log an issue</button></p></div>'+
+        '<div><h3 style="margin-bottom:8px">Update this PO</h3><div class="form"><label>Decision'+this.sel('e-dec',DECISIONS,x.dec)+'</label><label>Reason'+this.sel('e-reason',REASONS,x.reason,'—')+'</label><label>Printout received on'+this.dateField('e-printout',x.printout)+'</label><label>Handed to warehouse on'+this.dateField('e-handed',x.handed)+'</label><label>Handed to (person)<input type="text" id="e-handedTo" list="people-list" value="'+esc(x.handedTo)+'"></label><label>Warehouse acknowledged on'+this.dateField('e-ack',x.ack)+'</label><label>Acknowledged by<input type="text" id="e-ackBy" list="people-list" value="'+esc(x.ackBy)+'"></label><label>E-way bill no.<input type="text" id="e-ewb" class="mono" value="'+esc(x.ewb)+'"></label><h4 style="grid-column:1/-1;margin:14px 0 0;padding-top:10px;border-top:1px solid var(--line)">Invoice and dispatch</h4><label>Invoice no.<input type="text" id="e-mInv" class="mono" value="'+esc(c2.mInv)+'"></label><label>Invoice value ₹<input type="text" id="e-mInvVal" class="mono" value="'+esc(c2.mInvVal)+'"></label><label>Dispatch date'+this.dateField('e-mDisp',c2.mDisp)+'</label><label>Dispatch status'+this.sel('e-mStatus',['Dispatched','In Transit','Delivered','RTO'],c2.mStatus||'','—')+'</label><label>Delivery partner<input type="text" id="e-mPartner" value="'+esc(c2.mPartner)+'"></label><label>AWB / vehicle no.<input type="text" id="e-mAwb" class="mono" value="'+esc(c2.mAwb)+'"></label><h4 style="grid-column:1/-1;margin:14px 0 0;padding-top:10px;border-top:1px solid var(--line)">Delivery and GRN</h4><label>Delivered on'+this.dateField('e-mDeliv',c2.mDeliv)+'</label><label>GRN no.<input type="text" id="e-mGrnNo" class="mono" value="'+esc(c2.mGrnNo)+'"></label><label>GRN date'+this.dateField('e-mGrnDate',c2.mGrnDate)+'</label><label>GRN amount ₹<input type="text" id="e-mGrnAmt" class="mono" value="'+esc(c2.mGrnAmt)+'"></label><p class="small" style="grid-column:1/-1;margin:0">Use this when the Warehouse Master does not have the invoice yet. Once it appears there, the Warehouse Master row is used instead.</p><label>Owner<input type="text" id="e-owner" value="'+esc(x.owner)+'"></label><label>PO expiry'+this.dateField('e-exp',x.exp)+'</label><label class="full">Remarks<textarea id="e-rem">'+esc((S.trk[x.po]||{}).rem||'')+'</textarea></label></div><p><button class="btn pri" data-act="savepo" data-arg="'+esc(x.po)+'">Save</button> <button class="btn" data-act="newissue" data-arg="'+esc(x.po)+'">Log an issue</button></p></div>'+
         '<div><h3 style="margin-bottom:8px">Invoices and delivery</h3>'+inv+'</div>'+
         (iss.length?'<div><h3 style="margin-bottom:8px">Issues on this PO</h3>'+iss.map(i=>'<button class="pcard" data-act="issue" data-arg="'+esc(i.id)+'" style="width:100%;margin-bottom:6px"><span class="t"><b>'+esc(i.type)+'</b><span class="tag mute">'+esc(i.status)+'</span></span><span class="small">'+esc(i.desc)+'</span></button>').join('')+'</div>':'')+
         '<div><h3 style="margin-bottom:8px">Source and history</h3><dl class="kv"><dt>Source</dt><dd>'+esc(x.src)+'</dd>'+(x.rem?'<dt>Notes</dt><dd>'+esc(x.rem)+'</dd>':'')+'</dl>'+(hist.length?'<div class="small" style="margin-top:6px">'+hist.map(r=>esc(r.ts)+' · '+esc(r.action)+' · '+esc(r.detail)+(r.by?' · '+esc(r.by):'')).join('<br>')+'</div>':'')+'</div></div>';
@@ -1659,7 +1674,7 @@ function actionClick(act,arg,el){
     case 'today':{const e=document.getElementById(arg);if(e)e.value=today;break;}
     case 'savepo':{
       const x=S.byPo.get(arg);const cur=S.trk[arg]||{};
-      const patch={dec:val('e-dec'),reason:val('e-reason'),printout:val('e-printout'),handed:val('e-handed'),handedTo:val('e-handedTo'),ack:val('e-ack'),ackBy:val('e-ackBy'),owner:val('e-owner'),ewb:val('e-ewb'),exp:val('e-exp'),rem:val('e-rem')};
+      const patch={dec:val('e-dec'),reason:val('e-reason'),printout:val('e-printout'),handed:val('e-handed'),handedTo:val('e-handedTo'),ack:val('e-ack'),ackBy:val('e-ackBy'),owner:val('e-owner'),ewb:val('e-ewb'),exp:val('e-exp'),rem:val('e-rem')};['mInv','mInvVal','mDisp','mStatus','mPartner','mAwb','mDeliv','mGrnNo','mGrnDate','mGrnAmt'].forEach(k=>{patch[k]=val('e-'+k);});
       const changed=Object.keys(patch).filter(k=>String((k==='dec'||k==='reason'?(x&&x[k]):(k==='exp'?(x&&x.exp):(cur[k]!=null?cur[k]:(x&&x[k]))))||'')!==String(patch[k]||''));
       if(!changed.length){UI.toast('No changes to save.');break;}
       if(patch.dec==='Declined'&&!patch.reason){UI.toast('Pick a reason before declining.',true);break;}
