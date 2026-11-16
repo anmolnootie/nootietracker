@@ -10,6 +10,102 @@ var MASTER_COLS_ = 42;
 var MASTER_TEXT_ = [1,2,3,4,5,8,9,10,11,12,13,14,15,16,17,19,20,21,24,25,26,27,28,29,35,37,38,41,42];
 var MASTER_NUM_ = [6,7,18,22,30,31,32,33,34,36,39,40];
 
+
+// ---------- two-way sync: edits typed in MASTER or a platform tab flow back to the tracking sheet ----------
+var EDIT_MAP_ = { 'Decision': 'dec', 'Decision Reason': 'reason', 'Handed to WH On': 'handed', 'Handed To (Person)': 'handedTo',
+  'WH Ack On': 'ack', 'WH Ack By': 'ackBy', 'Owner': 'owner', 'E-way Bill No': 'ewb', 'Remarks': 'rem', 'Appointment Date': 'mAppt' };
+var EDIT_KEYS_ = ['dec', 'reason', 'handed', 'handedTo', 'ack', 'ackBy', 'owner', 'ewb', 'rem', 'mAppt'];
+var EDIT_DATES_ = { handed: 1, ack: 1, mAppt: 1 };
+var EDIT_MASTER_IDX_ = { dec: 8, reason: 9, handed: 10, handedTo: 11, ack: 12, ackBy: 13, owner: 14, ewb: 15, rem: 16, mAppt: 41 };   // 0-based in a MASTER row
+var TRK_COLS_ = ['po','dec','reason','printout','handed','ack','ackBy','owner','rem','updated','by','plat','date','exp','loc','qty','amt','created','handedTo','ewb','mInv','mInvVal','mDisp','mStatus','mPartner','mAwb','mDeliv','mGrnNo','mGrnDate','mGrnAmt','mAppt'];
+var PLAT_TABS_ = ['Blinkit', 'Swiggy Instamart', 'Zepto', 'BigBasket', 'Flipkart', 'Other platforms'];
+var PLAT_ORDER_ = [1,2,3,4,42,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41];   // MASTER column shown in each platform-tab column
+var MAX_EDITS_AT_ONCE_ = 300;
+
+function platTab_(p) { return PLAT_TABS_.slice(0, 5).indexOf(p) >= 0 ? p : 'Other platforms'; }
+function permute_(row) { return PLAT_ORDER_.map(function (c) { return row[c - 1]; }); }
+function permIdx_(cols) { var out = []; PLAT_ORDER_.forEach(function (c, i) { if (cols.indexOf(c) >= 0) out.push(i + 1); }); return out; }
+
+function snapshotSheet_(ss) {
+  var sh = ss.getSheetByName('_SNAPSHOT');
+  if (!sh) { sh = ss.insertSheet('_SNAPSHOT'); try { sh.hideSheet(); } catch (e) {} }
+  return sh;
+}
+function writeSnapshot_(ss, rows, stamp) {
+  var sh = snapshotSheet_(ss);
+  sh.clearContents();
+  var out = [[stamp].concat(EDIT_KEYS_.map(function () { return ''; })), ['PO'].concat(EDIT_KEYS_)];
+  rows.forEach(function (r) { out.push([r[0]].concat(EDIT_KEYS_.map(function (k) { return String(r[EDIT_MASTER_IDX_[k]] == null ? '' : r[EDIT_MASTER_IDX_[k]]); }))); });
+  sh.getRange(1, 1, out.length, EDIT_KEYS_.length + 1).setNumberFormat('@').setValues(out);
+}
+
+// Reads what people typed in MASTER and the platform tabs, compares with what the last sync wrote, and
+// writes only the real differences into the tracking sheet. Every change is logged in ACTIVITY with the old value.
+function mergeSheetEdits_(force) {
+  var ss = SpreadsheetApp.openById(MASTER_ID), trk = SpreadsheetApp.openById(TRK_ID);
+  var snapSh = ss.getSheetByName('_SNAPSHOT');
+  if (!snapSh || snapSh.getLastRow() < 3) return { applied: 0, note: 'first run' };
+  var sv = snapSh.getDataRange().getDisplayValues();
+  var snapStamp = sv[0][0], keys = sv[1].slice(1), snap = {};
+  sv.slice(2).forEach(function (r) { snap[r[0]] = r.slice(1); });
+  var edits = {}, plats = {};
+  ['MASTER'].concat(PLAT_TABS_).forEach(function (name) {
+    var sh = ss.getSheetByName(name); if (!sh) return;
+    var last = sh.getLastRow(), lc = sh.getLastColumn(); if (last < 3 || lc < 1) return;
+    var hdr = sh.getRange(2, 1, 1, lc).getDisplayValues()[0], colOf = {}, poCol = hdr.indexOf('PO Number'), pCol = hdr.indexOf('Platform');
+    if (poCol < 0) return;
+    hdr.forEach(function (h, i) { if (EDIT_MAP_[h]) colOf[EDIT_MAP_[h]] = i; });
+    sh.getRange(3, 1, last - 2, lc).getDisplayValues().forEach(function (r) {
+      var po = String(r[poCol] || '').trim(), sn = snap[po]; if (!po || !sn) return;
+      keys.forEach(function (k, j) {
+        if (colOf[k] == null) return;
+        var nv = String(r[colOf[k]] == null ? '' : r[colOf[k]]).trim();
+        if (nv !== String(sn[j]).trim()) { (edits[po] = edits[po] || {})[k] = { nv: nv, old: String(sn[j]) }; plats[po] = pCol >= 0 ? r[pCol] : ''; }
+      });
+    });
+  });
+  var pos = Object.keys(edits);
+  if (!pos.length) return { applied: 0 };
+  if (pos.length > MAX_EDITS_AT_ONCE_ && !force) return { paused: pos.length };
+  var tsh = trk.getSheetByName('TRACKING'), act = trk.getSheetByName('ACTIVITY');
+  var rows = readRange_(trk, 'TRACKING!A2:AE5000'), rowOf = {};
+  rows.forEach(function (r, i) { var p = normPo(r[0]); if (p) rowOf[p] = i; });
+  var now = Utilities.formatDate(new Date(), 'Asia/Kolkata', 'yyyy-MM-dd HH:mm');
+  var logs = [], applied = 0, skipped = 0, rejected = 0, nextRow = rows.length + 2;
+  pos.forEach(function (po) {
+    var cur = rowOf[po] != null ? rows[rowOf[po]] : null, arr = [];
+    for (var i = 0; i < TRK_COLS_.length; i++) arr.push(cur && cur[i] != null ? String(cur[i]) : '');
+    if (cur && arr[9] && arr[9] > snapStamp) { skipped++; logs.push([now, po, 'Sheet edit skipped', 'the app changed this PO after the last sync, so the app value was kept', 'MASTER sheet', plats[po]]); return; }
+    var changed = [];
+    EDIT_KEYS_.forEach(function (k) {
+      var e = edits[po][k]; if (!e) return;
+      var idx = TRK_COLS_.indexOf(k), nv = e.nv;
+      if (k === 'dec' && DECISIONS.indexOf(nv) < 0) { rejected++; logs.push([now, po, 'Sheet edit rejected', 'Decision must be one of ' + DECISIONS.join(', ') + ' (typed: ' + nv + ')', 'MASTER sheet', plats[po]]); return; }
+      if (EDIT_DATES_[k] && nv) { var iso = pdate(nv); if (!iso) { rejected++; logs.push([now, po, 'Sheet edit rejected', k + ': not a date (' + nv + ')', 'MASTER sheet', plats[po]]); return; } nv = iso; }
+      if (k === 'rem') {
+        var trkOld = arr[idx], shown = e.old, wh = trkOld ? (shown.slice(-(trkOld.length + 3)) === ' | ' + trkOld ? shown.slice(0, -(trkOld.length + 3)) : (shown === trkOld ? '' : shown)) : shown;
+        if (wh && nv.indexOf(wh) === 0) nv = nv.slice(wh.length).replace(/^ \| /, '');
+      }
+      if (arr[idx] === nv) return;
+      changed.push(k + ': ' + (arr[idx] || '(blank)') + ' -> ' + (nv || '(blank)'));
+      arr[idx] = nv;
+    });
+    if (!changed.length) return;
+    arr[0] = po; arr[9] = now; arr[10] = 'MASTER sheet'; if (!cur) arr[11] = plats[po] || '';
+    var r0 = cur ? rowOf[po] + 2 : nextRow++;
+    tsh.getRange(r0, 1, 1, arr.length).setNumberFormat('@').setValues([arr]);
+    applied++;
+    logs.push([now, po, 'Sheet edit', changed.join('; '), 'MASTER sheet', plats[po]]);
+  });
+  if (logs.length && act) {
+    var ar = Math.max(act.getLastRow() + 1, 2);
+    act.getRange(ar, 1, logs.length, 6).setNumberFormat('@').setValues(logs);
+  }
+  return { applied: applied, skipped: skipped, rejected: rejected };
+}
+
+function forceSyncEdits() { return syncMaster(true); }
+
 function setupMasterSync() {
   ScriptApp.getProjectTriggers().forEach(function (t) { if (t.getHandlerFunction() === 'syncMaster') ScriptApp.deleteTrigger(t); });
   ScriptApp.newTrigger('syncMaster').timeBased().everyMinutes(10).create();
@@ -102,20 +198,39 @@ function writeBlock_(sh, startRow, rows, ncols, textCols, numCols) {
   }
 }
 
-function syncMaster() {
+function syncMaster(force) {
   var lock = LockService.getUserLock();
   if (!lock.tryLock(1000)) return { ok: false, skipped: 'a sync is already running' };
   try {
+    var ss = SpreadsheetApp.openById(MASTER_ID);
+    var merged = mergeSheetEdits_(force === true);
+    if (merged.paused) {
+      var rp = ss.getSheetByName('READ ME');
+      if (rp) rp.getRange('A4').setValue('SYNC PAUSED: ' + merged.paused + ' POs were edited at once. Nothing was lost. Check the edits, then run forceSyncEdits in Apps Script to accept them.');
+      return { ok: false, paused: merged.paused };
+    }
     var a = loadAll_();
     var stamp = Utilities.formatDate(new Date(), 'Asia/Kolkata', 'yyyy-MM-dd HH:mm');
     var out = buildMaster_(a.D, a.I, STAGES, stamp);
-    var ss = SpreadsheetApp.openById(MASTER_ID);
-    writeBlock_(ss.getSheetByName('MASTER'), 3, out.master, MASTER_COLS_, MASTER_TEXT_, MASTER_NUM_);
     var m = ss.getSheetByName('MASTER');
+    writeBlock_(m, 3, out.master, MASTER_COLS_, MASTER_TEXT_, MASTER_NUM_);
     m.getRange(3, 23, out.master.length, 1).setNumberFormat('0.0%');
+    // platform tabs: real values (not formulas) so they can be edited; same columns as MASTER with Appointment Date after PO Expiry
+    var hdr = m.getRange(2, 1, 1, MASTER_COLS_).getDisplayValues()[0], byTab = {};
+    PLAT_TABS_.forEach(function (t) { byTab[t] = []; });
+    out.master.forEach(function (r) { byTab[platTab_(r[1])].push(permute_(r)); });
+    var pText = permIdx_(MASTER_TEXT_), pNum = permIdx_(MASTER_NUM_), pPct = permIdx_([23]);
+    PLAT_TABS_.forEach(function (t) {
+      var sh = ss.getSheetByName(t); if (!sh) return;
+      sh.getRange(1, 1).setValue(t + '  |  ' + byTab[t].length + ' POs  |  filtered view of MASTER. Edit the yellow columns: changes sync both ways with the website');
+      sh.getRange(2, 1, 1, MASTER_COLS_).setValues([permute_(hdr)]);
+      writeBlock_(sh, 3, byTab[t], MASTER_COLS_, pText, pNum);
+      if (byTab[t].length) sh.getRange(3, pPct[0], byTab[t].length, 1).setNumberFormat('0.0%');
+    });
     writeBlock_(ss.getSheetByName('INVOICES'), 2, out.invoices, 23, [1,2,3,4,5,7,8,9,10,11,12,13,14,22], [6,15,16,17,18,19,20,21,23]);
+    writeSnapshot_(ss, out.master, stamp);
     var rm = ss.getSheetByName('READ ME');
-    if (rm) rm.getRange('A4').setValue('Auto-refreshed every 10 minutes. Last refresh: ' + stamp + ' IST');
-    return { ok: true, pos: out.master.length, invoices: out.invoices.length, at: stamp };
+    if (rm) rm.getRange('A4').setValue('Auto-refreshed every 10 minutes. Last refresh: ' + stamp + ' IST' + (merged.applied ? '. Sheet edits applied: ' + merged.applied : ''));
+    return { ok: true, pos: out.master.length, invoices: out.invoices.length, at: stamp, edits: merged };
   } finally { lock.releaseLock(); }
 }
