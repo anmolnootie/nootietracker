@@ -485,6 +485,16 @@ th{background:#fbf6f0}
 .frow{grid-template-columns:minmax(180px,280px) minmax(0,1fr) 140px}
 @media (max-width:900px){.frow{grid-template-columns:1fr}}
 
+.icard{border:1px solid var(--line);border-radius:12px;padding:10px 14px 6px;margin-bottom:10px}
+.icat{border-top:1px solid var(--line)}
+.icat>summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:10px;padding:9px 0}
+.icat>summary::-webkit-details-marker{display:none}
+.icat>summary b{font-weight:600}
+.icat>summary .small{margin-left:auto;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:55%}
+.icat .chev{display:inline-block;width:18px;text-align:center;transition:transform .15s;transform:rotate(-90deg);color:var(--ink3)}
+.icat[open]>summary .chev{transform:rotate(0)}
+.icat .igrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px 14px;padding:2px 0 12px 28px}
+
 .keyov{position:fixed;inset:0;background:rgba(32,26,23,.55);display:grid;place-items:center;z-index:200}
 .keybox{background:#fff;border-radius:18px;padding:26px;width:min(380px,92vw);display:flex;flex-direction:column;gap:12px;box-shadow:0 20px 60px rgba(0,0,0,.3)}
 .keybox h2{font-size:20px}.keybox p{margin:0;color:var(--ink2)}.keybox input{height:42px;border:1px solid var(--line);border-radius:10px;padding:0 12px}
@@ -1342,12 +1352,15 @@ const UI={
       const steps=this.poSteps(x);
       const fld=(k,v)=>'<div style="min-width:0"><div class="small" style="text-transform:uppercase;letter-spacing:.04em;font-size:10.5px">'+k+'</div><div style="font-weight:500;overflow-wrap:anywhere">'+(v===''||v==null?'<span class="small">-</span>':v)+'</div></div>';
       const qv=(q,v)=>(q||v)?inr(q||0)+' units / ₹'+inr(Math.round(v||0)):'';
-      const inv=a.list.length?a.list.map(l=>'<div style="border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:10px"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px"><div><span class="mono" style="font-size:14px">'+esc(l.inv)+'</span> <span class="small">· invoice ₹'+inr(Math.round(l.val||0))+'</span></div><button class="btn sm" data-act="inv" data-arg="'+esc(l.po+'|'+l.inv)+'">Edit</button></div>'+
-        '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px 14px">'+
-        fld('Dispatch date',fd(l.disp))+fld('Dispatch status',esc(l.status))+fld('Delivery partner',esc(l.partner||''))+fld('AWB / vehicle',esc(l.awb||''))+fld('Facility',esc(l.loc||''))+fld('Delivered on',fd(l.deliv))+fld('Appointment',fd(l.appt))+
-        fld('GRN status',esc(l.grn||''))+fld('GRN no.',esc(l.gno||''))+fld('GRN date',fd(l.gdate))+fld('GRN amount',l.gamt?'₹'+inr(Math.round(l.gamt)):'')+
-        fld('Short',qv(l.sq,l.sv))+fld('Damaged (invoice - GRN)',qv(l.dq,l.dv))+fld('Excess',qv(l.eq,l.ev))+fld('Credit note',esc(l.cn||'')+(l.cnv?' · ₹'+inr(Math.round(l.cnv)):''))+fld('Goods back through RTO',l.rto?'₹'+inr(Math.round(l.rto)):'')+
-        '</div>'+((l.gnote||l.comment)?'<div style="margin-top:10px;display:grid;gap:8px">'+(l.gnote?fld('GRN remarks',esc(l.gnote)):'')+(l.comment?fld('Warehouse comment',esc(l.comment)):'')+'</div>':'')+'</div>').join(''):'<div class="small">No invoice, dispatch or GRN is recorded for this PO yet. Add one here, or add a row in the INVOICES tab of the sheet with this PO number.</div>';
+      const cat=(title,peek,body,open)=>'<details class="icat"'+(open?' open':'')+'><summary><span class="chev" aria-hidden="true">▾</span><b>'+title+'</b><span class="small">'+peek+'</span></summary><div class="igrid">'+body+'</div></details>';
+      const inv=a.list.length?a.list.map(l=>'<div class="icard"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px"><div><span class="mono" style="font-size:14px">'+esc(l.inv)+'</span> <span class="small">· invoice ₹'+inr(Math.round(l.val||0))+'</span></div><button class="btn sm" data-act="inv" data-arg="'+esc(l.po+'|'+l.inv)+'">Edit</button></div>'+
+        cat('Dispatch',esc([l.status,fd(l.disp)==='-'?'':fd(l.disp)].filter(Boolean).join(' · ')),fld('Dispatch date',fd(l.disp))+fld('Dispatch status',esc(l.status))+fld('Delivery partner',esc(l.partner||''))+fld('AWB / vehicle',esc(l.awb||''))+fld('Facility',esc(l.loc||'')),true)+
+        cat('Delivery',esc(l.deliv?'Delivered '+fd(l.deliv):(l.appt?'Appointment '+fd(l.appt):'')),fld('Delivered on',fd(l.deliv))+fld('Appointment',fd(l.appt)),false)+
+        cat('GRN',esc((l.grn||'')+(l.gamt?' · ₹'+inr(Math.round(l.gamt)):'')),fld('GRN status',esc(l.grn||''))+fld('GRN no.',esc(l.gno||''))+fld('GRN date',fd(l.gdate))+fld('GRN amount',l.gamt?'₹'+inr(Math.round(l.gamt)):''),true)+
+        cat('Short, damaged and excess',esc([l.sv?'short ₹'+inr(Math.round(l.sv)):'',l.dv?'damaged ₹'+inr(Math.round(l.dv)):'',l.ev?'excess ₹'+inr(Math.round(l.ev)):''].filter(Boolean).join(' · ')),fld('Short',qv(l.sq,l.sv))+fld('Damaged (invoice - GRN)',qv(l.dq,l.dv))+fld('Excess',qv(l.eq,l.ev)),false)+
+        cat('Credit note and RTO',esc([l.cn?'CN '+l.cn:'',l.rto?'RTO ₹'+inr(Math.round(l.rto)):''].filter(Boolean).join(' · ')),fld('Credit note no.',esc(l.cn||''))+fld('Credit note value',l.cnv?'₹'+inr(Math.round(l.cnv)):'')+fld('Goods back through RTO',l.rto?'₹'+inr(Math.round(l.rto)):''),false)+
+        cat('Remarks',esc((l.gnote||l.comment||'').slice(0,50)),fld('GRN remarks',esc(l.gnote||''))+fld('Warehouse comment',esc(l.comment||'')),false)+
+        '</div>').join(''):'<div class="small">No invoice, dispatch or GRN is recorded for this PO yet. Add one here, or add a row in the INVOICES tab of the sheet with this PO number.</div>';
       const iss=S.issues.filter(i=>i.po===x.po);const hist=S.act.filter(r=>r.po===x.po).slice(-8).reverse();
       h='<div class="hd"><div><div class="mono" style="font-size:16px">'+esc(x.po)+'</div><div class="small">'+pn(x.plat)+(x.loc?' · '+esc(x.loc):'')+' · '+(x.value?money(x.value):'no value')+(x.qty?' · '+inr(x.qty)+' units':'')+'</div><div style="margin-top:6px"><span class="tag '+TONE_STAGE[x.stage]+'">Stage '+x.stage+': '+esc(STAGES[x.stage-1].name)+'</span> '+flagTag(x)+'</div></div><button class="btn sm" data-act="close" aria-label="Close">Close</button></div>'+
         '<div class="bd">'+(x.pri?'<div class="banner" style="margin:0"><b>'+esc(FLAGS[x.pri].team)+':</b> '+esc(FLAGS[x.pri].act)+'</div>':'')+steps+
