@@ -1,16 +1,16 @@
 /**
  * PO Control Tower: backend for the website.
  *
- * What it does
- *  - READS the Warehouse Master and the tracking sheet (nothing is ever written to the Warehouse Master).
- *  - WRITES only to the tracking sheet, and only when the editor PIN (its SHA-256 hash) matches.
+ * The MASTER sheet is the only record. This script
+ *  - READS and WRITES that one sheet for the website (writes need a named editor's PIN),
+ *  - keeps its calculated columns fresh (Master.gs) and backs it up (Backup.gs).
+ * Nothing is read from the Warehouse Master or the old Tracking sheet any more.
  *
- * Setup is in the README: paste this file into Apps Script, set the VIEW_KEY script property,
- * then Deploy > New deployment > Web app (Execute as: Me, Who has access: Anyone).
+ * Setup is in the setup guide: paste the files into Apps Script, set the VIEW_KEY script property,
+ * run setupOneSheet once, then Deploy > Manage deployments > New version.
  */
-var SRC_ID = '10vLMqODDWeo8g4wFCmYATH59hhg2s4W7VTWp1e8euQo';   // Warehouse Master (read only)
-var TRK_ID = '1XkWpydTQPviypiN2-xmhfYzPyc_hTRHRFLKQDVLMT98';   // PO Control Tower - Tracking (app data)
-var MASTER_ID = '1NMr0ObBSNndhMpFMxmQQJM4rX3lCwm4Prbo9rMppx2E'; // PO Control Tower - MASTER (all data), rewritten automatically
+var MASTER_ID = '1NMr0ObBSNndhMpFMxmQQJM4rX3lCwm4Prbo9rMppx2E'; // PO Control Tower - MASTER (the only sheet)
+var TRK_ID = MASTER_ID;   // the website's data tabs (SETTINGS, USERS, ISSUES, ACTIVITY, CLAIM DATA) live in the same sheet
 
 function out_(o) {
   return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);
@@ -71,7 +71,7 @@ function readRange_(ss, a1) {
 }
 
 function getValues_(id, range) {
-  if (id !== SRC_ID && id !== TRK_ID) throw new Error('sheet not allowed');
+  if (id !== TRK_ID) throw new Error('sheet not allowed');
   if (/^'?USERS'?!/i.test(String(range || ''))) throw new Error('use user_list');
   var vals = readRange_(SpreadsheetApp.openById(id), range);
   // never hand the stored PIN hash to a browser: show only that one is set
@@ -99,7 +99,7 @@ function checkPin_(user, pin, tool, range) {
   var who = auth_(user, pin);
   if (!who) throw new Error('wrong name or PIN');
   if (/^'?SETTINGS'?!/i.test(range || '') && who.role !== 'admin') throw new Error('only an admin can change settings');
-  if (who.role === 'claims' && !/^'?(CLAIMS|ACTIVITY)'?!/i.test(range || '')) throw new Error('your access level is Claims only');
+  if (who.role === 'claims' && !/^'?(CLAIM DATA|ACTIVITY)'?!/i.test(range || '')) throw new Error('your access level is Claims only');
 }
 
 // Same hash the website computes: SHA-256 of 'potower|' + PIN. The browser sends the PIN, never the hash.

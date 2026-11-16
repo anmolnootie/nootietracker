@@ -1,11 +1,10 @@
 /**
- * Automatic backup of the Tracking sheet (everything the team enters in the app).
+ * Automatic backup of the MASTER sheet (the only record: everything the team enters in the app or the sheet).
  * Run setupBackup() once from the editor. It copies the sheet into a Drive folder every 2 days
  * and keeps the newest 15 copies (about a month); older copies go to the Drive trash, not deleted for good.
- * The MASTER sheet is not copied because it is rebuilt from the Warehouse Master and the Tracking sheet.
  */
 var BACKUP_FOLDER_ = 'PO Control Tower Backups';
-var BACKUP_PREFIX_ = 'PO Control Tower - Tracking backup ';
+var BACKUP_PREFIX_ = 'PO Control Tower - MASTER backup ';
 var BACKUP_KEEP_ = 15;
 
 function setupBackup() {

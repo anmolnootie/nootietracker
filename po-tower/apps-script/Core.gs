@@ -339,3 +339,38 @@ function journey(D){
   }
   return {steps:out,side};
 }
+
+/* ===== SHEET MODEL: the MASTER sheet is the only record. These turn its rows into what the app works with. ===== */
+const MASTER_N=53,INV_N=26;
+const MASTER_INPUT_RANGES=[[1,17],[42,42],[45,46]];   // 1-based columns people can type in; everything else is calculated
+const MASTER_CALC_RANGES=[[18,41],[43,44],[47,53]];
+function parseMasterRows(rows){
+  const P=[],T={},rm={};
+  rows.forEach((r,i)=>{
+    const po=normPo(cell(r,0));if(!po||T[po])return;
+    const g=k=>cell(r,k).trim();
+    P.push({po,plat:normPlat(g(1)||'Other'),date:pdate(g(2))||null,exp:pdate(g(3))||null,loc:g(4),qty:num(g(5)),amt:num(g(6)),dec:'',reason:'',rem:'',src:g(7)});
+    T[po]={po,dec:g(8),reason:g(9),printout:pdate(g(10))||'',handedTo:g(11),ack:pdate(g(12))||'',ackBy:g(13),owner:g(14),ewb:g(15),rem:g(16),mAppt:pdate(g(41))||'',dmgReason:g(44),shortReason:g(45),handed:''};
+    rm[po]=i+3;
+  });
+  return {P,T,rm};
+}
+function parseInvoiceRows(rows){
+  const I=[],rm={};
+  rows.forEach((r,i)=>{
+    const po=normPo(cell(r,1));if(!po)return;
+    const g=k=>cell(r,k).trim();
+    let st=g(8);st=st?st.toLowerCase().replace(/\b\w/g,c=>c.toUpperCase()):'';if(st==='Rto')st='RTO';
+    const gamt=num(g(14));let grn=g(11);
+    if(st==='RTO')grn='NA';else if(!grn){if(gamt!=null||g(12)||pdate(g(13)))grn='Done';else if(st==='Delivered')grn='Pending';}
+    const l=gapFix({disp:pdate(g(0))||null,po,inv:g(2),chan:normChan(g(3)),loc:g(4),val:num(g(5)),awb:g(6),partner:PART[g(7).toLowerCase()]||g(7),status:st,comment:g(24),expiry:null,
+      deliv:pdate(g(9))||null,grn,sq:num(g(15)),sv:num(g(16)),dv:num(g(18)),dvw:num(g(18)),ev:num(g(20)),cn:g(21),cnv:num(g(22)),appt:pdate(g(10))||null,
+      dq:num(g(17)),eq:num(g(19)),gno:g(12),gdate:pdate(g(13))||null,gamt,gnote:g(23),rto:num(g(25)),row:i+2});
+    I.push(l);rm[po+'|'+l.inv.toUpperCase()]=i+2;
+  });
+  return {I,rm};
+}
+function invoiceRowValues(l){
+  const n=v=>v==null?'':v;
+  return [n(l.disp),l.po,l.inv,n(l.chan),n(l.loc),n(l.val),n(l.awb),n(l.partner),n(l.status),n(l.deliv),n(l.appt),n(l.grn),n(l.gno),n(l.gdate),n(l.gamt),n(l.sq),n(l.sv),n(l.dq),n(l.dv),n(l.eq),n(l.ev),n(l.cn),n(l.cnv),n(l.gnote),n(l.comment),n(l.rto)];
+}
