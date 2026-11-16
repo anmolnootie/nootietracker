@@ -316,7 +316,7 @@ function writeRows_(sh, startRow, rows, ncols, shown, skip) {   // in place: the
 }
 
 // Finds what people typed since the last pass and saves it. Returns how many cells were saved.
-function reconcile_(ss, snap, T0, byPo, mRow) {
+function reconcile_(ss, snap, T0, byPo, mRow, heal) {
   var master = ss.getSheetByName('MASTER'), inv = ss.getSheetByName('INVOICES');
   var iData = readRange_(ss, 'INVOICES!A2:AB14000').map(function (r) { return pad_(r, 28); }), iRows = {};
   iData.forEach(function (x, i) { var p = normPo(x[1]); if (p) (iRows[p] = iRows[p] || []).push(i + 2); });
@@ -348,7 +348,7 @@ function reconcile_(ss, snap, T0, byPo, mRow) {
       var was = first ? b[po] : null, calc = byPo[po];
       cols.forEach(function (c) {
         var t = row[c.tc] || '', old = was ? (was[c.tc] || '') : '';
-        if (t === old) return;
+        if (t === old && !(heal && String(t).trim() !== '')) return;   // heal: a typed value an earlier version left on the tab without saving it
         if (calc && sameShown_(t, calc[c.mc - 1])) return;         // already what the data says
         if (c.w) { if (String(t).trim() !== '') note(rawPo, name + ': ' + c.h + ' = ' + show(t) + ' NOT SAVED (' + c.h + ' is worked out from the Decision, dispatch, delivery and GRN entries: change those and it follows)'); return; }
         if (String(t).trim() === '') clears++;
@@ -404,7 +404,9 @@ function syncPass_(props) {
   PLAT_TABS_.forEach(function (t) { if (ss.getSheetByName(t)) T0[t] = readRange_(ss, "'" + t + "'!A3:BA14000").map(function (r) { return pad_(r, MASTER_COLS_); }); });
   var mRow = {}; a.raw.forEach(function (r, i) { var p = normPo(r[0]); if (p && !mRow[p]) mRow[p] = i + 3; });
   tick('read');
-  var applied = snap ? reconcile_(ss, snap, T0, byPo, mRow) : 0;
+  var heal = props.getProperty('HEAL') !== '6';
+  var applied = snap ? reconcile_(ss, snap, T0, byPo, mRow, heal) : 0;
+  if (snap && heal) props.setProperty('HEAL', '6');
   if (applied) {                                                   // recalculate with what was just saved
     SpreadsheetApp.flush();
     a = loadAll_(ss); out = buildMaster_(a.D, a.I, STAGES, stamp, a.claims);
@@ -438,13 +440,14 @@ function syncPass_(props) {
     m.getRange(3, 41, n, 1).setValues(aligned.map(function (r) { return [r ? stamp : '']; }));
   }
   // platform tabs: the same POs as MASTER, one tab per platform. Typing here is carried back by the next pass.
-  var byTab = {}, wrote = {}, stampCol = PLAT_ORDER_.indexOf(41);
+  var byTab = {}, wrote = {}, meant = { MASTER: byPo }, stampCol = PLAT_ORDER_.indexOf(41);
   PLAT_TABS_.forEach(function (t) { byTab[t] = []; });
   aligned.forEach(function (r) { if (r) byTab[platTab_(r[1])].push(permute_(r)); });
   PLAT_TABS_.forEach(function (t) {
     var sh = ss.getSheetByName(t); if (!sh) return;
     var rows = byTab[t], idx = {}, cols = inputCols_(t).filter(function (c) { return !c.w; });
-    rows.forEach(function (r, i) { var p = normPo(r[0]); if (p && idx[p] === undefined) idx[p] = i; });
+    meant[t] = {};
+    rows.forEach(function (r, i) { var p = normPo(r[0]); if (p && idx[p] === undefined) { idx[p] = i; meant[t][p] = r; } });
     var t0 = {}, sig0 = {};
     (T0[t] || []).forEach(function (r) { var p = normPo(r[0]); if (p && !t0[p]) t0[p] = r; sig0[r.join('\u0001')] = 1; });
     var seen = {}, keep = [];
@@ -475,7 +478,14 @@ function syncPass_(props) {
     for (var i = 0; i < count; i++) {
       var r = shown[i] || [], p = normPo(r[0]);
       if (!p || seen[p]) continue; seen[p] = 1;
-      snapRows.push([name, r[0]].concat(cols.map(function (c) { return pend[p] && pend[p][c.tc] ? PENDING_ : (r[c.tc] === undefined ? '' : r[c.tc]); })));
+      var want = meant[name] && meant[name][p];
+      snapRows.push([name, r[0]].concat(cols.map(function (c) {
+        var v = r[c.tc] === undefined ? '' : r[c.tc];
+        if (pend[p] && pend[p][c.tc]) return PENDING_;
+        // the cell does not show what this pass put there: someone typed in it meanwhile, so it must count as typed next time
+        if (want && !c.w && !sameShown_(v, want[c.tc])) { nPending++; return PENDING_; }
+        return v;
+      })));
     }
   };
   remember('MASTER', mWrote ? readRange_(ss, 'MASTER!A3:BA14000') : again, n);
