@@ -419,8 +419,8 @@ nav.tabs button[aria-selected="true"]{color:var(--accent);border-bottom-color:va
 .fn{width:28px;height:28px;border-radius:50%;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center;font-weight:700;font-size:13px;flex:none}
 .ft{height:30px;background:var(--surface2);border-radius:10px;overflow:hidden}
 .fb{display:block;height:100%;border-radius:10px;background:linear-gradient(90deg,#f6a21e,#e8591a)}
-.fb.s6,.fb.s7{background:linear-gradient(90deg,#f6a21e,#e8591a)}
-.fb.s8{background:linear-gradient(90deg,#3fb56b,#17803d)}
+.fb.s6,.fb.s7,.fb.s8{background:linear-gradient(90deg,#f6a21e,#e8591a)}
+.fb.s9{background:linear-gradient(90deg,#3fb56b,#17803d)}
 .fv{text-align:right}.fv b{font-size:20px;display:block;line-height:1.1}.fv small{color:var(--ink3);font-size:12px}
 .fgap{padding:0 4px 0 46px}
 .fgap span{font-size:12px;color:var(--ink3)}
@@ -867,14 +867,16 @@ const JSTEPS=[
  {k:'ack',name:'Warehouse acknowledged',hint:'Warehouse confirmed it holds it'},
  {k:'inv',name:'Invoiced',hint:'Invoice raised'},
  {k:'disp',name:'Dispatched',hint:'Left with a courier or own vehicle'},
+ {k:'asn',name:'ASN created',hint:'Advance shipping notice raised, before delivery'},
  {k:'deliv',name:'Delivered',hint:'Reached the platform warehouse'},
  {k:'grn',name:'GRN done',hint:'Platform confirmed receipt'}];
 function journeyOf(d){
   const a=d.inv,n=a.n>0;
   const grn=a.list.some(l=>l.grn==='Done');
   const deliv=a.deliv>0||grn;
-  const disp=n&&a.list.some(l=>l.disp||l.awb);
-  const j={recv:true,grn,deliv,disp,inv:n};
+  const asn=n&&a.list.some(l=>l.asn);
+  const disp=n&&(asn||a.list.some(l=>l.disp||l.awb));
+  const j={recv:true,grn,deliv,disp,asn,inv:n};
   j.ack=!!d.ack||n;j.hand=!!d.handed||j.ack;j.acc=d.dec==='Accepted'||j.hand||n;
   return j;
 }
@@ -1657,7 +1659,7 @@ Object.assign(UI,{
       '<div class="search"><input id="q" type="search" placeholder="Find any PO number" aria-label="Find any PO number" autocomplete="off" value="'+esc(q)+'"><div id="results" class="results" hidden></div></div><button class="btn pri ed" data-act="newpo">+ Add PO</button></div>';
   },
   gapDefs(){return JSTEPS.slice(0,-1).map((s,i)=>({k:s.k,from:s.name,to:JSTEPS[i+1].name}));},
-  inGap(d,k){const j=journeyOf(d),i=JSTEPS.findIndex(s=>s.k===k);return j[k]&&!j[JSTEPS[i+1].k]&&d.stage!==9;},
+  inGap(d,k){const j=journeyOf(d),i=JSTEPS.findIndex(s=>s.k===k);return j[k]&&!j[JSTEPS[i+1].k]&&d.stage!==9&&!(k==='disp'&&j.deliv);},
   /* ---------- PIPELINE (end to end) ---------- */
   v_pipeline(){
     const R=this.rows().filter(d=>this.inP(d));
