@@ -9,16 +9,15 @@
 var MASTER_COLS_ = 49;
 var MASTER_TEXT_ = [1,2,3,4,5,8,9,10,11,12,13,14,15,16,17,19,20,21,24,25,26,27,28,29,35,37,38,41,42,45,46,47,48];
 var MASTER_NUM_ = [6,7,18,22,30,31,32,33,34,36,39,40,43,44,49];
-var MASTER_HEADERS_ = ['PO Number','Platform','PO Date','PO Expiry','Facility','PO Qty','PO Value','Source','Decision','Decision Reason','Handed to WH On','Handed To (Person)','WH Ack On','WH Ack By','Owner','E-way Bill No','Remarks','Invoices','Invoice Nos','First Dispatch','Last Dispatch','Invoiced Value','Fill %','AWB / Vehicle','Delivery Partner','Dispatch Status','Delivered On','GRN Status','GRN Nos','GRN Amount','Short Qty','Short Value','Damage Value','Excess Value','Credit Note','CN Value','RTO','Stage','Age (days)','Days to Expiry','Last Refreshed','Appointment Date','Damage Qty','Excess Qty','Damage Reason','Shortage Reason','GRN Remarks','Warehouse Comment','Open Issues'];
-var INV_HEADERS_ = ['Dispatch Date','PO Number','Invoice No','Platform','Facility','Invoice Value','AWB / Vehicle','Delivery Partner','Dispatch Status','Delivered On','Appointment Date','GRN Status','GRN No','GRN Date','GRN Amount','Short Qty','Short Value','Damage Qty','Damage Value','Excess Qty','Excess Value','Credit Note','CN Value','GRN Remarks','Warehouse Comment'];
+var MASTER_HEADERS_ = ['PO Number','Platform','PO Date','PO Expiry','Facility','PO Qty','PO Value','Source','Decision','Decision Reason','Handed to WH On','Handed To (Person)','WH Ack On','WH Ack By','Owner','E-way Bill No','Remarks','Invoices','Invoice Nos','First Dispatch','Last Dispatch','Invoiced Value','Fill %','AWB / Vehicle','Delivery Partner','Dispatch Status','Delivered On','GRN Status','GRN Nos','GRN Amount','Short Qty','Short Value','Damaged Amount (Inv - GRN)','Excess Value','Credit Note','CN Value','RTO','Stage','Age (days)','Days to Expiry','Last Refreshed','Appointment Date','Damage Qty','Excess Qty','Damage Reason','Shortage Reason','GRN Remarks','Warehouse Comment','Open Issues'];
+var INV_HEADERS_ = ['Dispatch Date','PO Number','Invoice No','Platform','Facility','Invoice Value','AWB / Vehicle','Delivery Partner','Dispatch Status','Delivered On','Appointment Date','GRN Status','GRN No','GRN Date','GRN Amount','Short Qty','Short Value','Damage Qty','Damaged Amount (Inv - GRN)','Excess Qty','Excess Value','Credit Note','CN Value','GRN Remarks','Warehouse Comment'];
 
 
 // ---------- two-way sync: edits typed in MASTER or a platform tab flow back to the tracking sheet ----------
-var EDIT_MAP_ = { 'Decision': 'dec', 'Decision Reason': 'reason', 'Handed to WH On': 'handed', 'Handed To (Person)': 'handedTo',
-  'WH Ack On': 'ack', 'WH Ack By': 'ackBy', 'Owner': 'owner', 'E-way Bill No': 'ewb', 'Remarks': 'rem', 'Appointment Date': 'mAppt', 'Damage Reason': 'dmgReason', 'Shortage Reason': 'shortReason' };
-var EDIT_KEYS_ = ['dec', 'reason', 'handed', 'handedTo', 'ack', 'ackBy', 'owner', 'ewb', 'rem', 'mAppt', 'dmgReason', 'shortReason'];
+var EDIT_MAP_ = { 'Decision': 'dec', 'Decision Reason': 'reason', 'Owner': 'owner', 'E-way Bill No': 'ewb', 'Remarks': 'rem', 'Appointment Date': 'mAppt', 'Damage Reason': 'dmgReason', 'Shortage Reason': 'shortReason' };
+var EDIT_KEYS_ = ['dec', 'reason', 'owner', 'ewb', 'rem', 'mAppt', 'dmgReason', 'shortReason'];
 var EDIT_DATES_ = { handed: 1, ack: 1, mAppt: 1 };
-var EDIT_MASTER_IDX_ = { dec: 8, reason: 9, handed: 10, handedTo: 11, ack: 12, ackBy: 13, owner: 14, ewb: 15, rem: 16, mAppt: 41, dmgReason: 44, shortReason: 45 };   // 0-based in a MASTER row
+var EDIT_MASTER_IDX_ = { dec: 8, reason: 9, owner: 14, ewb: 15, rem: 16, mAppt: 41, dmgReason: 44, shortReason: 45 };   // 0-based in a MASTER row
 var TRK_COLS_ = ['po','dec','reason','printout','handed','ack','ackBy','owner','rem','updated','by','plat','date','exp','loc','qty','amt','created','handedTo','ewb','mInv','mInvVal','mDisp','mStatus','mPartner','mAwb','mDeliv','mGrnNo','mGrnDate','mGrnAmt','mAppt','dmgReason','shortReason'];
 var PLAT_TABS_ = ['Blinkit', 'Swiggy Instamart', 'Zepto', 'BigBasket', 'Flipkart', 'Other platforms'];
 var PLAT_ORDER_ = [1,2,3,4,42,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,43,44,45,46,47,48,49];   // MASTER column shown in each platform-tab column
@@ -109,25 +108,56 @@ function mergeSheetEdits_(force) {
 
 function ensureCols_(sh, n) { var c = sh.getMaxColumns(); if (c < n) sh.insertColumnsAfter(c, n - c); }
 
-// light-yellow header on the columns people may type in
-function markEditable_(sh, hdr) {
-  hdr.forEach(function (h, i) { if (EDIT_MAP_[h]) sh.getRange(2, i + 1).setBackground('#fff3b0'); });
+// One hidden tab that keeps a copy of what is logged in the app (issues on the left, activity on the right).
+// Unhide it from the sheet menu: View > Hidden sheets.
+function appDataTab_(ss) {
+  var sh = ss.getSheetByName('APP DATA') || ss.insertSheet('APP DATA');
+  var trk = SpreadsheetApp.openById(TRK_ID);
+  var iss = readRange_(trk, 'ISSUES!A1:O3000'), act = readRange_(trk, 'ACTIVITY!A1:F6000');
+  ensureCols_(sh, 23);
+  var old = sh.getLastRow();
+  if (old > 0) sh.getRange(1, 1, old, 23).clearContent();
+  function put(rows, col, n) {
+    if (!rows.length) return;
+    var out = rows.map(function (r) { var x = []; for (var j = 0; j < n; j++) x.push(r[j] == null ? '' : r[j]); return x; });
+    sh.getRange(3, col, out.length, n).setNumberFormat('@');
+    for (var i = 0; i < out.length; i += 1000) { var ch = out.slice(i, i + 1000); sh.getRange(3 + i, col, ch.length, n).setValues(ch); }
+  }
+  sh.getRange(1, 1).setValue('ISSUES (logged in the app)');
+  sh.getRange(1, 17).setValue('ACTIVITY (every change)');
+  put(iss, 1, 15);
+  put(act, 17, 6);
+  sh.getRange(1, 1, 1, 23).setFontWeight('bold');
+  return sh;
 }
 
-// separate read-only tabs in the MASTER sheet that copy the app's own tabs (ISSUES, ACTIVITY) from the tracking sheet
-function mirrorTab_(ss, name, srcRange, ncols, note) {
-  var sh = ss.getSheetByName(name) || ss.insertSheet(name);
-  var vals = readRange_(SpreadsheetApp.openById(TRK_ID), srcRange);
-  ensureCols_(sh, ncols);
-  var rows = [], i;
-  for (i = 0; i < vals.length; i++) { var r = []; for (var j = 0; j < ncols; j++) r.push(vals[i][j] == null ? '' : vals[i][j]); rows.push(r); }
-  var old = sh.getLastRow();
-  if (old > 0) sh.getRange(1, 1, old, ncols).clearContent();
-  if (rows.length) {
-    sh.getRange(1, 1, rows.length, ncols).setNumberFormat('@');
-    for (i = 0; i < rows.length; i += 1000) { var ch = rows.slice(i, i + 1000); sh.getRange(1 + i, 1, ch.length, ncols).setValues(ch); }
+var TAB_ORDER_ = ['MASTER', 'BY PLATFORM', 'Blinkit', 'Swiggy Instamart', 'Zepto', 'BigBasket', 'Flipkart', 'Other platforms', 'INVOICES', 'READ ME', 'APP DATA', '_SNAPSHOT'];
+var TAB_COLORS_ = { 'MASTER': '#1f2937', 'BY PLATFORM': '#475569', 'Blinkit': '#b45309', 'Swiggy Instamart': '#c2410c', 'Zepto': '#6d28d9', 'BigBasket': '#15803d', 'Flipkart': '#1d4ed8', 'Other platforms': '#64748b', 'INVOICES': '#0f766e', 'READ ME': '#94a3b8' };
+var HIDE_COLS_ = [8, 11, 12, 13, 14, 41];   // Source, the four handover columns, Last Refreshed: kept for history, not shown
+
+// readable colours: dark header with white text, soft yellow with dark text for the columns people type in
+function styleTab_(sh, hdrRow, hdr, hideMasterCols) {
+  var n = hdr.length;
+  if (hdrRow === 2) {
+    sh.getRange(1, 1, 1, n).setBackground('#e5e7eb').setFontColor('#111827').setFontWeight('bold');
   }
-  sh.getRange(1, ncols + 2).setValue(note);
+  sh.getRange(hdrRow, 1, 1, n).setBackground('#1f2937').setFontColor('#ffffff').setFontWeight('bold').setWrap(true);
+  hdr.forEach(function (h, i) { if (EDIT_MAP_[h]) sh.getRange(hdrRow, i + 1).setBackground('#fde68a').setFontColor('#111827'); });
+  sh.setFrozenRows(hdrRow);
+  if (sh.getLastRow() > hdrRow) sh.getRange(hdrRow + 1, 1, sh.getLastRow() - hdrRow, n).setBackground(null).setFontColor('#111827');
+  hideMasterCols.forEach(function (c) { try { sh.hideColumns(c); } catch (e) {} });
+}
+
+function organiseTabs_(ss) {
+  var first = ss.getSheetByName('MASTER');
+  if (first) ss.setActiveSheet(first);
+  TAB_ORDER_.forEach(function (name, i) {
+    var sh = ss.getSheetByName(name); if (!sh) return;
+    ss.setActiveSheet(sh); ss.moveActiveSheet(i + 1);
+    if (TAB_COLORS_[name]) sh.setTabColor(TAB_COLORS_[name]);
+  });
+  ['APP DATA', '_SNAPSHOT'].forEach(function (name) { var sh = ss.getSheetByName(name); if (sh && !sh.isSheetHidden()) { try { sh.hideSheet(); } catch (e) {} } });
+  if (first) ss.setActiveSheet(first);
 }
 
 function forceSyncEdits() { return syncMaster(true); }
@@ -244,7 +274,6 @@ function syncMaster(force) {
     var m = ss.getSheetByName('MASTER');
     ensureCols_(m, MASTER_COLS_);
     m.getRange(2, 1, 1, MASTER_COLS_).setValues([MASTER_HEADERS_]);
-    markEditable_(m, MASTER_HEADERS_);
     writeBlock_(m, 3, out.master, MASTER_COLS_, MASTER_TEXT_, MASTER_NUM_);
     m.getRange(3, 23, out.master.length, 1).setNumberFormat('0.0%');
     // platform tabs: real values (not formulas) so they can be edited; same columns as MASTER with Appointment Date after PO Expiry
@@ -257,7 +286,7 @@ function syncMaster(force) {
       sh.getRange(1, 1).setValue(t + '  |  ' + byTab[t].length + ' POs  |  filtered view of MASTER. Edit the yellow columns: changes sync both ways with the website');
       ensureCols_(sh, MASTER_COLS_);
       sh.getRange(2, 1, 1, MASTER_COLS_).setValues([permute_(hdr)]);
-      markEditable_(sh, permute_(hdr));
+
       writeBlock_(sh, 3, byTab[t], MASTER_COLS_, pText, pNum);
       if (byTab[t].length) sh.getRange(3, pPct[0], byTab[t].length, 1).setNumberFormat('0.0%');
     });
@@ -265,9 +294,12 @@ function syncMaster(force) {
     ensureCols_(isx, 25);
     isx.getRange(1, 1, 1, 25).setValues([INV_HEADERS_]);
     writeBlock_(isx, 2, out.invoices, 25, [1,2,3,4,5,7,8,9,10,11,12,13,14,22,24,25], [6,15,16,17,18,19,20,21,23]);
-    mirrorTab_(ss, 'ISSUES (app)', 'ISSUES!A1:O3000', 15, 'Logged in the app. Edit issues in the app; this tab is a read-only copy refreshed every 10 minutes.');
-    mirrorTab_(ss, 'ACTIVITY (app)', 'ACTIVITY!A1:F6000', 6, 'Every change made in the app or from this sheet. Read-only copy.');
+    appDataTab_(ss);
+styleTab_(m, 2, MASTER_HEADERS_, HIDE_COLS_);
+    PLAT_TABS_.forEach(function (t) { var sh = ss.getSheetByName(t); if (sh) styleTab_(sh, 2, permute_(MASTER_HEADERS_), permIdx_(HIDE_COLS_)); });
+    styleTab_(isx, 1, INV_HEADERS_, []);
     writeSnapshot_(ss, out.master, stamp);
+    organiseTabs_(ss);
     var rm = ss.getSheetByName('READ ME');
     if (rm) rm.getRange('A4').setValue('Auto-refreshed every 10 minutes. Last refresh: ' + stamp + ' IST' + (merged.applied ? '. Sheet edits applied: ' + merged.applied : ''));
     return { ok: true, pos: out.master.length, invoices: out.invoices.length, at: stamp, edits: merged };

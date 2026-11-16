@@ -7,8 +7,8 @@ function manualLines(I,trkMap){
     const st=t.mStatus||(t.mDeliv?'Delivered':'Dispatched');
     const grnDone=!!(t.mGrnNo||t.mGrnDate||num(t.mGrnAmt)!=null);
     const grn=st==='RTO'?'NA':(grnDone?'Done':(st==='Delivered'?'Pending':''));
-    out.push({disp:t.mDisp||null,po,inv,chan:normPlat(t.plat||''),loc:t.loc||'',val:num(t.mInvVal),awb:t.mAwb||'',partner:t.mPartner||'',status:st,comment:'',expiry:null,
-      deliv:t.mDeliv||null,grn,sq:null,sv:null,dv:null,ev:null,cn:'',cnv:null,appt:t.mAppt||null,dq:null,eq:null,gno:t.mGrnNo||'',gdate:t.mGrnDate||null,gamt:num(t.mGrnAmt),gnote:'',manual:true});
+    out.push(gapFix({disp:t.mDisp||null,po,inv,chan:normPlat(t.plat||''),loc:t.loc||'',val:num(t.mInvVal),awb:t.mAwb||'',partner:t.mPartner||'',status:st,comment:'',expiry:null,
+      deliv:t.mDeliv||null,grn,sq:null,sv:null,dv:null,ev:null,cn:'',cnv:null,appt:t.mAppt||null,dq:null,eq:null,gno:t.mGrnNo||'',gdate:t.mGrnDate||null,gamt:num(t.mGrnAmt),gnote:'',manual:true}));
   });
   return out;
 }
@@ -22,7 +22,7 @@ const ISSUE_STATUS=['Open','In progress','Waiting on platform','Resolved'];
 const PRIORITIES=['High','Medium','Low'];
 const STAGES=[
  {n:1,name:'Received, decision pending',short:'Decision pending'},
- {n:2,name:'Accepted, handover pending',short:'Handover pending'},
+ {n:2,name:'Accepted, pending dispatch',short:'Pending dispatch'},
  {n:3,name:'Handed to warehouse, ack pending',short:'Ack pending'},
  {n:4,name:'In warehouse, pending dispatch',short:'In warehouse'},
  {n:5,name:'In transit',short:'In transit'},
@@ -36,7 +36,7 @@ const FLAGS=[
  {n:2,name:'Expiring soon',team:'Order desk',tone:'crit',act:'Prioritise dispatch and book the appointment now'},
  {n:3,name:'Printout not handed to warehouse',team:'Order desk',tone:'warn',act:'Find the printout, hand it to the warehouse, log the date'},
  {n:4,name:'Warehouse has not acknowledged',team:'Warehouse',tone:'warn',act:'Warehouse to acknowledge receipt of the PO printout'},
- {n:5,name:'In warehouse, not dispatched',team:'Warehouse',tone:'warn',act:'Pick, pack and dispatch; log the invoice'},
+ {n:5,name:'Accepted, not dispatched',team:'Warehouse',tone:'warn',act:'Pick, pack and dispatch; log the invoice'},
  {n:6,name:'In transit overdue',team:'Logistics',tone:'warn',act:'Chase the courier and update delivery status'},
  {n:7,name:'No decision',team:'Order desk',tone:'info',act:'Decide Accept or Decline and record the reason'},
  {n:8,name:'GRN pending',team:'Accounts',tone:'info',act:'Chase GRN from the platform'},
@@ -113,6 +113,8 @@ function parseGrnInfo(rows){
   for(const r of rows){const inv=cell(r,3).trim();if(!inv)continue;m[inv]={no:cell(r,13).trim(),date:pdate(cell(r,14)),amt:num(cell(r,15)),rem:cell(r,22).trim()};}
   return m;
 }
+// Damaged amount = invoice value minus GRN amount (when the GRN amount is known); otherwise the Warehouse Master's own damage value
+function gapFix(l){if(l.val>0&&l.gamt>0&&l.status!=='RTO'){l.dv=Math.max(0,Math.round((l.val-l.gamt)*100)/100);l.gapAuto=true;}return l;}
 function parseDispatch(rows,gmap,ginfo){
   const out=[];
   for(const r of rows){
@@ -130,9 +132,10 @@ function parseDispatch(rows,gmap,ginfo){
     const cm=cell(r,10).trim();
     out.push({disp:pdate(cell(r,1)),po,inv,chan:normChan(cell(r,4)),loc:cell(r,5).trim(),val:num(cell(r,6)),awb:cell(r,7).trim(),
       partner:PART[cell(r,8).trim().toLowerCase()]||cell(r,8).trim(),status:st,comment:cm==='#N/A'?'':cm,expiry:pdate(cell(r,11)),
-      deliv:pdate(cell(r,24)),grn,sq:num(cell(r,14)),sv:num(cell(r,15)),dv:num(cell(r,17)),ev:num(cell(r,19)),cn:cell(r,21).trim(),cnv:num(cell(r,22)),
+      deliv:pdate(cell(r,24)),grn,sq:num(cell(r,14)),sv:num(cell(r,15)),dv:num(cell(r,17)),dvw:num(cell(r,17)),ev:num(cell(r,19)),cn:cell(r,21).trim(),cnv:num(cell(r,22)),
       appt:pdate(cell(r,12)),dq:num(cell(r,16)),eq:num(cell(r,18)),gno:(ginfo&&ginfo[inv]?ginfo[inv].no:''),gdate:(ginfo&&ginfo[inv]?ginfo[inv].date:null),gamt:(ginfo&&ginfo[inv]?ginfo[inv].amt:null),gnote:(ginfo&&ginfo[inv]?ginfo[inv].rem:'')});
   }
+  out.forEach(l=>gapFix(l));
   return out;
 }
 function parseTabs(t){
@@ -196,7 +199,7 @@ function indexInvoices(I,cfg,asof){
     const s=l.status;
     if(s==='Dispatched'||s==='In Transit'||s==='Arrived')a.transit++;else if(s==='Delivered')a.deliv++;else if(s==='RTO')a.rto++;
     if(l.grn==='Pending')a.grnP++;
-    const loss=(l.sv||0)+(l.dv||0);a.loss+=loss;
+    const loss=l.gapAuto?(l.dv||0):(l.sv||0)+(l.dv||0);a.loss+=loss;
     const days=l.disp?diff(asof,l.disp):null;
     if(!l.cn&&(s==='RTO'||loss>0)&&days!=null&&days<=cfg.cn_days)a.cnP++;
   }
@@ -210,7 +213,7 @@ function derive(p,inv,trk,cfg,asof,openIssues){
   const pdt=p.date||a.first||null;
   const age=pdt?diff(asof,pdt):null;
   const dte=p.exp?diff(p.exp,asof):null;
-  const K=t.handed||null,L=t.ack||null;
+  const K=null,L=null;
   let stage;
   if(a.n>0){
     if(a.transit>0)stage=5;else if(a.grnP>0)stage=6;else if(a.rto>0&&a.deliv===0)stage=7;else stage=8;
@@ -222,9 +225,7 @@ function derive(p,inv,trk,cfg,asof,openIssues){
     if(p.exp&&dte<0)pri=1;
     else if(p.exp&&dte<=cfg.expiry_warn)pri=2;
     else if(dec==='Accepted'){
-      if(!K&&age!=null&&age>cfg.sla_handover)pri=3;
-      else if(K&&!L&&diff(asof,K)>cfg.sla_ack)pri=4;
-      else if(L&&age!=null&&age>cfg.sla_dispatch)pri=5;
+      if(age!=null&&age>cfg.sla_dispatch)pri=5;
     }else{
       if(age==null||age>cfg.legacy_days)pri=10;else if(age>cfg.sla_decision)pri=7;
     }
