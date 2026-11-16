@@ -230,8 +230,10 @@ table{font-size:13.5px}td{padding:9px 10px}
 
 .grid.g4{grid-template-columns:repeat(4,minmax(0,1fr))}
 @media (max-width:1180px){.grid.g4{grid-template-columns:repeat(2,minmax(0,1fr))}}
-.pc-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
-.pc.big .pc-stats{grid-template-columns:repeat(4,minmax(0,1fr));max-width:760px}
+.pc-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px 10px}
+.pc-stats>*{min-width:0;overflow-wrap:anywhere}
+.pc-stats .l,.pc-stats small,.pc-stats span{font-size:12px}
+.pc.big .pc-stats{grid-template-columns:repeat(5,minmax(0,1fr));max-width:900px}
 .plogo.xl{max-width:110px;object-fit:contain}
 .filters input{min-width:170px}.filters select{max-width:185px}
 
@@ -1460,7 +1462,7 @@ Object.assign(UI,{
       const A=aggregate(R.filter(d=>d.plat===p));
       const tone=A.flag[1]+A.flag[2]?'crit':A.undecided>20?'warn':'';
       return '<button class="pc '+tone+(A.n?'':' empty0')+'" data-act="scope" data-arg="'+esc(p)+'"><div class="pc-top">'+plogo(p).replace('class="plogo','class="plogo xl')+'<div><b>'+esc(p)+'</b><span class="small">'+(A.n?inr(A.n)+' POs · '+money(A.value):'No POs in this period')+'</span></div></div>'+
-        (A.n?'<div class="pc-stats">'+stat(inr(A.undecided),'awaiting decision',A.undecided?'warn':'')+stat(inr(A.accNotDisp),'not dispatched',A.accNotDisp?'warn':'')+stat(inr(A.flags),'need action',A.flags?'crit':'')+'</div><div class="pc-bar" title="Fill rate"><i style="width:'+Math.min(100,Math.round((A.fill||0)*100))+'%"></i></div><div class="small">Fill rate (invoiced vs PO value): '+pct(A.fill)+'</div>':'')+
+        (A.n?'<div class="pc-stats">'+stat(inr(A.undecided),'awaiting decision',A.undecided?'warn':'')+stat(inr(A.dispatched),'dispatched','')+stat(inr(A.accNotDisp),'waiting to dispatch',A.accNotDisp?'warn':'')+stat(inr(A.flags),'need action',A.flags?'crit':'')+'</div><div class="pc-bar" title="Fill rate"><i style="width:'+Math.min(100,Math.round((A.fill||0)*100))+'%"></i></div><div class="small">Fill rate (invoiced vs PO value): '+pct(A.fill)+'</div>':'')+
         '<span class="go">Open '+esc(p)+' →</span></button>';}).join('');
   },
   /* ---------- HOME ---------- */
@@ -1469,7 +1471,7 @@ Object.assign(UI,{
     const per=PERIODS.filter(x=>x[0]===this.pkey)[0][1];
     const stat=(n,l,tone)=>'<div class="st '+(tone||'')+'"><b>'+n+'</b><span>'+l+'</span></div>';
     const big='<button class="pc big" data-act="scope" data-arg="ALL"><div class="pc-top"><div class="allicon">'+ICON.all+'</div><div><b>Overall control tower</b><span class="small">All platforms together · '+per+'</span></div></div>'+
-      '<div class="pc-stats">'+stat(inr(a.n),'POs received')+stat(inr(a.undecided),'awaiting decision',a.undecided?'warn':'')+stat(inr(a.accNotDisp),'accepted, not dispatched',a.accNotDisp?'warn':'')+stat(inr(a.flags),'need action',a.flags?'crit':'')+'</div><span class="go">Open the overall view →</span></button>';
+      '<div class="pc-stats">'+stat(inr(a.n),'POs received')+stat(inr(a.undecided),'awaiting decision',a.undecided?'warn':'')+stat(inr(a.dispatched),'dispatched','')+stat(inr(a.accNotDisp),'waiting to dispatch',a.accNotDisp?'warn':'')+stat(inr(a.flags),'need action',a.flags?'crit':'')+'</div><span class="go">Open the overall view →</span></button>';
     const cards=this.platGrid(R);
     const urgent=R.filter(d=>d.pri>=1&&d.pri<=6).sort((x,y)=>x.pri-y.pri||(y.value||0)-(x.value||0)).slice(0,10);
     const rows=urgent.map(d=>'<tr class="click" data-act="po" data-arg="'+esc(d.po)+'"><td>'+flagTag(d)+'</td><td class="mono">'+esc(d.po)+'</td><td>'+pn(d.plat)+'</td><td class="r num">'+(d.value?inr(d.value):'')+'</td><td class="r num">'+(d.age==null?'':d.age)+'</td><td>'+esc(FLAGS[d.pri].team)+': '+esc(FLAGS[d.pri].act)+'</td></tr>').join('');
