@@ -792,7 +792,7 @@ function indexInvoices(I,cfg,asof){
     a.n++;a.val+=l.val||0;a.list.push(l);
     if(l.disp){if(!a.first||l.disp<a.first)a.first=l.disp;if(!a.last||l.disp>a.last)a.last=l.disp;}
     const s=l.status;
-    if(s==='Dispatched'||s==='In Transit'||s==='Arrived')a.transit++;else if(s==='Delivered')a.deliv++;else if(s==='RTO')a.rto++;
+    if(s==='Dispatched'||s==='In Transit')a.transit++;else if(s==='Delivered'||s==='Arrived')a.deliv++;else if(s==='RTO')a.rto++;
     if(l.grn==='Pending')a.grnP++;
     const loss=l.gapAuto?(l.dv||0):(l.sv||0)+(l.dv||0);a.loss+=loss;
     const days=l.disp?diff(asof,l.disp):null;
@@ -803,7 +803,7 @@ function indexInvoices(I,cfg,asof){
 function derive(p,inv,trk,cfg,asof,openIssues){
   const t=trk||{};
   const a=inv||{n:0,val:0,first:null,last:null,transit:0,deliv:0,rto:0,grnP:0,loss:0,cnP:0,list:[]};
-  const dec=t.dec||p.dec||'Pending';
+  let dec=t.dec||p.dec||'Pending';if(a.n>0&&dec==='Pending')dec='Accepted';   // an invoiced PO has obviously been accepted
   const plat=normPlat(p.plat);
   const pdt=p.date||a.first||null;
   const age=pdt?diff(asof,pdt):null;
@@ -924,7 +924,7 @@ function parseInvoiceRows(rows){
   rows.forEach((r,i)=>{
     const po=normPo(cell(r,1));if(!po)return;
     const g=k=>cell(r,k).trim();
-    let st=g(8);st=st?st.toLowerCase().replace(/\b\w/g,c=>c.toUpperCase()):'';if(st==='Rto')st='RTO';
+    let st=g(8);st=st?st.toLowerCase().replace(/\b\w/g,c=>c.toUpperCase()):'';if(st==='Rto')st='RTO';if(st==='Arrived')st='Delivered';   // Arrived means it reached the platform: same as Delivered
     const gamt=num(g(14));let grn=g(11);
     if(st!=='RTO'&&st!=='Delivered'&&(pdate(g(9))||gamt!=null||g(12)||pdate(g(13))))st='Delivered';   // a delivery date or any GRN detail means it was delivered
     if(st==='RTO')grn='NA';else if(gamt!=null||g(12)||pdate(g(13)))grn='Done';else if(!grn&&st==='Delivered')grn='Pending';
@@ -1429,7 +1429,7 @@ const UI={
       const grp=(t,body)=>'<div class="grp"><div class="gt">'+t+'</div><div class="form">'+body+'</div></div>';
       const invCats=(l,p,isNew)=>{const P=k=>p+'-'+k;
         return ''+
-        grp('Dispatch',(isNew?'<label class="full">Invoice no.'+T(P('inv'),'','mono')+'</label>':'')+'<label>Invoice value ₹'+N(P('val'),l.val)+'</label><label>Dispatch date'+this.dateField(P('disp'),l.disp)+'</label><label>Status'+this.sel(P('status'),['Dispatched','In Transit','Arrived','Delivered','RTO'],l.status||'Dispatched')+'</label><label>Delivery partner'+T(P('partner'),l.partner)+'</label><label>AWB / vehicle no.'+T(P('awb'),l.awb,'mono')+'</label><label>Facility / hub'+T(P('loc'),l.loc)+'</label>')+
+        grp('Dispatch',(isNew?'<label class="full">Invoice no.'+T(P('inv'),'','mono')+'</label>':'')+'<label>Invoice value ₹'+N(P('val'),l.val)+'</label><label>Dispatch date'+this.dateField(P('disp'),l.disp)+'</label><label>Status'+this.sel(P('status'),['Dispatched','In Transit','Delivered','RTO'],l.status||'Dispatched')+'</label><label>Delivery partner'+T(P('partner'),l.partner)+'</label><label>AWB / vehicle no.'+T(P('awb'),l.awb,'mono')+'</label><label>Facility / hub'+T(P('loc'),l.loc)+'</label>')+
         grp('ASN (advance shipping notice)','<label>ASN no.'+T(P('asn'),l.asn,'mono')+'</label><label>ASN created on'+this.dateField(P('asnd'),l.asnd)+'</label>')+
         grp('Delivery and GRN','<label>Delivered on'+this.dateField(P('deliv'),l.deliv)+'</label><label>GRN no.'+T(P('gno'),l.gno,'mono')+'</label><label>GRN date'+this.dateField(P('gdate'),l.gdate)+'</label><label>GRN amount ₹'+N(P('gamt'),l.gamt)+'</label>');};
       const invExtra=(l,p,title)=>{const P=k=>p+'-'+k;
@@ -1461,7 +1461,7 @@ const UI={
     }else if(d.type==='inv'){
       const l=d.line,T=(id,v,cl)=>'<input type="text" id="'+id+'"'+(cl?' class="'+cl+'"':'')+' value="'+esc(v==null?'':v)+'">',N=(id,v)=>'<input type="number" id="'+id+'" min="0" step="any" value="'+esc(v==null?'':v)+'">';
       h='<div class="hd"><div><h2>'+(d.isNew?'Add an invoice':'Invoice '+esc(l.inv))+'</h2><div class="small">PO '+esc(l.po)+'. Saved straight into the INVOICES tab of the MASTER sheet.</div></div><button class="btn sm" data-act="close">Close</button></div><div class="bd"><div class="form">'+
-        '<label>Invoice no.'+(d.isNew?T('v-inv',l.inv,'mono'):'<input type="text" id="v-inv" class="mono" value="'+esc(l.inv)+'" readonly>')+'</label><label>Invoice value ₹'+N('v-val',l.val)+'</label><label>Dispatch date'+this.dateField('v-disp',l.disp)+'</label><label>Dispatch status'+this.sel('v-status',['Dispatched','In Transit','Arrived','Delivered','RTO'],l.status||'Dispatched')+'</label><label>Delivery partner'+T('v-partner',l.partner)+'</label><label>AWB / vehicle no.'+T('v-awb',l.awb,'mono')+'</label><label>Facility / hub'+T('v-loc',l.loc)+'</label><label>Delivered on'+this.dateField('v-deliv',l.deliv)+'</label>'+
+        '<label>Invoice no.'+(d.isNew?T('v-inv',l.inv,'mono'):'<input type="text" id="v-inv" class="mono" value="'+esc(l.inv)+'" readonly>')+'</label><label>Invoice value ₹'+N('v-val',l.val)+'</label><label>Dispatch date'+this.dateField('v-disp',l.disp)+'</label><label>Dispatch status'+this.sel('v-status',['Dispatched','In Transit','Delivered','RTO'],l.status||'Dispatched')+'</label><label>Delivery partner'+T('v-partner',l.partner)+'</label><label>AWB / vehicle no.'+T('v-awb',l.awb,'mono')+'</label><label>Facility / hub'+T('v-loc',l.loc)+'</label><label>Delivered on'+this.dateField('v-deliv',l.deliv)+'</label>'+
         '<h4 style="grid-column:1/-1;margin:14px 0 0;padding-top:10px;border-top:1px solid var(--line)">GRN and discrepancies</h4><label>GRN no.'+T('v-gno',l.gno,'mono')+'</label><label>GRN date'+this.dateField('v-gdate',l.gdate)+'</label><label>GRN amount ₹'+N('v-gamt',l.gamt)+'</label><label>Goods received back through RTO ₹'+N('v-rto',l.rto)+'</label><label>Short qty'+N('v-sq',l.sq)+'</label><label>Short value ₹'+N('v-sv',l.sv)+'</label><label>Damage qty'+N('v-dq',l.dq)+'</label><label>Damage value ₹ (worked out when GRN amount is filled)'+N('v-dv',l.dv)+'</label><label>Excess qty'+N('v-eq',l.eq)+'</label><label>Excess value ₹'+N('v-ev',l.ev)+'</label><label>Credit note no.'+T('v-cn',l.cn)+'</label><label>Credit note value ₹'+N('v-cnv',l.cnv)+'</label>'+
         '<label class="full">GRN remarks<textarea id="v-gnote">'+esc(l.gnote||'')+'</textarea></label><label class="full">Warehouse comment<textarea id="v-comment">'+esc(l.comment||'')+'</textarea></label></div><p class="small">Damaged amount is worked out for you: invoice value minus GRN amount minus goods returned through RTO.</p><p><button class="btn pri" data-act="saveinv">Save invoice</button></p></div>';
     }else if(d.type==='newpo'){
@@ -1912,7 +1912,7 @@ async function doUnlock(){
   const back=UI.drawer&&UI.drawer.back;UI.drawer=back||null;UI.render();UI.toast('Editing unlocked. Changes are saved under '+name+'.');
 }
 const INV_KEYS=['disp','status','partner','awb','loc','deliv','gno','gdate','gamt','val','sq','sv','dq','dv','eq','ev','cn','cnv','rto','gnote','comment','asn','asnd'];
-function readInv(p,o,no){const g=k=>val(p+'-'+k);let st=g('status')||'Dispatched';const gamt=num(g('gamt')),gno=g('gno'),gdate=g('gdate');if(st!=='RTO'&&st!=='Delivered'&&(g('deliv')||gamt!=null||gno||gdate))st='Delivered';
+function readInv(p,o,no){const g=k=>val(p+'-'+k);let st=g('status')||'Dispatched';if(st==='Arrived')st='Delivered';const gamt=num(g('gamt')),gno=g('gno'),gdate=g('gdate');if(st!=='RTO'&&st!=='Delivered'&&(g('deliv')||gamt!=null||gno||gdate))st='Delivered';
   const grn=st==='RTO'?'NA':((gamt!=null||gno||gdate)?'Done':(st==='Delivered'?'Pending':''));
   return gapFix({disp:g('disp')||null,po:o.po,inv:no,chan:o.chan||'',loc:g('loc'),val:num(g('val')),awb:g('awb'),partner:g('partner'),status:st,comment:g('comment'),expiry:null,deliv:g('deliv')||null,grn,sq:num(g('sq')),sv:num(g('sv')),dv:num(g('dv')),dvw:num(g('dv')),ev:num(g('ev')),cn:g('cn'),cnv:num(g('cnv')),appt:o.appt||null,dq:num(g('dq')),eq:num(g('eq')),gno,gdate:gdate||null,gamt,gnote:g('gnote'),asn:document.getElementById(p+'-asn')?g('asn'):(o.asn||''),asnd:(document.getElementById(p+'-asnd')?g('asnd'):(o.asnd||''))||null,rto:num(g('rto'))});}
 function actionClick(act,arg,el){
@@ -1974,7 +1974,12 @@ function actionClick(act,arg,el){
       const base={dec:x&&x.dec,reason:x&&x.reason,exp:x&&x.exp,plat:x&&x.plat,date:x&&x.orderDate,loc:x&&x.loc,qty:x&&x.qty,amt:x&&x.amt};
       const changed=Object.keys(patch).filter(k=>String((k in base?base[k]:(cur[k]!=null?cur[k]:(x&&x[k])))||'')!==String(patch[k]==null?'':patch[k]));
       const nz=v=>v==null?'':String(v);
+      /* keep statuses in step with what was entered */
+      const hasInv=((x&&x.inv&&x.inv.n)>0)||!!(val('vn-inv')&&document.getElementById('vn-status'));
+      if(patch.dec==='Accepted'&&!patch.printout&&!(x&&x.printout)&&!cur.printout)patch.printout=today;
+      if(hasInv&&(patch.dec==='Pending'||!patch.dec)&&!(x&&['Declined','Cancelled','Expired'].includes(x.dec))){patch.dec='Accepted';if(!patch.printout&&!(x&&x.printout)&&!cur.printout)patch.printout=today;}
       const invCh=[];((x&&x.inv&&x.inv.list)||[]).forEach((o,i)=>{if(!document.getElementById('v'+i+'-status'))return;const l=readInv('v'+i,o,o.inv);if(INV_KEYS.some(k=>nz(l[k])!==nz(o[k])))invCh.push(l);});
+      {const raw=cur.dec||((S.P.find(y=>y.po===arg)||{}).dec)||'Pending';if(patch.dec==='Accepted'&&raw!=='Accepted'&&!changed.includes('dec'))changed.push('dec');if(patch.printout&&!changed.includes('printout')&&patch.printout!==(cur.printout||(x&&x.printout)||''))changed.push('printout');}
       const nno=val('vn-inv');let newL=null;
       if(document.getElementById('vn-status')){
         const filled=['val','disp','partner','awb','deliv','gno','gdate','gamt','sq','sv','dq','dv','eq','ev','cn','cnv','rto','gnote','comment','asn','asnd'].some(k=>val('vn-'+k));
