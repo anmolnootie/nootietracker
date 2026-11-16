@@ -231,7 +231,7 @@ function snapWidth_() { return 2 + inputCols_(PLAT_TABS_[0]).length; }
 function sameShown_(t, v) {
   t = String(t == null ? '' : t).trim();
   if (v === null || v === undefined || v === '') return t === '';
-  if (typeof v === 'number') { var r = Math.round(v); return t === String(v) || t === String(r) || t === String(r).replace(/\B(?=(\d{3})+(?!\d))/g, ',') || t === (v * 100).toFixed(1) + '%'; }
+  if (typeof v === 'number') { var r = Math.round(v); return t === String(v) || t === String(r) || t === String(r).replace(/\B(?=(\d{3})+(?!\d))/g, ',') || (/%$/.test(t) && Math.abs(parseFloat(t.replace(/,/g, '')) - v * 100) < 0.0501); }
   return t === String(v).trim();
 }
 var SNAP_RAW_ = null;
