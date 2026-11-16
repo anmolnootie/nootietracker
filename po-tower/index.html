@@ -993,6 +993,31 @@ async function sheets(tool,args){
 }
 async function getRows(id,range){const r=await sheets('get_values',{spreadsheetId:id,range:range});return r.values||[];}
 
+
+/* --- plain-language reasons for a failed connection, with the fix --- */
+function friendlyErr(msg){
+  const m=String(msg||'');
+  if(/sheet not allowed|writes are only allowed/i.test(m))return 'The Apps Script behind the app is an old version. Paste the latest Code.gs, then Deploy > Manage deployments > pencil > New version (never "New deployment").';
+  if(/unauthorized/i.test(m))return 'The access key is missing or wrong. Enter the VIEW_KEY again.';
+  if(/VIEW_KEY/.test(m))return 'The script has no VIEW_KEY yet. Add it under Project Settings > Script properties.';
+  if(/backend URL|not connected yet/i.test(m))return 'The site has no script link. Ask the admin to check config.js.';
+  if(/failed to fetch|networkerror|load failed|timed out|timeout|offline/i.test(m))return 'No connection to Google right now. The app will keep retrying by itself.';
+  if(/exceeded maximum|quota|service invoked too many/i.test(m))return 'Google is limiting requests for a moment. The app will retry by itself.';
+  return '';
+}
+function saveLastGood(mR,vR,iss,act,set){
+  try{localStorage.setItem('potower_last',JSON.stringify({at:nowStamp(),M:mR,V:vR,I:iss,A:act,S:set}));}catch(e){try{localStorage.removeItem('potower_last');}catch(e2){}}
+}
+function useLastGood(){
+  try{
+    const c=JSON.parse(localStorage.getItem('potower_last')||'null');if(!c||!c.M)return false;
+    const pm=parseMasterRows(c.M),pv=parseInvoiceRows(c.V);
+    S.asof=todayIso();S.P=pm.P;S.trk=pm.T;S.trkRow=pm.rm;S.I=pv.I;S.invRow=pv.rm;
+    const is=rowsToIssues(c.I||[]);S.issues=is.a;S.issRow=is.rm;
+    S.snapLabel='the last live data, saved '+c.at;return true;
+  }catch(e){return false;}
+}
+
 /* --- load --- */
 function unpackSnapshot(){
   S.asof=todayIso();
@@ -1037,12 +1062,16 @@ async function loadLive(){
     S.act=actR.map(r=>({ts:r[0]||'',po:normPo(r[1]),action:r[2]||'',detail:r[3]||'',by:r[4]||'',plat:r[5]||''})).slice(-3000);
     const cfg=Object.assign({},DEFAULT_CFG);setR.forEach(r=>{const v=num(r[1]);if(r[0]&&v!=null)cfg[String(r[0]).trim()]=v;});S.cfg=cfg;
     setR.forEach(r=>{if(String(r[0]||'').trim()==='editor_pin_hash'&&r[1]){S.pinHash=String(r[1]);S.pinInSheet=true;}});
-    S.mode='live';S.lastSync=new Date();
+    saveLastGood(mR,vR,issR,[],setR);
+    S.mode='live';S.snapLabel='';S.lastSync=new Date();
     S.counts={pos:S.P.length,invoices:S.I.length};
     S.diag.push('MASTER sheet read: '+S.P.length+' POs, '+S.I.length+' invoices, '+S.issues.length+' issues in '+((Date.now()-t0)/1000).toFixed(1)+'s.');
     S.busy=false;recompute();UI.render();return true;
   }catch(e){
-    S.mode='snapshot';S.err='Could not load live data: '+String(e&&e.message||e).slice(0,260);S.diag.push(S.err);S.busy=false;recompute();UI.render();return false;
+    const raw=String(e&&e.message||e).slice(0,260),fx=friendlyErr(raw);
+    S.mode='snapshot';S.err='Could not load live data. '+(fx||raw);S.diag.push('Technical detail: '+raw);
+    if(!S.snapLabel||S.mode!=='live'){useLastGood();}
+    S.busy=false;recompute();UI.render();return false;
   }
 }
 
@@ -1210,7 +1239,7 @@ const UI={
     const tabs=[['overview','Overview'],['pipeline','Pipeline'],['worklist','Worklist',act],['platforms','Platforms'],['claims','Claims'],['recon','Daily recon'],['issues','Issues (CRM)',S.issues.filter(i=>i.status!=='Resolved').length],['settings','Settings']];
     $('#tabs').innerHTML=tabs.map(t=>'<button role="tab" aria-selected="'+(this.view===t[0])+'" data-act="tab" data-v="'+t[0]+'">'+t[1]+(t[2]?' <span class="cnt">'+t[2]+'</span>':'')+'</button>').join('');
     const bn=[];
-    if(S.mode!=='live')bn.push('<div class="banner">'+(S.err?esc(S.err)+' ':'')+'You are looking at the saved snapshot from '+fd(SNAP.asOf)+'. Entries you make are kept on this device only until the app is connected to Google Sheets (see Settings).</div>');
+    if(S.mode!=='live')bn.push('<div class="banner">'+(S.err?esc(S.err)+' ':'')+'You are looking at '+(S.snapLabel||('the saved snapshot from '+fd(SNAP.asOf)))+'. Entries you make are kept on this device only until the app is connected to Google Sheets (see Settings).</div>');
     else if(S.err)bn.push('<div class="banner err">'+esc(S.err)+'</div>');
     const v=this.view;const fn=this['v_'+v];
     $('#main').innerHTML=bn.join('')+(fn?fn.call(this):'');
@@ -1517,7 +1546,7 @@ Object.assign(UI,{
       tb.innerHTML=TABS.filter(t=>P==='ALL'||t[0]!=='platforms').map(t=>'<button role="tab" aria-selected="'+(v===t[0])+'" data-act="tab" data-arg="'+t[0]+'">'+t[1]+(t[0]==='worklist'&&act?' <span class="cnt">'+act+'</span>':'')+(t[0]==='issues'&&iss?' <span class="cnt info">'+iss+'</span>':'')+'</button>').join('');
     }
     const bn=[];
-    if(S.mode!=='live')bn.push('<div class="banner">'+(S.err?esc(S.err)+' ':'')+'You are looking at the saved snapshot from '+fd(SNAP.asOf)+'. Entries you make are kept on this device only until the app is connected to Google Sheets (see Settings).</div>');
+    if(S.mode!=='live')bn.push('<div class="banner">'+(S.err?esc(S.err)+' ':'')+'You are looking at '+(S.snapLabel||('the saved snapshot from '+fd(SNAP.asOf)))+'. Entries you make are kept on this device only until the app is connected to Google Sheets (see Settings).</div>');
     else if(S.err)bn.push('<div class="banner err">'+esc(S.err)+'</div>');
     if(!S.edit&&(v==='handover'||v==='issues'))bn.push('<div class="lockbar">'+ICON.lock+'<span><b>View only.</b> You can look at everything, but changes need an editor.</span><button class="btn sm pri" data-act="unlock">Unlock editing</button></div>');
     const fn=this['v_'+v];
