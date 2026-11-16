@@ -972,8 +972,8 @@ async function loadLive(){
     if(!m){S.diag.push('Google Sheets access is not available in this view. Showing the saved snapshot.');S.busy=false;UI.status();return false;}
     S.mcp=m;
     const t0=Date.now();
-    const [mR,vR,issR,actR,setR]=await Promise.all([getRows(TRK_ID,'MASTER!A3:BA8000'),getRows(TRK_ID,'INVOICES!A2:Z8000'),getRows(TRK_ID,'ISSUES!A2:O3000'),getRows(TRK_ID,'ACTIVITY!A2:F6000'),getRows(TRK_ID,'SETTINGS!A2:B20')]);
-    try{const cl=rowsToClaims(await getRows(TRK_ID,"'CLAIM DATA'!A2:N5000"));S.claims=cl.m;S.claimRow=cl.rm;}catch(e){S.claims={};S.claimRow={};S.diag.push('CLAIM DATA tab not found. Run setupOneSheet in Apps Script once.');}
+    const [mR,vR,issR,actR,setR]=await Promise.all([getRows(TRK_ID,'MASTER!A3:BA14000'),getRows(TRK_ID,'INVOICES!A2:Z14000'),getRows(TRK_ID,'ISSUES!A2:O3000'),getRows(TRK_ID,'ACTIVITY!A2:F6000'),getRows(TRK_ID,'SETTINGS!A2:B20')]);
+    try{const cl=rowsToClaims(await getRows(TRK_ID,"'CLAIM DATA'!A2:N14000"));S.claims=cl.m;S.claimRow=cl.rm;}catch(e){S.claims={};S.claimRow={};S.diag.push('CLAIM DATA tab not found. Run setupOneSheet in Apps Script once.');}
     S.asof=todayIso();
     const pm=parseMasterRows(mR),pv=parseInvoiceRows(vR);
     S.P=pm.P;S.trk=pm.T;S.trkRow=pm.rm;S.I=pv.I;S.invRow=pv.rm;
@@ -1021,7 +1021,7 @@ async function writePo(po){
     const row=new Array(MASTER_N).fill('');blocks.forEach(b=>{b[2].forEach((v,i)=>{row[b[0]-1+i]=v;});});
     const res=await sheets('append_values',{spreadsheetId:TRK_ID,range:'MASTER!A1',values:[row]});
     const up=(res.updates&&res.updates.updatedRange)||res.updatedRange||'';const m=String(up).match(/(\d+):[A-Z]+(\d+)$/);
-    if(m)S.trkRow[po]=+m[1];else{const rows=await getRows(TRK_ID,'MASTER!A3:A8000');rows.forEach((r,i)=>{S.trkRow[normPo(r[0])]=i+3;});}
+    if(m)S.trkRow[po]=+m[1];else{const rows=await getRows(TRK_ID,'MASTER!A3:A14000');rows.forEach((r,i)=>{S.trkRow[normPo(r[0])]=i+3;});}
   }
 }
 async function writeInvoice(l){
@@ -1030,7 +1030,7 @@ async function writeInvoice(l){
   else{
     const res=await sheets('append_values',{spreadsheetId:TRK_ID,range:'INVOICES!A1',values:vals});
     const up=(res.updates&&res.updates.updatedRange)||res.updatedRange||'';const m=String(up).match(/(\d+):[A-Z]+(\d+)$/);
-    if(m)S.invRow[k]=+m[1];else{const rows=await getRows(TRK_ID,'INVOICES!B2:C8000');rows.forEach((r,i)=>{S.invRow[normPo(r[0])+'|'+String(r[1]||'').trim().toUpperCase()]=i+2;});}
+    if(m)S.invRow[k]=+m[1];else{const rows=await getRows(TRK_ID,'INVOICES!B2:C14000');rows.forEach((r,i)=>{S.invRow[normPo(r[0])+'|'+String(r[1]||'').trim().toUpperCase()]=i+2;});}
   }
 }
 function saveInvoice(l,action,detail){
@@ -1076,7 +1076,7 @@ async function writeClaim(x){
   else{
     const res=await sheets('append_values',{spreadsheetId:TRK_ID,range:"'CLAIM DATA'!A1",values:vals});
     const up=(res.updates&&res.updates.updatedRange)||res.updatedRange||'';const m=String(up).match(/(\d+):[A-Z]+(\d+)$/);
-    if(m)S.claimRow[k]=+m[1];else{const rows=await getRows(TRK_ID,"'CLAIM DATA'!A2:B5000");rows.forEach((r,i)=>{S.claimRow[claimKey(normPo(r[0]),r[1])]=i+2;});}
+    if(m)S.claimRow[k]=+m[1];else{const rows=await getRows(TRK_ID,"'CLAIM DATA'!A2:B14000");rows.forEach((r,i)=>{S.claimRow[claimKey(normPo(r[0]),r[1])]=i+2;});}
   }
 }
 function saveClaim(x){

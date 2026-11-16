@@ -148,14 +148,14 @@ function readSettings_(ss) {
 // Reads everything from the MASTER sheet itself.
 function loadAll_(ss) {
   var asof = Utilities.formatDate(new Date(), 'Asia/Kolkata', 'yyyy-MM-dd');
-  var raw = readRange_(ss, 'MASTER!A3:BA8000');
-  var pm = parseMasterRows(raw), pv = parseInvoiceRows(readRange_(ss, 'INVOICES!A2:Z8000'));
+  var raw = readRange_(ss, 'MASTER!A3:BA14000');
+  var pm = parseMasterRows(raw), pv = parseInvoiceRows(readRange_(ss, 'INVOICES!A2:Z14000'));
   var cfg = readSettings_(ss);
   var issues = [];
   try { readRange_(ss, 'ISSUES!A2:O3000').forEach(function (r) { if (r[0]) issues.push({ id: String(r[0]), po: normPo(r[2]), status: String(r[9] == null ? '' : r[9]).trim() }); }); } catch (e) { /* no ISSUES tab yet */ }
   var claims = {};
   try {
-    readRange_(ss, "'CLAIM DATA'!A2:N5000").forEach(function (r) {
+    readRange_(ss, "'CLAIM DATA'!A2:N14000").forEach(function (r) {
       if (!r[0] || !r[1]) return;
       var po = normPo(r[0]);
       claims[claimKey_(po, r[1])] = { po: po, inv: String(r[1]), status: String(r[4] || 'Not raised'), claimed: num(r[5]), raisedOn: r[6], ref: r[7], settled: num(r[8]), settledOn: r[9], note: r[10], rtoValue: (r[13] === '' || r[13] == null) ? null : num(r[13]) };
@@ -189,7 +189,7 @@ function refreshMaster() {
     var byPo = {}; out.master.forEach(function (r) { byPo[normPo(r[0])] = r; });
     var n = a.raw.length, pos = a.raw.map(function (r) { return normPo(r[0]); });
     // somebody added or moved rows while this was calculating: skip this round rather than write onto the wrong PO
-    var again = readRange_(ss, 'MASTER!A3:A8000').map(function (r) { return normPo(r[0]); });
+    var again = readRange_(ss, 'MASTER!A3:A14000').map(function (r) { return normPo(r[0]); });
     if (again.length !== pos.length || again.join('|') !== pos.join('|')) return { ok: false, skipped: 'the sheet changed during the refresh' };
     var used = {};
     var aligned = pos.map(function (po) { if (po && byPo[po] && !used[po]) { used[po] = 1; return byPo[po]; } return null; });
@@ -285,7 +285,7 @@ function setupOneSheet() {
 function applyOldTracking_(old, ss) {
   var rows = []; try { rows = readRange_(old, 'TRACKING!A2:AG5000'); } catch (e) { return 0; }
   if (!rows.length) return 0;
-  var m = ss.getSheetByName('MASTER'), raw = readRange_(ss, 'MASTER!A3:A8000'), rowOf = {};
+  var m = ss.getSheetByName('MASTER'), raw = readRange_(ss, 'MASTER!A3:A14000'), rowOf = {};
   raw.forEach(function (r, i) { var p = normPo(r[0]); if (p && !rowOf[p]) rowOf[p] = i + 3; });
   var next = raw.length + 3, done = 0;
   rows.forEach(function (r) {
