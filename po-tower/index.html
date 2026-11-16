@@ -1405,7 +1405,7 @@ const UI={
         grp('Credit note and RTO','<label>Credit note no.'+T(P('cn'),l.cn)+'</label><label>Credit note value ₹'+N(P('cnv'),l.cnv)+'</label><label>Goods back through RTO ₹'+N(P('rto'),l.rto)+'</label>')+
         grp('Remarks','<label class="full">GRN remarks<textarea id="'+P('gnote')+'">'+esc(l.gnote||'')+'</textarea></label><label class="full">Warehouse comment<textarea id="'+P('comment')+'">'+esc(l.comment||'')+'</textarea></label>')+'</div>';};
       const blankL={po:x.po,chan:x.plat,loc:x.loc,status:'Dispatched'};
-      const extra=a.list.map((l,i)=>invExtra(l,'v'+i,esc(l.inv))).join('')+invExtra(blankL,'vn',a.list.length?'New invoice':'New invoice (number is entered under Invoices)');
+      const extra=a.list.map((l,i)=>invExtra(l,'v'+i,esc(l.inv))).join('');
       const peekX=esc([...a.list.map(l=>[l.sv?'short ₹'+inr(Math.round(l.sv)):'',l.dv?'damaged ₹'+inr(Math.round(l.dv)):'',l.cn?'CN '+l.cn:''].filter(Boolean).join(' ')).filter(Boolean),x.dmgReason||x.shortReason||''].filter(Boolean).join(' · '));
       const inv=a.list.map((l,i)=>'<div class="inv"><div class="invt"><span class="mono">'+esc(l.inv)+'</span><span class="peek">₹'+inr(Math.round(l.val||0))+(l.status?' · '+esc(l.status):'')+'</span></div>'+invCats(l,'v'+i)+'</div>').join('')+(a.list.length?'<details class="more addmore"><summary><span class="chev" aria-hidden="true">▾</span>Add another invoice</summary><div class="inv">'+invCats(blankL,'vn',true)+'</div></details>':'<div class="inv"><div class="invt"><span class="peek">No invoice yet. Fill in the invoice number to add one when you save.</span></div>'+invCats(blankL,'vn',true)+'</div>');
       const iss=S.issues.filter(i=>i.po===x.po);const hist=S.act.filter(r=>r.po===x.po).slice(-8).reverse();
