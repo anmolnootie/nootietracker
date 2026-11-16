@@ -1,0 +1,772 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Nootie PO Control Tower — User Manual</title>
+<style>
+  @page { size: A4; margin: 16mm 14mm 18mm 14mm; }
+  :root { --o:#e8591a; --o2:#f6a21e; --ink:#2b2118; --mut:#6b6a65; --line:#e7e2db; --cream:#faf6f1; --blue:#2a78d6; --aqua:#1baf7a; --red:#d03b3b; --amber:#c98500; }
+  * { box-sizing: border-box; }
+  body { font-family: "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif; color: var(--ink); font-size: 10.5pt; line-height: 1.5; margin: 0; background: #fff; }
+  h1 { font-size: 22pt; margin: 0 0 6pt; letter-spacing: -0.01em; }
+  h2 { font-size: 15pt; margin: 18pt 0 6pt; padding-bottom: 4pt; border-bottom: 2px solid var(--o); }
+  h3 { font-size: 12pt; margin: 14pt 0 4pt; }
+  h4 { font-size: 10.5pt; margin: 10pt 0 2pt; }
+  p { margin: 4pt 0 6pt; }
+  ul, ol { margin: 4pt 0 8pt; padding-left: 18pt; }
+  li { margin: 2pt 0; }
+  a { color: var(--o); }
+  code { font-family: Consolas, "Cascadia Mono", monospace; font-size: 9pt; background: #f3efe9; padding: 0 3pt; border-radius: 3pt; }
+  .chapter { break-before: page; }
+  .chapno { color: var(--o); font-weight: 600; font-size: 10pt; letter-spacing: .12em; text-transform: uppercase; }
+  .lead { font-size: 11.5pt; color: #4a4239; }
+  figure { margin: 8pt 0 12pt; break-inside: avoid; }
+  figure img { width: 100%; border: 1px solid var(--line); border-radius: 6pt; display: block; }
+  figure.half img { width: 100%; }
+  figcaption { font-size: 8.5pt; color: var(--mut); margin-top: 4pt; }
+  figure svg { width: 100%; height: auto; display: block; }
+  table { width: 100%; border-collapse: collapse; margin: 6pt 0 10pt; font-size: 9.2pt; break-inside: auto; }
+  th { text-align: left; background: var(--cream); font-weight: 600; }
+  th, td { border-bottom: 1px solid var(--line); padding: 4pt 6pt; vertical-align: top; }
+  tr { break-inside: avoid; }
+  .note, .tip, .warn { border-radius: 6pt; padding: 7pt 10pt; margin: 8pt 0; break-inside: avoid; font-size: 9.6pt; }
+  .tip { background: #eef6ff; border-left: 4px solid var(--blue); }
+  .note { background: var(--cream); border-left: 4px solid var(--o2); }
+  .warn { background: #fdeeee; border-left: 4px solid var(--red); }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10pt; }
+  .steps { counter-reset: s; list-style: none; padding-left: 0; }
+  .steps > li { counter-increment: s; position: relative; padding-left: 26pt; margin: 6pt 0; }
+  .steps > li::before { content: counter(s); position: absolute; left: 0; top: 0; width: 18pt; height: 18pt; border-radius: 50%; background: var(--o); color: #fff; font-weight: 700; font-size: 9pt; display: flex; align-items: center; justify-content: center; }
+  .pill { display: inline-block; padding: 0 6pt; border-radius: 9pt; font-size: 8.5pt; font-weight: 600; }
+  .crit { background: #fde3e3; color: #a32424; } .warnp { background: #fff1d6; color: #8a5a00; } .info { background: #e3efff; color: #1c5cab; } .mute { background: #eeece8; color: #55524c; }
+  .toc { columns: 2; column-gap: 18pt; font-size: 10pt; }
+  .toc a { text-decoration: none; color: var(--ink); display: flex; justify-content: space-between; border-bottom: 1px dotted #d6cfc5; padding: 2pt 0; break-inside: avoid; }
+  .toc b { color: var(--o); margin-right: 6pt; }
+  /* cover */
+  .cover { height: 260mm; display: flex; flex-direction: column; justify-content: space-between; padding: 6mm 4mm; }
+  .cover .band { background: linear-gradient(135deg, var(--o), var(--o2)); color: #fff; border-radius: 10pt; padding: 26pt 24pt; }
+  .cover .band h1 { font-size: 30pt; margin: 6pt 0; }
+  .cover .band p { font-size: 13pt; opacity: .95; margin: 0; }
+  .logos { display: flex; flex-wrap: wrap; gap: 10pt; align-items: center; }
+  .logos img { height: 34pt; width: 34pt; object-fit: contain; border-radius: 7pt; border: 1px solid var(--line); padding: 2pt; background: #fff; }
+  .sheetcard { display: block; border: 1px solid var(--line); border-radius: 8pt; padding: 9pt 12pt; margin: 7pt 0; text-decoration: none; color: var(--ink); break-inside: avoid; }
+  .sheetcard b { color: var(--o); font-size: 11pt; }
+  .sheetcard span { display: block; font-size: 9pt; color: var(--mut); }
+  .sheetcard .url { color: var(--blue); font-size: 8.3pt; word-break: break-all; }
+  .kv { display: grid; grid-template-columns: 120pt 1fr; gap: 2pt 10pt; font-size: 9.6pt; }
+  .kv div:nth-child(odd) { color: var(--mut); }
+</style>
+</head>
+<body>
+
+<!-- ============ COVER ============ -->
+<section class="cover">
+  <div>
+    <img src="logos/nootie.jpg" alt="nootie" style="height:80pt">
+  </div>
+  <div class="band">
+    <div style="letter-spacing:.18em;font-size:10pt;font-weight:600;opacity:.9">USER MANUAL</div>
+    <h1>PO Control Tower</h1>
+    <p>How to use it, what each screen does, and the logic behind every number: from a platform's purchase order to the GRN.</p>
+  </div>
+  <div>
+    <p style="color:var(--mut);margin-bottom:8pt">Platforms covered</p>
+    <div class="logos">
+      <img src="logos/blinkit.png" alt="Blinkit"><img src="logos/zepto.png" alt="Zepto"><img src="logos/swiggy-instamart.png" alt="Swiggy Instamart"><img src="logos/bigbasket.png" alt="BigBasket"><img src="logos/flipkart.png" alt="Flipkart"><img src="logos/amazon.webp" alt="Amazon"><img src="logos/supertails.jpg" alt="Supertails"><img src="logos/firstclub.jpg" alt="FirstClub"><img src="logos/tata-1mg.png" alt="Tata 1mg">
+    </div>
+    <div class="kv" style="margin-top:18pt">
+      <div>App</div><div><a href="https://app.mynootie.com">app.mynootie.com</a></div>
+      <div>Version</div><div>November 2026</div>
+      <div>Screenshots</div><div>Taken from a test copy with sample POs; your numbers will differ.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ CONTENTS ============ -->
+<section class="chapter">
+  <h1>Contents</h1>
+  <div class="toc">
+    <a href="#c1"><span><b>1</b>What the app does</span></a>
+    <a href="#c2"><span><b>2</b>How everything connects</span></a>
+    <a href="#c3"><span><b>3</b>Getting started</span></a>
+    <a href="#c4"><span><b>4</b>The life of a PO</span></a>
+    <a href="#c5"><span><b>5</b>Who does what, every day</span></a>
+    <a href="#c6"><span><b>6</b>The dashboard</span></a>
+    <a href="#c7"><span><b>7</b>The control tower</span></a>
+    <a href="#c8"><span><b>8</b>The logic behind the numbers</span></a>
+    <a href="#c9"><span><b>9</b>Getting data in</span></a>
+    <a href="#c10"><span><b>10</b>Purchase orders</span></a>
+    <a href="#c11"><span><b>11</b>Daily work screens</span></a>
+    <a href="#c12"><span><b>12</b>Reports</span></a>
+    <a href="#c13"><span><b>13</b>Admin and settings</span></a>
+    <a href="#c14"><span><b>14</b>Problems and answers</span></a>
+    <a href="#c15"><span><b>15</b>Words used in the app</span></a>
+    <a href="#c16"><span><b>16</b>Connected sheets (links)</span></a>
+  </div>
+  <div class="note" style="margin-top:16pt"><b>How to read this manual.</b> Chapters 1 to 5 explain the idea and the daily routine. Chapters 6 to 13 go screen by screen. Chapter 8 is the rulebook: exactly how the app decides a PO's stage, its flag, and which numbers it counts. The last page links straight to the Google Sheets that feed the app.</div>
+</section>
+
+<!-- ============ 1 ============ -->
+<section class="chapter" id="c1">
+  <div class="chapno">Chapter 1</div>
+  <h1>What the app does</h1>
+  <p class="lead">Quick-commerce platforms (Blinkit, Zepto, Swiggy Instamart and others) send Nootie purchase orders (POs). Each PO must be accepted, picked, packed, dispatched, delivered and finally confirmed by the platform with a GRN (goods received note) before Nootie is paid. The PO Control Tower follows every PO through those steps and points out the ones that are stuck.</p>
+  <h3>What you get</h3>
+  <ul>
+    <li><b>One list of every PO</b> from every platform, built automatically from the Warehouse Master sheet and the platform PO files.</li>
+    <li><b>A stage for every PO</b> (decision pending, in warehouse, in transit, GRN pending, closed…), so anyone can see where it is.</li>
+    <li><b>Problem flags</b> with an owner team and a next action, such as "Expiring soon → prioritise dispatch and book the appointment now".</li>
+    <li><b>A control tower per platform</b>, plus an overall one, with a worklist, handover check, daily reconciliation and issue log.</li>
+    <li><b>A dashboard</b> with charts: activity over time, platform mix, lead time, ageing and an expiry timeline.</li>
+    <li><b>Imports</b> for every document the team already produces: invoices (including Vasy PDFs), GRNs, the daily dispatch report, PRN and DN files.</li>
+  </ul>
+  <h3>Who uses it</h3>
+  <table>
+    <tr><th style="width:24%">Team</th><th>What they look at</th><th style="width:30%">What they record</th></tr>
+    <tr><td><b>Order desk / SCM</b></td><td>New POs, decisions, expiring POs, legacy backlog</td><td>Accept or decline (with reason), printout handover</td></tr>
+    <tr><td><b>Warehouse</b></td><td>POs handed over but not acknowledged; POs waiting to be dispatched</td><td>Acknowledgement, dispatch, invoice</td></tr>
+    <tr><td><b>Logistics</b></td><td>Shipments in transit for too long; appointments</td><td>Delivery status, AWB, delivery partner</td></tr>
+    <tr><td><b>Accounts</b></td><td>GRN pending; credit notes pending</td><td>GRN details, credit note numbers</td></tr>
+    <tr><td><b>Management</b></td><td>Dashboard, platform comparison, fill rate</td><td>Nothing; read-only is enough</td></tr>
+  </table>
+</section>
+
+<!-- ============ 2 ============ -->
+<section class="chapter" id="c2">
+  <div class="chapno">Chapter 2</div>
+  <h1>How everything connects</h1>
+  <p class="lead">Data comes in from Google Sheets and uploaded files. The app joins it into one record per PO, works out each PO's stage and flags, and shows the result on the dashboard and control towers.</p>
+  <figure>
+    <svg viewBox="0 0 760 430" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI, Arial" font-size="12">
+      <defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0L10,5L0,10z" fill="#8a8178"/></marker></defs>
+      <text x="20" y="22" font-weight="700" fill="#e8591a" font-size="11" letter-spacing="1.5">SOURCES</text>
+      <text x="300" y="22" font-weight="700" fill="#e8591a" font-size="11" letter-spacing="1.5">THE APP</text>
+      <text x="570" y="22" font-weight="700" fill="#e8591a" font-size="11" letter-spacing="1.5">WHAT YOU SEE</text>
+      <!-- sources -->
+      <g>
+        <rect x="16" y="36" width="210" height="62" rx="10" fill="#e9f7ef" stroke="#1baf7a"/>
+        <text x="30" y="58" font-weight="700">Warehouse Master sheet</text>
+        <text x="30" y="76" fill="#4a4239" font-size="11">Order Book, Dispatch + GRN,</text>
+        <text x="30" y="90" fill="#4a4239" font-size="11">platform tabs · syncs every 15 min</text>
+        <rect x="16" y="108" width="210" height="50" rx="10" fill="#e9f7ef" stroke="#1baf7a"/>
+        <text x="30" y="129" font-weight="700">Dispatch &amp; GRN Tracker sheet</text>
+        <text x="30" y="146" fill="#4a4239" font-size="11">dispatch, delivery and GRN updates</text>
+        <rect x="16" y="168" width="210" height="50" rx="10" fill="#eef4fd" stroke="#2a78d6"/>
+        <text x="30" y="189" font-weight="700">Platform PO files</text>
+        <text x="30" y="206" fill="#4a4239" font-size="11">bulk upload · adds SKU lines</text>
+        <rect x="16" y="228" width="210" height="50" rx="10" fill="#eef4fd" stroke="#2a78d6"/>
+        <text x="30" y="249" font-weight="700">Invoices (sheet or Vasy PDF)</text>
+        <text x="30" y="266" fill="#4a4239" font-size="11">invoice no., value, dispatched qty</text>
+        <rect x="16" y="288" width="210" height="50" rx="10" fill="#eef4fd" stroke="#2a78d6"/>
+        <text x="30" y="309" font-weight="700">GRN · Daily dispatch report</text>
+        <text x="30" y="326" fill="#4a4239" font-size="11">GRN, PRN, DN files</text>
+        <rect x="16" y="348" width="210" height="50" rx="10" fill="#fdf1e8" stroke="#e8591a"/>
+        <text x="30" y="369" font-weight="700">Team entries in the app</text>
+        <text x="30" y="386" fill="#4a4239" font-size="11">decision, handover, ack, issues</text>
+      </g>
+      <!-- app -->
+      <rect x="282" y="110" width="210" height="220" rx="14" fill="#2b2118"/>
+      <text x="300" y="140" fill="#fff" font-weight="700" font-size="14">PO Control Tower</text>
+      <text x="300" y="160" fill="#f6a21e" font-size="11">app.mynootie.com</text>
+      <rect x="298" y="174" width="178" height="34" rx="7" fill="#3d3127"/>
+      <text x="310" y="195" fill="#fff" font-size="11">1 · One record per PO number</text>
+      <rect x="298" y="214" width="178" height="34" rx="7" fill="#3d3127"/>
+      <text x="310" y="235" fill="#fff" font-size="11">2 · Stage 1-9 for every PO</text>
+      <rect x="298" y="254" width="178" height="34" rx="7" fill="#3d3127"/>
+      <text x="310" y="275" fill="#fff" font-size="11">3 · Flags 1-10 + owner team</text>
+      <text x="300" y="314" fill="#c9bfb3" font-size="10">Database: Supabase · Server: Railway</text>
+      <!-- arrows in -->
+      <g stroke="#8a8178" stroke-width="1.5" fill="none" marker-end="url(#ar)">
+        <path d="M226,67 C260,67 255,160 280,170"/><path d="M226,133 C255,133 260,190 280,195"/><path d="M226,193 L280,215"/>
+        <path d="M226,253 L280,240"/><path d="M226,313 C258,313 258,275 280,268"/><path d="M226,373 C262,373 262,300 280,300"/>
+      </g>
+      <!-- outputs -->
+      <g>
+        <rect x="552" y="60" width="192" height="56" rx="10" fill="#fff" stroke="#d6cfc5"/>
+        <text x="566" y="83" font-weight="700">Dashboard</text>
+        <text x="566" y="100" fill="#4a4239" font-size="11">charts, trends, attention list</text>
+        <rect x="552" y="128" width="192" height="56" rx="10" fill="#fff" stroke="#d6cfc5"/>
+        <text x="566" y="151" font-weight="700">Control towers</text>
+        <text x="566" y="168" fill="#4a4239" font-size="11">overall + one per platform</text>
+        <rect x="552" y="196" width="192" height="56" rx="10" fill="#fff" stroke="#d6cfc5"/>
+        <text x="566" y="219" font-weight="700">Worklist</text>
+        <text x="566" y="236" fill="#4a4239" font-size="11">flagged POs, by team</text>
+        <rect x="552" y="264" width="192" height="56" rx="10" fill="#fff" stroke="#d6cfc5"/>
+        <text x="566" y="287" font-weight="700">Reports &amp; exports</text>
+        <text x="566" y="304" fill="#4a4239" font-size="11">CSV, day-wise dispatch</text>
+        <rect x="552" y="332" width="192" height="56" rx="10" fill="#e9f7ef" stroke="#1baf7a"/>
+        <text x="566" y="355" font-weight="700">"ALL PO DATA" sheet</text>
+        <text x="566" y="372" fill="#4a4239" font-size="11">two-way sync back to Sheets</text>
+      </g>
+      <g stroke="#8a8178" stroke-width="1.5" fill="none" marker-end="url(#ar)">
+        <path d="M492,180 C520,180 520,88 550,88"/><path d="M492,195 L550,156"/><path d="M492,220 L550,224"/><path d="M492,245 L550,290"/><path d="M492,270 C520,270 520,360 550,360"/>
+      </g>
+    </svg>
+    <figcaption>Figure 2.1 · Where the data comes from and where it shows up.</figcaption>
+  </figure>
+  <h3>Three rules worth remembering</h3>
+  <ol>
+    <li><b>The PO number is the key.</b> Every file and sheet is matched to a PO by its PO number. If a number is typed differently (extra spaces, a missing prefix), the app treats it as a different PO.</li>
+    <li><b>The Warehouse Master creates POs; the other files fill them in.</b> The sync adds every PO number it finds. Platform PO files then add the SKU lines, and invoice, GRN and tracker updates add dispatch and receipt details.</li>
+    <li><b>The app never overwrites what the team decided.</b> A decision, handover or acknowledgement recorded in the app always wins over what a sheet suggests.</li>
+  </ol>
+</section>
+
+<!-- ============ 3 ============ -->
+<section class="chapter" id="c3">
+  <div class="chapno">Chapter 3</div>
+  <h1>Getting started</h1>
+  <h3>Logging in</h3>
+  <ol class="steps">
+    <li>Open <a href="https://app.mynootie.com">app.mynootie.com</a> in Chrome or Edge.</li>
+    <li>Enter the email and password your admin gave you and click <b>Login</b>.</li>
+    <li>You land on the <b>Dashboard</b>. Your name and a <b>Logout</b> button are at the top right; the bell shows notifications.</li>
+  </ol>
+  <figure><img src="shots/login.png" alt="Login screen" style="max-height:300pt;object-fit:cover;object-position:center"><figcaption>Figure 3.1 · The login screen.</figcaption></figure>
+  <h3>Finding your way: the sidebar</h3>
+  <p>The menu on the left is grouped by job. Click a group name to fold it away; the app remembers your choice, and it also remembers how far you scrolled.</p>
+  <table>
+    <tr><th style="width:22%">Group</th><th>What is inside</th></tr>
+    <tr><td><b>Overview</b></td><td>Dashboard · Dispatch &amp; GRN overview</td></tr>
+    <tr><td><b>Control tower</b></td><td>Overall tower, then one tower per platform with its logo. A red number is that platform's count of urgent POs.</td></tr>
+    <tr><td><b>Daily work</b></td><td>My tasks · Appointments · Dispatch · Logistics · GRN · Returns · Exceptions</td></tr>
+    <tr><td><b>Purchase orders</b></td><td>All POs · Add a PO · Not fulfilled · Expired, not delivered · PO bin</td></tr>
+    <tr><td><b>Stock</b></td><td>Inventory · Stuck stock · PO mapping</td></tr>
+    <tr><td><b>Uploads</b></td><td>Warehouse Master · PO files · Invoices · GRN · Daily dispatch report · Google Sheets sync · PRN · DN</td></tr>
+    <tr><td><b>Reports</b></td><td>CSV reports · Day-wise dispatch · Upload summaries · Compilations</td></tr>
+    <tr><td><b>Admin</b></td><td>Settings · Masters · Locations &amp; TAT · Users (admins only)</td></tr>
+  </table>
+  <h3>The period bar</h3>
+  <p>Most screens have a row of buttons: <b>FY · 90d · 30d · 7d · Month · Last mo. · All · Custom</b>. It decides which POs are counted. The choice carries across screens until you reload the page.</p>
+  <div class="tip"><b>Rule:</b> a PO belongs to a period if its <b>PO date</b> falls inside it. If a PO has no PO date, the app uses its first dispatch date. POs with neither are only shown under <b>All</b>.</div>
+  <h3>Roles: who can change what</h3>
+  <table>
+    <tr><th style="width:28%">Role</th><th>Can do</th></tr>
+    <tr><td><b>Admin</b></td><td>Everything, including users, settings, SLA days and the Warehouse Master import.</td></tr>
+    <tr><td><b>SCM</b></td><td>Edit control tower fields (decision, handover, ack, issues) and run the Warehouse Master import.</td></tr>
+    <tr><td><b>Ops executive</b></td><td>Edit control tower fields.</td></tr>
+    <tr><td><b>Appointment / Warehouse / Logistics / GRN owner</b></td><td>Work in their own daily screens; read-only in the control tower.</td></tr>
+    <tr><td><b>Viewer</b></td><td>Read-only everywhere.</td></tr>
+  </table>
+</section>
+
+<!-- ============ 4 ============ -->
+<section class="chapter" id="c4">
+  <div class="chapno">Chapter 4</div>
+  <h1>The life of a PO</h1>
+  <p class="lead">Every PO sits in exactly one of nine stages. Stages 1 to 4 are "open" (nothing dispatched yet). Stages 5 to 8 start once there is an invoice. Stage 9 means the PO will never be fulfilled.</p>
+  <figure>
+    <svg viewBox="0 0 760 520" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI, Arial" font-size="12">
+      <defs><marker id="a2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0L10,5L0,10z" fill="#8a8178"/></marker></defs>
+      <g stroke="#8a8178" stroke-width="1.6" fill="none" marker-end="url(#a2)">
+        <path d="M150,62 L150,92"/><path d="M150,152 L150,182"/><path d="M150,242 L150,272"/><path d="M150,332 L150,362"/>
+        <path d="M250,392 L330,392"/>
+        <path d="M442,362 L442,305"/><path d="M442,242 L442,215"/>
+        <path d="M555,392 L620,392"/><path d="M555,242 L620,242"/><path d="M555,152 L620,152"/>
+        <path d="M250,122 C300,122 300,470 330,470"/>
+      </g>
+      <!-- open stages -->
+      <rect x="40" y="20" width="220" height="42" rx="21" fill="#2b2118"/><text x="150" y="46" fill="#fff" text-anchor="middle" font-weight="700">PO arrives from a platform</text>
+      <rect x="50" y="92" width="200" height="60" rx="10" fill="#eef4fd" stroke="#2a78d6"/><text x="64" y="114" font-weight="700">1 · Decision pending</text><text x="64" y="132" font-size="11" fill="#4a4239">Order desk: accept or decline</text>
+      <rect x="50" y="182" width="200" height="60" rx="10" fill="#eef4fd" stroke="#2a78d6"/><text x="64" y="204" font-weight="700">2 · Handover pending</text><text x="64" y="222" font-size="11" fill="#4a4239">Accepted; printout to hand over</text>
+      <rect x="50" y="272" width="200" height="60" rx="10" fill="#eef4fd" stroke="#2a78d6"/><text x="64" y="294" font-weight="700">3 · Ack pending</text><text x="64" y="312" font-size="11" fill="#4a4239">Warehouse must acknowledge</text>
+      <rect x="50" y="362" width="200" height="60" rx="10" fill="#eef4fd" stroke="#2a78d6"/><text x="64" y="384" font-weight="700">4 · In warehouse</text><text x="64" y="402" font-size="11" fill="#4a4239">Pick, pack, invoice, dispatch</text>
+      <text x="56" y="448" font-size="11" fill="#2a78d6" font-weight="700">OPEN: no invoice yet</text>
+      <!-- invoiced -->
+      <rect x="330" y="362" width="225" height="60" rx="10" fill="#fdf1e8" stroke="#e8591a"/><text x="344" y="384" font-weight="700">5 · In transit</text><text x="344" y="402" font-size="11" fill="#4a4239">Invoice raised, on the way</text>
+      <rect x="330" y="242" width="225" height="60" rx="10" fill="#fdf1e8" stroke="#e8591a"/><text x="344" y="264" font-weight="700">6 · GRN pending</text><text x="344" y="282" font-size="11" fill="#4a4239">Delivered; waiting for GRN</text>
+      <rect x="330" y="152" width="225" height="60" rx="10" fill="#e9f7ef" stroke="#1baf7a"/><text x="344" y="174" font-weight="700">8 · Closed</text><text x="344" y="192" font-size="11" fill="#4a4239">Delivered and GRN done</text>
+      <rect x="620" y="362" width="125" height="60" rx="10" fill="#fdeeee" stroke="#d03b3b"/><text x="632" y="384" font-weight="700">7 · RTO</text><text x="632" y="402" font-size="11" fill="#4a4239">Returned to origin</text>
+      <rect x="620" y="212" width="125" height="60" rx="10" fill="#fff8e6" stroke="#c98500"/><text x="632" y="234" font-weight="700" font-size="11">Shortage / damage</text><text x="632" y="252" font-size="11" fill="#4a4239">→ credit note</text>
+      <rect x="620" y="122" width="125" height="60" rx="10" fill="#fff" stroke="#d6cfc5"/><text x="632" y="144" font-weight="700" font-size="11">Paid by platform</text><text x="632" y="162" font-size="11" fill="#4a4239">outside the app</text>
+      <text x="340" y="342" font-size="11" fill="#e8591a" font-weight="700">INVOICED</text>
+      <rect x="330" y="442" width="225" height="56" rx="10" fill="#eeece8" stroke="#8a8178"/><text x="344" y="464" font-weight="700">9 · Not fulfilled</text><text x="344" y="482" font-size="11" fill="#4a4239">Declined, cancelled or expired</text>
+      
+    </svg>
+    <figcaption>Figure 4.1 · The nine stages. Blue = open, orange = invoiced, green = closed, grey = not fulfilled.</figcaption>
+  </figure>
+  <h3>Stage by stage</h3>
+  <table>
+    <tr><th style="width:6%">#</th><th style="width:28%">Stage</th><th>The PO is here when…</th><th style="width:22%">Next step</th></tr>
+    <tr><td>1</td><td>Received, decision pending</td><td>No invoice, and no decision yet (Pending).</td><td>Order desk accepts or declines</td></tr>
+    <tr><td>2</td><td>Accepted, handover pending</td><td>Accepted, but the printout has not been handed to the warehouse.</td><td>Hand over the printout</td></tr>
+    <tr><td>3</td><td>Handed to warehouse, ack pending</td><td>Handover date recorded, no acknowledgement yet.</td><td>Warehouse acknowledges</td></tr>
+    <tr><td>4</td><td>In warehouse, pending dispatch</td><td>Warehouse acknowledged; no invoice yet.</td><td>Dispatch and invoice</td></tr>
+    <tr><td>5</td><td>In transit</td><td>At least one invoice is Dispatched, In Transit or Arrived.</td><td>Track to delivery</td></tr>
+    <tr><td>6</td><td>Delivered, GRN pending</td><td>Nothing in transit, but at least one invoice has GRN Pending.</td><td>Chase GRN</td></tr>
+    <tr><td>7</td><td>RTO / returned</td><td>An invoice came back (RTO) and none was delivered.</td><td>Credit note / re-dispatch</td></tr>
+    <tr><td>8</td><td>Closed, delivered and GRN done</td><td>Invoiced and nothing above applies.</td><td>Done</td></tr>
+    <tr><td>9</td><td>Closed, not fulfilled</td><td>No invoice, and the decision is Declined, Cancelled or Expired.</td><td>Done (reason recorded)</td></tr>
+  </table>
+  <div class="note"><b>A PO with several invoices</b> (a split shipment) takes the stage of its "least finished" invoice: if one box is still in transit, the PO is in transit.</div>
+</section>
+
+<!-- ============ 5 ============ -->
+<section class="chapter" id="c5">
+  <div class="chapno">Chapter 5</div>
+  <h1>Who does what, every day</h1>
+  <p class="lead">Each team owns certain flags. Start the day on the <b>Worklist</b>, filtered to your team's flags, and clear them top to bottom.</p>
+  <figure>
+    <svg viewBox="0 0 760 330" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI, Arial" font-size="11.5">
+      <defs><marker id="a3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0L10,5L0,10z" fill="#8a8178"/></marker></defs>
+      <g font-weight="700" font-size="12">
+        <rect x="10" y="10" width="110" height="70" rx="8" fill="#e8591a"/><text x="65" y="50" fill="#fff" text-anchor="middle">Order desk</text>
+        <rect x="10" y="90" width="110" height="70" rx="8" fill="#c98500"/><text x="65" y="130" fill="#fff" text-anchor="middle">Warehouse</text>
+        <rect x="10" y="170" width="110" height="70" rx="8" fill="#2a78d6"/><text x="65" y="210" fill="#fff" text-anchor="middle">Logistics</text>
+        <rect x="10" y="250" width="110" height="70" rx="8" fill="#1baf7a"/><text x="65" y="290" fill="#fff" text-anchor="middle">Accounts</text>
+      </g>
+      <g fill="#faf6f1"><rect x="128" y="10" width="622" height="70" rx="8"/><rect x="128" y="90" width="622" height="70" rx="8"/><rect x="128" y="170" width="622" height="70" rx="8"/><rect x="128" y="250" width="622" height="70" rx="8"/></g>
+      <g fill="#fff" stroke="#d6cfc5">
+        <rect x="140" y="22" width="140" height="46" rx="7"/><rect x="300" y="22" width="140" height="46" rx="7"/>
+        <rect x="460" y="102" width="140" height="46" rx="7"/><rect x="610" y="102" width="130" height="46" rx="7"/>
+        <rect x="460" y="182" width="140" height="46" rx="7"/><rect x="610" y="182" width="130" height="46" rx="7"/>
+        <rect x="460" y="262" width="140" height="46" rx="7"/><rect x="610" y="262" width="130" height="46" rx="7"/>
+      </g>
+      <text x="150" y="42" font-weight="700">Decide</text><text x="150" y="58">accept or decline</text>
+      <text x="310" y="42" font-weight="700">Hand over printout</text><text x="310" y="58">log date and person</text>
+      <text x="470" y="122" font-weight="700">Acknowledge</text><text x="470" y="138">"we have the printout"</text>
+      <text x="620" y="122" font-weight="700">Dispatch</text><text x="620" y="138">pack, invoice, ship</text>
+      <text x="470" y="202" font-weight="700">Track</text><text x="470" y="218">AWB, partner, status</text>
+      <text x="620" y="202" font-weight="700">Deliver</text><text x="620" y="218">appointment, date</text>
+      <text x="470" y="282" font-weight="700">GRN</text><text x="470" y="298">received value, gaps</text>
+      <text x="620" y="282" font-weight="700">Credit note</text><text x="620" y="298">for RTO / losses</text>
+      <g stroke="#8a8178" stroke-width="1.5" fill="none" marker-end="url(#a3)">
+        <path d="M280,45 L298,45"/><path d="M440,45 C470,45 470,100 488,102"/><path d="M600,125 L608,125"/>
+        <path d="M675,148 C675,165 540,165 530,180"/><path d="M600,205 L608,205"/><path d="M675,228 C675,245 540,245 530,260"/><path d="M600,285 L608,285"/>
+      </g>
+    </svg>
+    <figcaption>Figure 5.1 · The hand-offs between teams. Each box is a field the team records in the app or a sheet.</figcaption>
+  </figure>
+  <div class="grid2">
+    <div>
+      <h4>Order desk / SCM: morning</h4>
+      <ol>
+        <li>Open <b>Control tower → Worklist</b>.</li>
+        <li>Clear <span class="pill crit">1 Expired</span> and <span class="pill crit">2 Expiring soon</span> first.</li>
+        <li>Decide every <span class="pill info">7 No decision</span> PO; pick a reason when declining.</li>
+        <li>Hand printouts to the warehouse and record it in <b>Handover check</b>.</li>
+        <li>Once a week, close out <span class="pill mute">10 Unaccounted, legacy</span>.</li>
+      </ol>
+    </div>
+    <div>
+      <h4>Warehouse: through the day</h4>
+      <ol>
+        <li>Acknowledge every printout you received (<b>Handover check → Acknowledge</b>).</li>
+        <li>Work <span class="pill warnp">5 In warehouse, not dispatched</span>, oldest first.</li>
+        <li>Make sure every dispatch has an invoice in the Tracker sheet or the invoice upload.</li>
+      </ol>
+      <h4>Logistics</h4>
+      <ol>
+        <li>Chase <span class="pill warnp">6 In transit overdue</span>.</li>
+        <li>Keep status, AWB and delivery date current in the Tracker sheet.</li>
+      </ol>
+      <h4>Accounts</h4>
+      <ol>
+        <li>Chase <span class="pill info">8 GRN pending</span>; raise <span class="pill info">9 Credit note pending</span>.</li>
+      </ol>
+    </div>
+  </div>
+  <div class="tip"><b>End of day:</b> open <b>Daily recon</b> to compare what was dispatched today against what was planned, and log anything odd as an <b>Issue</b>.</div>
+</section>
+
+<!-- ============ 6 ============ -->
+<section class="chapter" id="c6">
+  <div class="chapno">Chapter 6</div>
+  <h1>The dashboard</h1>
+  <p class="lead">The first page after login. It answers three questions: how much is coming in, how fast is it going out, and what is stuck.</p>
+  <figure><img src="shots/dashboard.png" alt="Dashboard"><figcaption>Figure 6.1 · The dashboard (sample data).</figcaption></figure>
+</section>
+<section class="chapter">
+  <h3>What each part means</h3>
+  <table>
+    <tr><th style="width:26%">Part</th><th>What it shows</th><th style="width:30%">How it is counted</th></tr>
+    <tr><td><b>Purchase orders</b></td><td>POs in the period, with total value and a trend line.</td><td>By PO date.</td></tr>
+    <tr><td><b>Still open</b></td><td>POs awaiting a decision plus POs accepted but not dispatched.</td><td>Stages 1 to 4.</td></tr>
+    <tr><td><b>Dispatched</b></td><td>POs with at least one invoice; invoiced value; how many are in transit.</td><td>Invoice exists.</td></tr>
+    <tr><td><b>Fill rate</b></td><td>How much of the ordered value was invoiced.</td><td>Invoiced value ÷ PO value.</td></tr>
+    <tr><td><b>Activity over time</b></td><td>Lines for POs received, invoices dispatched and GRNs done. Switch <b>Count</b> / <b>Value (₹)</b>.</td><td>Each thing on the date it happened. Days for short periods, weeks up to ~7 months, months beyond.</td></tr>
+    <tr><td><b>POs received by platform</b></td><td>Stacked bars: which platforms sent how many POs.</td><td>By PO date; small platforms are grouped as "Other".</td></tr>
+    <tr><td><b>Days from PO to first dispatch</b></td><td>How quickly POs leave the warehouse. Lower is better.</td><td>Median, for POs received in each period.</td></tr>
+    <tr><td><b>Open POs by age</b></td><td>Undispatched POs grouped by how old they are.</td><td>Days since PO date.</td></tr>
+    <tr><td><b>Expiry timeline</b></td><td>Red bar = already expired; then each of the next 14 days.</td><td>Open POs with an expiry date.</td></tr>
+    <tr><td><b>Needs attention</b></td><td>Flag counts per team; click a line to open those POs.</td><td>See Chapter 8.</td></tr>
+    <tr><td><b>Where the POs are</b></td><td>The journey funnel with % of POs that reached each step.</td><td>See "Journey" in Chapter 8.</td></tr>
+    <tr><td><b>Platforms</b></td><td>Per-platform POs, open, dispatched value, fill rate and urgent count.</td><td>Same period.</td></tr>
+  </table>
+  <div class="tip">Hover any chart to see exact numbers. Every chart also has a <b>Table</b> button that shows the same figures as a table you can copy.</div>
+</section>
+
+<!-- ============ 7 ============ -->
+<section class="chapter" id="c7">
+  <div class="chapno">Chapter 7</div>
+  <h1>The control tower</h1>
+  <p class="lead">The control tower is where the work happens. <b>Overall tower</b> covers every platform; each platform in the sidebar opens the same screens filtered to that platform. The tabs along the top switch views.</p>
+  <figure><img src="shots/ct-overview.png" alt="Overall control tower"><figcaption>Figure 7.1 · Overall control tower, Overview tab: headline tiles, platforms at a glance, problem flags and open POs by stage.</figcaption></figure>
+</section>
+<section class="chapter">
+  <h3>The tabs</h3>
+  <table>
+    <tr><th style="width:20%">Tab</th><th>Use it to…</th></tr>
+    <tr><td><b>Overview</b></td><td>See the period's totals, every platform, the ten problem flags and a board of open POs by stage.</td></tr>
+    <tr><td><b>Pipeline</b></td><td>See the journey funnel (received → GRN done) and the gaps between steps; click a gap to list those POs.</td></tr>
+    <tr><td><b>All POs</b></td><td>Search and filter every PO by stage or flag; <b>Copy for Excel</b> copies the table.</td></tr>
+    <tr><td><b>Worklist</b></td><td>Work through flagged POs, most urgent first, with quick buttons: Accept, Handed, Ack.</td></tr>
+    <tr><td><b>Handover check</b></td><td>Record printouts handed to the warehouse, and warehouse acknowledgements, for many POs at once (paste a list of PO numbers).</td></tr>
+    <tr><td><b>Daily recon</b></td><td>Compare one day's dispatches against what was due.</td></tr>
+    <tr><td><b>Issues</b></td><td>Log and follow problems (missing printout, shortage claim, GRN delay…) with priority and status.</td></tr>
+    <tr><td><b>Compare platforms</b></td><td>Put platforms side by side: volume, fill rate, open POs, urgent POs.</td></tr>
+  </table>
+  <div class="grid2">
+    <figure><img src="shots/ct-pipeline.png" alt="Pipeline"><figcaption>Figure 7.2 · Pipeline.</figcaption></figure>
+    <figure><img src="shots/ct-worklist.png" alt="Worklist"><figcaption>Figure 7.3 · Worklist.</figcaption></figure>
+    <figure><img src="shots/ct-handover.png" alt="Handover check"><figcaption>Figure 7.4 · Handover check.</figcaption></figure>
+    <figure><img src="shots/ct-issues.png" alt="Issues"><figcaption>Figure 7.5 · Issues.</figcaption></figure>
+  </div>
+</section>
+<section class="chapter">
+  <h3>Opening a PO: the journey drawer</h3>
+  <p>Click any PO number in the control tower and a panel slides in from the right. It shows the PO's stage and flag, the next action, a dot for each step of the journey (green = done, red = overdue, grey = not yet), and the <b>Team fields</b> you can edit.</p>
+  <figure><img src="shots/ct-drawer.png" alt="Journey drawer"><figcaption>Figure 7.6 · The journey drawer for a PO waiting for warehouse acknowledgement.</figcaption></figure>
+  <h4>Recording progress on one PO</h4>
+  <ol class="steps">
+    <li>Open the PO from <b>All POs</b> or the <b>Worklist</b>.</li>
+    <li>Under <b>Team fields</b>, set the <b>Decision</b> (and a <b>Reason</b> if declining), or fill <b>Handed to warehouse on</b> + <b>Handed to (person)</b>, or <b>Warehouse ack on</b> + <b>ack by</b>.</li>
+    <li>Click <b>Save team fields</b>. The stage and flag update straight away, and the change is written to the audit log.</li>
+  </ol>
+  <h3>A platform's own tower</h3>
+  <figure><img src="shots/ct-blinkit.png" alt="Blinkit tower"><figcaption>Figure 7.7 · The Blinkit tower: the same screens, filtered to Blinkit.</figcaption></figure>
+</section>
+<section class="chapter">
+  <h3>All POs and Compare platforms</h3>
+  <figure><img src="shots/ct-register.png" alt="All POs"><figcaption>Figure 7.8 · All POs: one row per PO with platform, dates, facility, stage and flag.</figcaption></figure>
+  <figure><img src="shots/ct-compare.png" alt="Compare platforms"><figcaption>Figure 7.9 · Compare platforms.</figcaption></figure>
+</section>
+
+<!-- ============ 8 ============ -->
+<section class="chapter" id="c8">
+  <div class="chapno">Chapter 8</div>
+  <h1>The logic behind the numbers</h1>
+  <p class="lead">This chapter is the rulebook. Everything on the dashboard and in the control tower comes from these rules.</p>
+  <h3>8.1 How a flag is chosen</h3>
+  <p>A PO gets <b>at most one</b> flag: the first rule below that matches, in this order. Flags 1 to 6 count as <b>urgent</b> (the red badges in the sidebar).</p>
+  <figure>
+    <svg viewBox="0 0 760 360" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI, Arial" font-size="11.5">
+      <defs><marker id="a4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0L10,5L0,10z" fill="#8a8178"/></marker></defs>
+      <rect x="290" y="8" width="180" height="40" rx="20" fill="#2b2118"/><text x="380" y="33" fill="#fff" text-anchor="middle" font-weight="700">Has the PO an invoice?</text>
+      <g stroke="#8a8178" stroke-width="1.5" fill="none" marker-end="url(#a4)"><path d="M290,28 C180,28 180,60 180,72"/><path d="M470,28 C580,28 580,60 580,72"/></g>
+      <text x="190" y="64" fill="#8a8178">No (still open)</text><text x="590" y="64" fill="#8a8178">Yes</text>
+      <!-- left -->
+      <g>
+        <rect x="20" y="74" width="330" height="34" rx="7" fill="#fde3e3"/><text x="32" y="96"><tspan font-weight="700">1 Expired</tspan> · expiry date has passed</text>
+        <rect x="20" y="114" width="330" height="34" rx="7" fill="#fde3e3"/><text x="32" y="136"><tspan font-weight="700">2 Expiring soon</tspan> · expires within 3 days</text>
+        <text x="32" y="168" fill="#8a8178" font-weight="700">If Accepted:</text>
+        <rect x="20" y="176" width="330" height="34" rx="7" fill="#fff1d6"/><text x="32" y="198"><tspan font-weight="700">3</tspan> not handed over and older than 1 day</text>
+        <rect x="20" y="216" width="330" height="34" rx="7" fill="#fff1d6"/><text x="32" y="238"><tspan font-weight="700">4</tspan> handed over, no ack for more than 1 day</text>
+        <rect x="20" y="256" width="330" height="34" rx="7" fill="#fff1d6"/><text x="32" y="278"><tspan font-weight="700">5</tspan> acknowledged, PO older than 3 days</text>
+        <text x="32" y="308" fill="#8a8178" font-weight="700">If still Pending:</text>
+        <rect x="20" y="316" width="160" height="34" rx="7" fill="#eeece8"/><text x="30" y="338"><tspan font-weight="700">10</tspan> no date or &gt;30 days</text>
+        <rect x="190" y="316" width="160" height="34" rx="7" fill="#e3efff"/><text x="200" y="338"><tspan font-weight="700">7</tspan> older than 1 day</text>
+      </g>
+      <!-- right -->
+      <g>
+        <rect x="410" y="74" width="330" height="34" rx="7" fill="#fff1d6"/><text x="422" y="96"><tspan font-weight="700">6 In transit overdue</tspan> · &gt;7 days since dispatch</text>
+        <rect x="410" y="114" width="330" height="34" rx="7" fill="#e3efff"/><text x="422" y="136"><tspan font-weight="700">8 GRN pending</tspan> · &gt;7 days since dispatch</text>
+        <rect x="410" y="154" width="330" height="48" rx="7" fill="#e3efff"/><text x="422" y="174"><tspan font-weight="700">9 Credit note pending</tspan> · RTO or shortage/</text><text x="422" y="192">damage, no credit note yet, within 60 days</text>
+        <text x="410" y="236" fill="#4a4239">Days shown are the default SLA settings.</text>
+        <text x="410" y="254" fill="#4a4239">Admins can change them in Settings.</text>
+      </g>
+    </svg>
+    <figcaption>Figure 8.1 · The flag decision tree, read top to bottom; the first match wins.</figcaption>
+  </figure>
+  <table>
+    <tr><th style="width:5%">#</th><th style="width:25%">Flag</th><th style="width:13%">Team</th><th>What to do</th></tr>
+    <tr><td>1</td><td><span class="pill crit">Expired, not dispatched</span></td><td>Order desk</td><td>Dispatch now or ask the platform for an expiry extension.</td></tr>
+    <tr><td>2</td><td><span class="pill crit">Expiring soon</span></td><td>Order desk</td><td>Prioritise dispatch and book the appointment now.</td></tr>
+    <tr><td>3</td><td><span class="pill warnp">Printout not handed to warehouse</span></td><td>Order desk</td><td>Find the printout, hand it to the warehouse, log the date.</td></tr>
+    <tr><td>4</td><td><span class="pill warnp">Warehouse has not acknowledged</span></td><td>Warehouse</td><td>Acknowledge receipt of the PO printout.</td></tr>
+    <tr><td>5</td><td><span class="pill warnp">In warehouse, not dispatched</span></td><td>Warehouse</td><td>Pick, pack and dispatch; log the invoice.</td></tr>
+    <tr><td>6</td><td><span class="pill warnp">In transit overdue</span></td><td>Logistics</td><td>Chase the courier and update the delivery status.</td></tr>
+    <tr><td>7</td><td><span class="pill info">No decision</span></td><td>Order desk</td><td>Decide Accept or Decline and record the reason.</td></tr>
+    <tr><td>8</td><td><span class="pill info">GRN pending</span></td><td>Accounts</td><td>Chase the GRN from the platform.</td></tr>
+    <tr><td>9</td><td><span class="pill info">Credit note pending</span></td><td>Accounts</td><td>Raise or chase the credit note.</td></tr>
+    <tr><td>10</td><td><span class="pill mute">Unaccounted, legacy</span></td><td>Order desk</td><td>Backlog: confirm whether it was declined, expired or lost, then set the decision.</td></tr>
+  </table>
+</section>
+<section class="chapter">
+  <h3>8.2 SLA settings (defaults)</h3>
+  <table>
+    <tr><th>Setting</th><th style="width:14%">Default</th><th>Used by</th></tr>
+    <tr><td>Days to decide</td><td>1</td><td>Flag 7</td></tr>
+    <tr><td>Days to hand over the printout</td><td>1</td><td>Flag 3</td></tr>
+    <tr><td>Days for the warehouse to acknowledge</td><td>1</td><td>Flag 4</td></tr>
+    <tr><td>Days to dispatch</td><td>3</td><td>Flag 5</td></tr>
+    <tr><td>Expiry warning window</td><td>3</td><td>Flag 2</td></tr>
+    <tr><td>Days in transit before chasing</td><td>7</td><td>Flag 6</td></tr>
+    <tr><td>Days to GRN after dispatch</td><td>7</td><td>Flag 8</td></tr>
+    <tr><td>Legacy cut-off (undecided POs older than this)</td><td>30</td><td>Flag 10</td></tr>
+    <tr><td>Credit note window after dispatch</td><td>60</td><td>Flag 9</td></tr>
+  </table>
+  <h3>8.3 How the decision is worked out</h3>
+  <p>The order desk's decision in the app always wins. Until someone records one, the app infers it:</p>
+  <ul>
+    <li>The PO has an invoice → <b>Accepted</b>.</li>
+    <li>The Warehouse Master says not fulfilled or cancelled → <b>Declined</b>, <b>Cancelled</b> or <b>Expired</b> (with the sheet's reason).</li>
+    <li>An appointment is booked → <b>Accepted</b>.</li>
+    <li>Otherwise → <b>Pending</b>.</li>
+  </ul>
+  <h3>8.4 Where invoices come from</h3>
+  <p>A PO can have several invoices (split shipments). The app collects them in this order and never counts the same invoice twice:</p>
+  <ol>
+    <li>The latest Dispatch &amp; GRN Tracker sync (one row per invoice, with status, GRN status, shortages, damages and credit notes).</li>
+    <li>Invoices from invoice uploads that are not on the Tracker.</li>
+    <li>The PO's dispatch record.</li>
+  </ol>
+  <h3>8.5 The journey and its gaps</h3>
+  <p>The journey has eight steps: <b>PO received → Accepted → Printout handed → Warehouse acknowledged → Invoiced → Dispatched → Delivered → GRN done</b>. A later step implies the earlier ones (an invoiced PO counts as accepted and handed over even if nobody recorded it). The <b>gaps</b> count POs that stopped between two steps; POs that were never going to be fulfilled (stage 9) are left out of the gaps.</p>
+  <h3>8.6 Platform detection</h3>
+  <p>When a file has no platform column, or someone picks the wrong platform on upload, the app recognises the platform from the PO number:</p>
+  <table>
+    <tr><th>PO number looks like</th><th>Platform</th><th>Example</th></tr>
+    <tr><td>P followed by 6+ digits</td><td>Zepto</td><td><code>P7654321</code></td></tr>
+    <tr><td>Letters + "PO" + digits</td><td>Swiggy Instamart</td><td><code>DELPO123456</code></td></tr>
+    <tr><td>Starts with FLS</td><td>Flipkart</td><td><code>FLS998877</code></td></tr>
+    <tr><td>12 to 14 digits only</td><td>Blinkit</td><td><code>123456789012</code></td></tr>
+    <tr><td>Starts with IRA</td><td>BigBasket</td><td><code>IRA1234</code></td></tr>
+    <tr><td>Starts with PUR-ORD</td><td>Supertails</td><td><code>PUR-ORD-5512</code></td></tr>
+    <tr><td>"eTrade" in the platform column</td><td>Amazon</td><td>n/a</td></tr>
+  </table>
+  <p>Order of trust: the file's own platform column → the PO-number pattern → the platform you chose when uploading.</p>
+  <h3>8.7 Fill rate and value</h3>
+  <ul>
+    <li><b>PO value</b> = the PO amount; if the PO has no amount, the invoiced value is used.</li>
+    <li><b>Fill rate</b> = invoiced value ÷ PO value (only for POs that have an amount).</li>
+  </ul>
+</section>
+
+<!-- ============ 9 ============ -->
+<section class="chapter" id="c9">
+  <div class="chapno">Chapter 9</div>
+  <h1>Getting data in</h1>
+  <p class="lead">Most data arrives on its own through the sheet syncs. Uploads cover the documents that don't live in a sheet.</p>
+  <h3>9.1 Warehouse Master: the starting point</h3>
+  <p>The Warehouse Master is where every PO number first appears. The app reads its <b>ORDER BOOK</b>, <b>DISPATCH + GRN</b>, <b>GRN</b>, <b>Blinkit</b>, <b>Flipkart</b>, <b>Zepto</b> and <b>Swiggy</b> tabs.</p>
+  <figure>
+    <svg viewBox="0 0 760 210" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI, Arial" font-size="11.5">
+      <defs><marker id="a5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0L10,5L0,10z" fill="#8a8178"/></marker></defs>
+      <rect x="10" y="60" width="150" height="80" rx="10" fill="#e9f7ef" stroke="#1baf7a"/><text x="85" y="94" text-anchor="middle" font-weight="700">Warehouse</text><text x="85" y="112" text-anchor="middle" font-weight="700">Master sheet</text>
+      <rect x="200" y="60" width="150" height="80" rx="10" fill="#fff" stroke="#d6cfc5"/><text x="275" y="90" text-anchor="middle" font-weight="700">Apps Script</text><text x="275" y="108" text-anchor="middle">every 15 minutes</text><text x="275" y="124" text-anchor="middle" font-size="10" fill="#6b6a65">sends all tabs + sync key</text>
+      <rect x="390" y="20" width="170" height="70" rx="10" fill="#2b2118"/><text x="475" y="48" fill="#fff" text-anchor="middle" font-weight="700">New PO numbers</text><text x="475" y="66" fill="#f6a21e" text-anchor="middle">→ created in the app</text>
+      <rect x="390" y="110" width="170" height="70" rx="10" fill="#2b2118"/><text x="475" y="138" fill="#fff" text-anchor="middle" font-weight="700">Existing POs</text><text x="475" y="156" fill="#f6a21e" text-anchor="middle">→ left as they are</text>
+      <rect x="600" y="20" width="150" height="70" rx="10" fill="#fff" stroke="#d6cfc5"/><text x="675" y="48" text-anchor="middle" font-weight="700">Dispatch + GRN</text><text x="675" y="66" text-anchor="middle">applied to each PO</text>
+      <rect x="600" y="110" width="150" height="70" rx="10" fill="#fff" stroke="#d6cfc5"/><text x="675" y="138" text-anchor="middle" font-weight="700">Late cancellations</text><text x="675" y="156" text-anchor="middle">recorded (team's say wins)</text>
+      <g stroke="#8a8178" stroke-width="1.5" fill="none" marker-end="url(#a5)"><path d="M160,100 L198,100"/><path d="M350,90 L388,60"/><path d="M350,110 L388,140"/><path d="M560,55 L598,55"/><path d="M560,145 L598,145"/></g>
+    </svg>
+    <figcaption>Figure 9.1 · The automatic Warehouse Master sync.</figcaption>
+  </figure>
+  <h4>Setting up the automatic sync (once)</h4>
+  <ol class="steps">
+    <li>In the app, open <b>Uploads → Warehouse Master</b> and copy the script shown there.</li>
+    <li>Open the Warehouse Master Google Sheet → <b>Extensions → Apps Script</b>. Delete any code, paste the script.</li>
+    <li>Replace <code>PASTE_THE_SYNC_KEY_HERE</code> with the sync key (Railway → po-control-tower-backend → Variables → <code>SHEET_SYNC_KEY</code>). Save.</li>
+    <li>Choose the function <b>setup</b> and click <b>Run</b>. Allow the permissions Google asks for. This runs a first sync and repeats it every 15 minutes.</li>
+    <li>Back in the app, the <b>Last sync or import</b> box shows the result: PO numbers found, created, already in the app, invoice rows, and a split by platform and decision.</li>
+  </ol>
+  <div class="note"><b>Edit access needed.</b> Only someone who can edit the Warehouse Master can add the script. If you can only view it, ask the sheet's owner to do these steps or to give you edit access.</div>
+  <h4>Manual alternative</h4>
+  <p>Download the sheet as Excel (<b>File → Download → Microsoft Excel</b>) and upload it on the same page with <b>Import Warehouse Master</b>. Uploading again only adds new PO numbers.</p>
+  <figure><img src="shots/warehouse-master.png" alt="Warehouse Master page" style="max-height:380pt;object-fit:cover;object-position:top"><figcaption>Figure 9.2 · Uploads → Warehouse Master.</figcaption></figure>
+</section>
+<section class="chapter">
+  <h3>9.2 The other uploads</h3>
+  <table>
+    <tr><th style="width:20%">Upload</th><th>What to upload</th><th style="width:36%">What it changes</th></tr>
+    <tr><td><b>PO files</b></td><td>The platform's PO export (Excel/CSV), one platform per file or mixed.</td><td>Creates POs and their SKU lines; adds lines to POs that already exist. Platform detected per row.</td></tr>
+    <tr><td><b>Invoices</b></td><td>An invoice register (Excel/CSV) or a <b>Vasy PDF</b> export.</td><td>Matches each invoice to its PO (by PO number, else invoice number) and records invoice no., date, value. Vasy PDFs: <b>Blinkit invoices only</b>; also sets dispatched quantity per SKU.</td></tr>
+    <tr><td><b>GRN</b></td><td>The platform's GRN report.</td><td>GRN number, date, received value and quantities.</td></tr>
+    <tr><td><b>Daily dispatch report</b></td><td>The warehouse's daily dispatch sheet.</td><td>Dispatch date, invoice and transporter per PO.</td></tr>
+    <tr><td><b>Google Sheets sync</b></td><td>No file: connects the Dispatch &amp; GRN Tracker sheet and the "ALL PO DATA" tab.</td><td>Dispatch, delivery, appointment and GRN fields, both ways.</td></tr>
+    <tr><td><b>PRN / DN (Blinkit)</b></td><td>Blinkit's return (PRN) and debit-note (DN) files.</td><td>Returns and debit notes against the PO.</td></tr>
+  </table>
+  <h4>How every upload behaves</h4>
+  <ol class="steps">
+    <li>Choose the file and click upload. The app replies straight away and works in the background, so you can leave the page.</li>
+    <li>A progress bar shows rows done, matched and failed. Large files take a few minutes.</li>
+    <li>When it finishes, open the batch to see each row's result: <b>matched</b>, <b>PO not found</b>, <b>skipped</b> (for example a non-Blinkit invoice in a Vasy PDF) or an error message.</li>
+  </ol>
+  <div class="grid2">
+    <figure><img src="shots/bulk-import.png" alt="PO files upload"><figcaption>Figure 9.3 · Uploads → PO files.</figcaption></figure>
+    <figure><img src="shots/invoice-import.png" alt="Invoice upload"><figcaption>Figure 9.4 · Uploads → Invoices.</figcaption></figure>
+    <figure><img src="shots/grn-import.png" alt="GRN upload"><figcaption>Figure 9.5 · Uploads → GRN.</figcaption></figure>
+    <figure><img src="shots/dispatch-report.png" alt="Daily dispatch report"><figcaption>Figure 9.6 · Uploads → Daily dispatch report.</figcaption></figure>
+  </div>
+</section>
+<section class="chapter">
+  <h3>9.3 Google Sheets sync (Tracker and ALL PO DATA)</h3>
+  <p>This page connects the <b>Master Dispatch &amp; GRN Tracker</b> to the app with its own Apps Script (same sync key). It updates:</p>
+  <ul>
+    <li><b>Dispatch:</b> dispatch date, invoice number and value, docket/AWB, delivery partner, status, comment.</li>
+    <li><b>Delivery:</b> appointment date, delivery date and PO expiry date.</li>
+    <li><b>GRN:</b> when GRN Status is Completed: shortage, damage, excess, discrepancy amount and credit note number.</li>
+  </ul>
+  <p>The optional <b>ALL PO DATA</b> tab gets every PO's current state from the app. Columns with the same names as the Tracker can be edited in the sheet and flow back to the app; app-calculated columns (PO status, fill rate, GRN outcome…) are refreshed on every sync and edits to them are ignored.</p>
+  <figure><img src="shots/sheets-import.png" alt="Google Sheets sync page" style="max-height:420pt;object-fit:cover;object-position:top"><figcaption>Figure 9.7 · Uploads → Google Sheets sync.</figcaption></figure>
+</section>
+
+<!-- ============ 10 ============ -->
+<section class="chapter" id="c10">
+  <div class="chapno">Chapter 10</div>
+  <h1>Purchase orders</h1>
+  <table>
+    <tr><th style="width:24%">Screen</th><th>What it is for</th></tr>
+    <tr><td><b>All POs</b></td><td>Every PO with filters (platform, status, dates) and search. Click a row for the PO page.</td></tr>
+    <tr><td><b>Add a PO</b></td><td>Type a PO in by hand. The platform is guessed from the PO number as you type.</td></tr>
+    <tr><td><b>PO page</b></td><td>One PO: header details, SKU lines, appointment, dispatch, logistics, GRN, returns, documents and change history.</td></tr>
+    <tr><td><b>Not fulfilled</b></td><td>POs that were declined, cancelled or expired, with reasons.</td></tr>
+    <tr><td><b>Expired, not delivered</b></td><td>POs whose expiry passed before delivery.</td></tr>
+    <tr><td><b>PO bin</b></td><td>Deleted POs; an admin can restore them.</td></tr>
+  </table>
+  <figure><img src="shots/pos.png" alt="All POs"><figcaption>Figure 10.1 · Purchase orders → All POs.</figcaption></figure>
+  <div class="grid2">
+    <figure><img src="shots/po-new.png" alt="Add a PO"><figcaption>Figure 10.2 · Add a PO.</figcaption></figure>
+    <figure><img src="shots/po-detail.png" alt="PO page"><figcaption>Figure 10.3 · A PO's own page.</figcaption></figure>
+  </div>
+</section>
+
+<!-- ============ 11 ============ -->
+<section class="chapter" id="c11">
+  <div class="chapno">Chapter 11</div>
+  <h1>Daily work screens</h1>
+  <table>
+    <tr><th style="width:22%">Screen</th><th>What it is for</th></tr>
+    <tr><td><b>My tasks</b></td><td>Tasks assigned to you by the system or a colleague (book appointment, follow up AVV…).</td></tr>
+    <tr><td><b>Appointments</b></td><td>Delivery slots booked with platform warehouses.</td></tr>
+    <tr><td><b>Dispatch</b></td><td>Dispatch plans and records per PO.</td></tr>
+    <tr><td><b>Logistics</b></td><td>Shipments in transit: partner, AWB, status, delivery date.</td></tr>
+    <tr><td><b>GRN</b></td><td>GRN records and reconciliation against the invoice.</td></tr>
+    <tr><td><b>Returns</b></td><td>RTOs and returns.</td></tr>
+    <tr><td><b>Exceptions</b></td><td>Anything the imports could not match or that looks wrong, for someone to fix.</td></tr>
+    <tr><td><b>Dispatch &amp; GRN overview</b></td><td>A dispatch and GRN summary by month, channel, partner and ageing.</td></tr>
+  </table>
+  <div class="grid2">
+    <figure><img src="shots/tasks.png" alt="My tasks"><figcaption>Figure 11.1 · My tasks.</figcaption></figure>
+    <figure><img src="shots/appointments.png" alt="Appointments"><figcaption>Figure 11.2 · Appointments.</figcaption></figure>
+  </div>
+  <figure><img src="shots/dispatch-dashboard.png" alt="Dispatch and GRN overview" style="max-height:400pt;object-fit:cover;object-position:top"><figcaption>Figure 11.3 · Dispatch &amp; GRN overview.</figcaption></figure>
+</section>
+
+<!-- ============ 12 ============ -->
+<section class="chapter" id="c12">
+  <div class="chapno">Chapter 12</div>
+  <h1>Reports</h1>
+  <table>
+    <tr><th style="width:24%">Report</th><th>What you get</th></tr>
+    <tr><td><b>CSV reports</b></td><td>Ready-made exports (POs, dispatch, GRN…) as CSV files for Excel.</td></tr>
+    <tr><td><b>Day-wise dispatch</b></td><td>For a chosen date: what was dispatched, by SKU and by PO, as Excel.</td></tr>
+    <tr><td><b>Upload summaries</b></td><td>The history of every PO file upload, with its counts.</td></tr>
+    <tr><td><b>Compilations</b></td><td>Saved PO/facility summaries with PO quantity, for sharing.</td></tr>
+  </table>
+  <figure><img src="shots/reports.png" alt="CSV reports"><figcaption>Figure 12.1 · Reports → CSV reports.</figcaption></figure>
+</section>
+
+<!-- ============ 13 ============ -->
+<section class="chapter" id="c13">
+  <div class="chapno">Chapter 13</div>
+  <h1>Admin and settings</h1>
+  <h3>Settings</h3>
+  <ul>
+    <li><b>Control Tower SLA days:</b> the nine settings in section 8.2. Changing them re-flags POs within a minute.</li>
+    <li><b>Risk thresholds:</b> the days-to-expiry bands used to colour risk on PO screens (defaults 1 / 2 / 4 / 7). They must be whole numbers in ascending order.</li>
+  </ul>
+  <p>Only admins can save settings; every change goes into the audit log.</p>
+  <figure><img src="shots/settings.png" alt="Settings" style="max-height:420pt;object-fit:cover;object-position:top"><figcaption>Figure 13.1 · Admin → Settings.</figcaption></figure>
+  <h3>Masters, locations and users</h3>
+  <ul>
+    <li><b>Masters:</b> customers, transporters and owners used in dropdowns (delivery partner list in the sheet comes from here).</li>
+    <li><b>Locations &amp; TAT:</b> platform warehouses and the transit time to each.</li>
+    <li><b>Users:</b> add people, set their role, reset passwords, deactivate leavers.</li>
+  </ul>
+  <div class="grid2">
+    <figure><img src="shots/masters.png" alt="Masters"><figcaption>Figure 13.2 · Masters.</figcaption></figure>
+    <figure><img src="shots/users.png" alt="Users"><figcaption>Figure 13.3 · Users.</figcaption></figure>
+  </div>
+</section>
+
+<!-- ============ 14 ============ -->
+<section class="chapter" id="c14">
+  <div class="chapno">Chapter 14</div>
+  <h1>Problems and answers</h1>
+  <table>
+    <tr><th style="width:34%">What you see</th><th>What to do</th></tr>
+    <tr><td>A PO from the sheet is missing in the app</td><td>Wait up to 15 minutes for the next sync, then check <b>Uploads → Warehouse Master → Last sync</b>. Check that the PO number is typed the same way in the sheet.</td></tr>
+    <tr><td>An upload row says <b>PO not found</b></td><td>The PO number in the file doesn't match any PO. Fix the number in the file, or make sure the PO came in from the Warehouse Master first, then upload again.</td></tr>
+    <tr><td>Vasy PDF rows say <b>skipped</b></td><td>Normal: only Blinkit invoices are imported from Vasy PDFs.</td></tr>
+    <tr><td>A PO shows the wrong platform</td><td>Check the PO number pattern (section 8.6) and the platform column in the file. Ask an admin to correct the PO if it is still wrong.</td></tr>
+    <tr><td>A PO is flagged but the work is done</td><td>Record the step: decision, handover or ack in the journey drawer; dispatch or GRN in the Tracker sheet or an upload.</td></tr>
+    <tr><td>Numbers differ between two screens</td><td>Check that both use the same period. Remember dashboard activity counts by event date, while totals count by PO date.</td></tr>
+    <tr><td>The page looks old after an update</td><td>Press <b>Ctrl + Shift + R</b> once.</td></tr>
+    <tr><td>"Not allowed" when saving</td><td>Your role is read-only for that screen; ask an admin.</td></tr>
+  </table>
+</section>
+
+<!-- ============ 15 ============ -->
+<section class="chapter" id="c15">
+  <div class="chapno">Chapter 15</div>
+  <h1>Words used in the app</h1>
+  <table>
+    <tr><th style="width:24%">Word</th><th>Meaning</th></tr>
+    <tr><td><b>PO</b></td><td>Purchase order sent by a platform.</td></tr>
+    <tr><td><b>Platform / channel</b></td><td>The buyer: Blinkit, Zepto, Swiggy Instamart, BigBasket, Flipkart, Amazon, Supertails, FirstClub, Tata 1mg.</td></tr>
+    <tr><td><b>Facility / location</b></td><td>The platform warehouse the PO is to be delivered to.</td></tr>
+    <tr><td><b>Printout / handover</b></td><td>The paper PO given to the warehouse so they can pick it.</td></tr>
+    <tr><td><b>Ack</b></td><td>The warehouse confirming it has the printout.</td></tr>
+    <tr><td><b>AWB / docket</b></td><td>The courier's tracking number.</td></tr>
+    <tr><td><b>Appointment</b></td><td>A delivery slot at the platform warehouse.</td></tr>
+    <tr><td><b>GRN</b></td><td>Goods received note: the platform's confirmation of what it received.</td></tr>
+    <tr><td><b>RTO</b></td><td>Return to origin: the shipment came back.</td></tr>
+    <tr><td><b>Credit note (CN)</b></td><td>A note reducing the amount owed, for returns, shortages or damages.</td></tr>
+    <tr><td><b>PRN / DN</b></td><td>Blinkit's purchase return note and debit note.</td></tr>
+    <tr><td><b>Fill rate</b></td><td>Invoiced value ÷ PO value.</td></tr>
+    <tr><td><b>SLA</b></td><td>The number of days a step is allowed to take before it is flagged.</td></tr>
+    <tr><td><b>Sync key</b></td><td>The password that lets the Google Sheets scripts send data to the app.</td></tr>
+  </table>
+</section>
+
+<!-- ============ 16 ============ -->
+<section class="chapter" id="c16">
+  <div class="chapno">Chapter 16</div>
+  <h1>Connected sheets</h1>
+  <p class="lead">Click a card to open the sheet in Google Sheets. You need access to the sheet in your Google account.</p>
+  <a class="sheetcard" href="https://docs.google.com/spreadsheets/d/10vLMqODDWeo8g4wFCmYATH59hhg2s4W7VTWp1e8euQo/edit">
+    <b>Warehouse Master FY2627</b>
+    <span>The source of every PO number. Synced into the app every 15 minutes (Chapter 9.1).</span>
+    <span class="url">docs.google.com/spreadsheets/d/10vLMqODDWeo8g4wFCmYATH59hhg2s4W7VTWp1e8euQo</span>
+  </a>
+  <a class="sheetcard" href="https://docs.google.com/spreadsheets/d/1jl5XgdJSWcRj_OMB_iK1wR62zTbsOwFuwOikoSU9ChA/edit">
+    <b>Master Dispatch &amp; GRN Tracker</b>
+    <span>Dispatch, delivery and GRN updates per invoice (Chapter 9.3).</span>
+    <span class="url">docs.google.com/spreadsheets/d/1jl5XgdJSWcRj_OMB_iK1wR62zTbsOwFuwOikoSU9ChA</span>
+  </a>
+  <a class="sheetcard" href="https://docs.google.com/spreadsheets/d/1o1SJiOzG10x3GloEEKFdcpTiliGUa5XgogUzvJKUVr0/edit">
+    <b>Nootie PO Data: App Snapshot ("ALL PO DATA")</b>
+    <span>Every PO's current state from the app; matching columns can be edited and flow back.</span>
+    <span class="url">docs.google.com/spreadsheets/d/1o1SJiOzG10x3GloEEKFdcpTiliGUa5XgogUzvJKUVr0</span>
+  </a>
+  <a class="sheetcard" href="https://docs.google.com/spreadsheets/d/1NMr0ObBSNndhMpFMxmQQJM4rX3lCwm4Prbo9rMppx2E/edit">
+    <b>PO Control Tower: MASTER (all data)</b>
+    <span>The control tower's full ledger of POs and invoices.</span>
+    <span class="url">docs.google.com/spreadsheets/d/1NMr0ObBSNndhMpFMxmQQJM4rX3lCwm4Prbo9rMppx2E</span>
+  </a>
+  <a class="sheetcard" href="https://docs.google.com/spreadsheets/d/1XkWpydTQPviypiN2-xmhfYzPyc_hTRHRFLKQDVLMT98/edit">
+    <b>PO Control Tower: Tracking (app data)</b>
+    <span>Team tracking fields (decision, handover, acknowledgement) kept alongside the control tower.</span>
+    <span class="url">docs.google.com/spreadsheets/d/1XkWpydTQPviypiN2-xmhfYzPyc_hTRHRFLKQDVLMT98</span>
+  </a>
+  <a class="sheetcard" href="https://app.mynootie.com">
+    <b>The app: app.mynootie.com</b>
+    <span>Log in here. Uploads → Warehouse Master and Uploads → Google Sheets sync hold the current scripts.</span>
+    <span class="url">app.mynootie.com</span>
+  </a>
+</section>
+
+</body>
+</html>
