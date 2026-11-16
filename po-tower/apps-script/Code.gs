@@ -28,6 +28,7 @@ function doPost(e) {
     if (r.key !== key) return out_({ error: 'unauthorized' });
     var tool = r.tool, a = r.args || {};
     if (tool === 'sync_master') return out_(syncMaster());
+    if (tool === 'verify_pin') return out_({ ok: pinOk_(r.pin) });
     var id = a.spreadsheetId || a.spreadsheet_id;
     if (tool === 'get_values') return out_(getValues_(id, a.range));
     if (tool === 'update_values' || tool === 'append_values') {
@@ -67,7 +68,12 @@ function readRange_(ss, a1) {
 
 function getValues_(id, range) {
   if (id !== SRC_ID && id !== TRK_ID) throw new Error('sheet not allowed');
-  return { range: range, values: readRange_(SpreadsheetApp.openById(id), range) };
+  var vals = readRange_(SpreadsheetApp.openById(id), range);
+  // never hand the stored PIN hash to a browser: show only that one is set
+  if (id === TRK_ID) vals = vals.map(function (row) {
+    return (String(row[0] || '').trim() === 'editor_pin_hash' && row[1]) ? [row[0], '(set)'] : row;
+  });
+  return { range: range, values: vals };
 }
 
 function storedPin_() {
@@ -84,7 +90,20 @@ function checkPin_(pin, tool, range) {
     if (tool === 'update_values' && /^SETTINGS!A12/i.test(range || '')) return;
     throw new Error('no editor PIN set yet: unlock editing in the website to set one');
   }
-  if (String(pin || '') !== stored) throw new Error('wrong editor PIN');
+  if (!pinOk_(pin)) throw new Error('wrong editor PIN');
+}
+
+// Same hash the website computes: SHA-256 of 'potower|' + PIN. The browser sends the PIN, never the hash.
+function sha_(s) {
+  return Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, s, Utilities.Charset.UTF_8)
+    .map(function (b) { return ('0' + (b & 0xff).toString(16)).slice(-2); }).join('');
+}
+function pinOk_(pin) {
+  var stored = storedPin_();
+  if (!stored) return false;
+  var ok = sha_('potower|' + String(pin || '')) === stored;
+  if (!ok) Utilities.sleep(1500);   // slows down guessing
+  return ok;
 }
 
 function sheetAndRange_(a1) {

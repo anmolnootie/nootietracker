@@ -1532,7 +1532,8 @@ Object.assign(UI,{
 (function(){
   if(typeof claude!=='undefined'&&claude.use)return;            // running inside Claude: nothing to do
   const CFG=window.PO_CONFIG||{};
-  let pinSent='';
+  let pinSent='';try{pinSent=sessionStorage.getItem('potower_pin_raw')||'';}catch(e){}
+  window.setEditPin=function(p){pinSent=p||'';try{if(p)sessionStorage.setItem('potower_pin_raw',p);else sessionStorage.removeItem('potower_pin_raw');}catch(e){}};
   const KEYNAME='potower_viewkey';
   let pendingKey=null;
   function askKey(msg){
@@ -1550,13 +1551,11 @@ Object.assign(UI,{
     if(!CFG.backend)throw new Error('The website is not connected yet: set the backend URL in config.js');
     let key='';try{key=localStorage.getItem(KEYNAME)||'';}catch(e){}
     if(!key)key=await askKey();
-    const body={key,tool,args,pin:pinSent||(typeof S!=='undefined'?S.pinHash:'')};
+    const body={key,tool,args,pin:pinSent};
     const r=await fetch(CFG.backend,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(body)});
     const j=await r.json();
     if(j&&j.error==='unauthorized'){try{if(localStorage.getItem(KEYNAME)===key)localStorage.removeItem(KEYNAME);}catch(e){}await askKey('That key did not work. Try again.');return call(tool,args,false);}
     if(j&&j.error)throw new Error(j.error);
-    if(tool==='get_values'&&/^SETTINGS!/i.test(args.range||'')){(j.values||[]).forEach(row=>{if(String(row[0]||'').trim()==='editor_pin_hash'&&row[1])pinSent=String(row[1]);});}
-    if(tool==='update_values'&&/^SETTINGS!A12/i.test(args.range||'')&&args.values&&args.values[0])pinSent=String(args.values[0][1]||'');
     return j;
   }
   window.claude={use:async()=>({callTool:async(server,tool,args)=>call(tool,args)})};
@@ -1635,7 +1634,12 @@ function copyText(txt){
 async function doUnlock(){
   const name=val('u-name'),pin=val('u-pin');
   if(!name){UI.toast('Enter your name.',true);return;}
-  if(!S.pinHash){const p2=val('u-pin2');if(pin.length<4){UI.toast('The PIN needs at least 4 characters.',true);return;}if(pin!==p2){UI.toast('The two PINs do not match.',true);return;}savePin(await sha(pin));}
+  if(!S.pinHash){const p2=val('u-pin2');if(pin.length<4){UI.toast('The PIN needs at least 4 characters.',true);return;}if(pin!==p2){UI.toast('The two PINs do not match.',true);return;}savePin(await sha(pin));if(window.setEditPin)window.setEditPin(pin);}
+  else if(window.setEditPin&&S.mode==='live'){            // website: the server checks the PIN, the hash never leaves it
+    window.setEditPin(pin);
+    let ok=false;try{const r=await sheets('verify_pin',{spreadsheetId:TRK_ID});ok=!!(r&&r.ok);}catch(e){UI.toast('Could not check the PIN: '+e.message,true);window.setEditPin('');return;}
+    if(!ok){window.setEditPin('');UI.toast('Wrong PIN.',true);return;}
+  }
   else if((await sha(pin))!==S.pinHash){UI.toast('Wrong PIN.',true);return;}
   S.edit=true;S.user=name;lsSet('potower_user',name);try{sessionStorage.setItem('potower_edit',name);}catch(e){}
   const back=UI.drawer&&UI.drawer.back;UI.drawer=back||null;UI.render();UI.toast('Editing unlocked. Changes are saved under '+name+'.');
@@ -1659,8 +1663,8 @@ function actionClick(act,arg,el){
     case 'copyreg':{const r=UI.regRows();copyText(['PO\tPlatform\tPO date\tFacility\tExpiry\tValue\tStage\tDecision\tProblem\tInvoices\tInvoice Nos\tAppointment\tDispatched\tDelivered\tPartner / AWB\tGRN Nos\tE-way Bill\tOwner'].concat(r.map(d=>[d.po,d.plat,d.date||'',d.loc,d.exp||'',Math.round(d.value||0),STAGES[d.stage-1].name,d.dec,d.pri?FLAGS[d.pri].name:'',d.inv.n||'',invCell(d).inv,d.appt||'',invCell(d).disp,invCell(d).deliv,invCell(d).awb,invCell(d).grn,d.ewb||'',d.owner].join('\t'))).join('\n'));break;}
     case 'unlock':UI.openDrawer({type:'unlock',back:UI.drawer&&UI.drawer.type!=='unlock'?UI.drawer:null});break;
     case 'dounlock':doUnlock();break;
-    case 'lock':S.edit=false;try{sessionStorage.removeItem('potower_edit');}catch(e){}UI.drawer=null;UI.render();UI.toast('Locked. The app is view-only again.');break;
-    case 'savepin':{const p=val('new-pin');if(p.length<4){UI.toast('The PIN needs at least 4 characters.',true);break;}sha(p).then(h=>{savePin(h);UI.toast('Editor PIN changed.');UI.render();});break;}
+    case 'lock':if(window.setEditPin)window.setEditPin('');S.edit=false;try{sessionStorage.removeItem('potower_edit');}catch(e){}UI.drawer=null;UI.render();UI.toast('Locked. The app is view-only again.');break;
+    case 'savepin':{const p=val('new-pin');if(p.length<4){UI.toast('The PIN needs at least 4 characters.',true);break;}sha(p).then(async h=>{savePin(h);enqueue('pinset',async()=>{if(window.setEditPin)window.setEditPin(p);});UI.toast('Editor PIN changed.');UI.render();});break;}
     case 'po':UI.openDrawer({type:'po',po:arg});break;
     case 'accept':saveTrk(arg,{dec:'Accepted',printout:today},'Accepted','Accepted from worklist');UI.toast('Accepted '+arg);UI.render();break;
     case 'handed':UI.openDrawer({type:'hand1',po:arg,mode:'handed'});break;
