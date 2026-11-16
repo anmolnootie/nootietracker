@@ -1964,7 +1964,10 @@ recompute();UI.render();
     if(keep.length){bulkSave(keep.map(po=>({po,patch:local.trk[po]})),'Local entries synced',keep.length+' POs entered while offline');UI.toast(keep.length+' offline entries were saved to Google Sheets');}
     lsSet('potower_local',null);
   }
-  setInterval(()=>{if(S.mode==='live'&&!S.busy&&!document.hidden&&!UI.drawer)Q.then(()=>loadLive());},300000);
+  let lastLoad=Date.now();const quiet=()=>S.mode==='live'&&!S.busy&&!document.hidden&&!UI.drawer&&!(document.activeElement&&/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName));
+  const reloadIfQuiet=()=>{if(quiet()){lastLoad=Date.now();Q.then(()=>loadLive());}};
+  setInterval(reloadIfQuiet,60000);
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden&&Date.now()-lastLoad>20000)reloadIfQuiet();});
 })();
 
 </script>

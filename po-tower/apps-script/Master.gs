@@ -240,6 +240,31 @@ function setupMasterSync() {
   return refreshMaster();
 }
 
+// ---------- instant refresh ----------
+// An installable edit trigger: when someone types in MASTER, INVOICES, CLAIM DATA or ISSUES, the calculated columns are
+// rebuilt straight away (about 20 to 40 seconds) instead of waiting for the 10-minute timer. Edits made while a refresh is
+// running are picked up by one extra pass. Typing in the view-only tabs is ignored (they are rebuilt anyway).
+var LIVE_TABS_ = { 'MASTER': 1, 'INVOICES': 1, 'CLAIM DATA': 1, 'ISSUES': 1, 'SETTINGS': 1 };
+function onSheetEdit(e) {
+  try {
+    var name = e && e.range ? e.range.getSheet().getName() : '';
+    if (!LIVE_TABS_[name]) return;
+    var props = PropertiesService.getScriptProperties();
+    props.setProperty('DIRTY_AT', String(Date.now()));
+    for (var pass = 0; pass < 3; pass++) {
+      var seen = props.getProperty('DIRTY_AT');
+      var r = refreshMaster();
+      if (r && r.skipped && /already running/.test(r.skipped)) return;   // the running pass will see DIRTY_AT change and loop
+      if (props.getProperty('DIRTY_AT') === seen) return;                 // nothing newer arrived while we worked
+    }
+  } catch (err) { console.error('onSheetEdit: ' + err); }
+}
+function setupInstantRefresh() {
+  ScriptApp.getProjectTriggers().forEach(function (t) { if (t.getHandlerFunction() === 'onSheetEdit') ScriptApp.deleteTrigger(t); });
+  ScriptApp.newTrigger('onSheetEdit').forSpreadsheet(SpreadsheetApp.openById(MASTER_ID)).onEdit().create();
+  return 'Instant refresh is on: edits in MASTER, INVOICES, CLAIM DATA and ISSUES refresh the calculated columns right away.';
+}
+
 // ---------- one-time move to a single sheet ----------
 function copyTab_(from, to, name, rng) {
   var src = from.getSheetByName(name); if (!src) return 0;
@@ -278,6 +303,7 @@ function setupOneSheet() {
   isx.getRange(1, 1, 1, INV_HEADERS_.length).setValues([INV_HEADERS_]);
   try { ss.getSheetByName('MASTER').showColumns(11); } catch (e) {}
   report.refresh = setupMasterSync();
+  report.instant = setupInstantRefresh();
   return report;
 }
 
