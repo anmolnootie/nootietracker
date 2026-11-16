@@ -234,10 +234,13 @@ function sameShown_(t, v) {
   if (typeof v === 'number') { var r = Math.round(v); return t === String(v) || t === String(r) || t === String(r).replace(/\B(?=(\d{3})+(?!\d))/g, ',') || t === (v * 100).toFixed(1) + '%'; }
   return t === String(v).trim();
 }
+var SNAP_RAW_ = null;
 function readSnap_(ss, compact) {
+  SNAP_RAW_ = null;
   if (!ss.getSheetByName(SYNC_TAB_)) return null;
   var snap = {}, colsOf = {};
-  readRange_(ss, SYNC_TAB_ + '!A1:BB40000').forEach(function (r) {
+  SNAP_RAW_ = readRange_(ss, SYNC_TAB_ + '!A1:BB40000');
+  SNAP_RAW_.forEach(function (r) {
     var t = r[0], po = normPo(r[1]); if (!t || !po) return;
     var m = snap[t] = snap[t] || {}; if (m[po]) return;
     if (!compact) { m[po] = pad_(r.slice(1), MASTER_COLS_); return; }          // the first layout kept the whole row
@@ -254,7 +257,7 @@ function writeSnap_(ss, rows, fresh) {
   ensureCols_(sh, w);
   if (sh.getMaxRows() < rows.length + 1) sh.insertRowsAfter(sh.getMaxRows(), rows.length + 1 - sh.getMaxRows());
   if (fresh) sh.getRange(1, 1, sh.getMaxRows(), sh.getMaxColumns()).clearContent().setNumberFormat('@');
-  var old = fresh ? [] : readRange_(ss, SYNC_TAB_ + '!A1:BB40000');
+  var old = fresh ? [] : (SNAP_RAW_ || readRange_(ss, SYNC_TAB_ + '!A1:BB40000'));
   rows = rows.map(function (r) { return pad_(r, w); });
   for (var i = 0; i < rows.length; i += 500) {
     var ch = rows.slice(i, i + 500), same = true;
@@ -307,8 +310,9 @@ function setupLayout() { layout_(SpreadsheetApp.openById(MASTER_ID)); Properties
 function writeRows_(sh, startRow, rows, ncols, shown, skip) {   // in place: the tab is never blanked while people are typing in it
   var need = startRow + Math.max(rows.length, 1) - 1;
   if (need > sh.getMaxRows()) sh.insertRowsAfter(sh.getMaxRows(), need - sh.getMaxRows());
-  writeDiff_(sh, startRow, 1, rows, shown, skip);
-  if (shown.length > rows.length) sh.getRange(startRow + rows.length, 1, shown.length - rows.length, ncols).clearContent();
+  var wrote = writeDiff_(sh, startRow, 1, rows, shown, skip);
+  if (shown.length > rows.length) { sh.getRange(startRow + rows.length, 1, shown.length - rows.length, ncols).clearContent(); wrote++; }
+  return wrote;
 }
 
 // Finds what people typed since the last pass and saves it. Returns how many cells were saved.
@@ -384,7 +388,8 @@ function reconcile_(ss, snap, T0, byPo, mRow) {
 }
 
 function syncPass_(props) {
-  var ss = SpreadsheetApp.openById(MASTER_ID), began = Date.now();
+  var ss = SpreadsheetApp.openById(MASTER_ID), began = Date.now(), lap = began, laps = [];
+  var tick = function (k) { var now = Date.now(); laps.push(k + ' ' + Math.round((now - lap) / 1000)); lap = now; };
   var m = ss.getSheetByName('MASTER'), isx = ss.getSheetByName('INVOICES');
   if (props.getProperty('LAYOUT') !== LAYOUT_V_) { props.setProperty('LAYOUT', LAYOUT_V_); try { layout_(ss); } catch (e) { console.error('layout: ' + e); } }
   normDates_(m, 3, Math.max(m.getLastRow() - 2, 0), DATE_COLS_);
@@ -398,6 +403,7 @@ function syncPass_(props) {
   var T0 = { MASTER: a.raw.map(function (r) { return pad_(r, MASTER_COLS_); }) };
   PLAT_TABS_.forEach(function (t) { if (ss.getSheetByName(t)) T0[t] = readRange_(ss, "'" + t + "'!A3:BA14000").map(function (r) { return pad_(r, MASTER_COLS_); }); });
   var mRow = {}; a.raw.forEach(function (r, i) { var p = normPo(r[0]); if (p && !mRow[p]) mRow[p] = i + 3; });
+  tick('read');
   var applied = snap ? reconcile_(ss, snap, T0, byPo, mRow) : 0;
   if (applied) {                                                   // recalculate with what was just saved
     SpreadsheetApp.flush();
@@ -408,6 +414,7 @@ function syncPass_(props) {
   // somebody added or moved rows while this was calculating: skip this round rather than write onto the wrong PO
   var again = readRange_(ss, 'MASTER!A3:BA14000').map(function (r) { return pad_(r, MASTER_COLS_); });
   if (again.length !== pos.length || again.map(function (r) { return normPo(r[0]); }).join('|') !== pos.join('|')) return { ok: false, skipped: 'the sheet changed during the refresh', applied: applied };
+  tick('save');
   props.setProperty('SYNC_STATE', 'writing');
   var pending = {}, nPending = 0;
   var mark = function (name, po, tc) { ((pending[name] = pending[name] || {})[po] = pending[name][po] || {})[tc] = 1; nPending++; };
@@ -419,14 +426,14 @@ function syncPass_(props) {
     var o = m0[po];
     mIn.forEach(function (c) { var t1 = r[c.tc] || '', t0 = o ? (o[c.tc] || '') : ''; if (t1 !== t0) { byPo[po][c.tc] = t1; mark('MASTER', po, c.tc); } });
   });
-  var used = {};
+  var used = {}, mWrote = 0, shownNow = {};
   var aligned = pos.map(function (po) { if (po && byPo[po] && !used[po]) { used[po] = 1; return byPo[po]; } return null; });
   if (n) {
     CALC_BLOCKS_.forEach(function (b) {
       var w = b[1] - b[0] + 1;
       var block = aligned.map(function (r) { var x = []; for (var j = 0; j < w; j++) x.push(r ? r[b[0] - 1 + j] : ''); return x; });
       var shown = again.map(function (r) { return r.slice(b[0] - 1, b[1]); });
-      writeDiff_(m, 3, b[0], block, shown, 41 >= b[0] && 41 <= b[1] ? 41 - b[0] : -1);
+      mWrote += writeDiff_(m, 3, b[0], block, shown, 41 >= b[0] && 41 <= b[1] ? 41 - b[0] : -1);
     });
     m.getRange(3, 41, n, 1).setValues(aligned.map(function (r) { return [r ? stamp : '']; }));
   }
@@ -455,12 +462,13 @@ function syncPass_(props) {
     });
     var title = t + '  |  ' + rows.length + ' POs  |  TWO-WAY: whatever you type here is saved to MASTER / INVOICES and shown on the website. Add a new PO in the first empty row. Calculated columns (Stage, Fill %, Age and the like) cannot be typed.';
     if (sh.getRange(1, 1).getDisplayValue() !== title) sh.getRange(1, 1).setValue(title);
-    writeRows_(sh, 3, rows.concat(keep), MASTER_COLS_, T1, stampCol);
+    if (!writeRows_(sh, 3, rows.concat(keep), MASTER_COLS_, T1, stampCol)) shownNow[t] = T1;   // nothing changed: what was read is what is there
     if (rows.length) sh.getRange(3, stampCol + 1, rows.length, 1).setValues(rows.map(function () { return [stamp]; }));
     wrote[t] = rows.length;
   });
   // remember exactly what each tab shows now, so the next pass can tell what a person changed
   SpreadsheetApp.flush();
+  tick('write');
   var snapRows = [];
   var remember = function (name, shown, count) {
     var seen = {}, pend = pending[name] || {}, cols = inputCols_(name);
@@ -470,10 +478,11 @@ function syncPass_(props) {
       snapRows.push([name, r[0]].concat(cols.map(function (c) { return pend[p] && pend[p][c.tc] ? PENDING_ : (r[c.tc] === undefined ? '' : r[c.tc]); })));
     }
   };
-  remember('MASTER', readRange_(ss, 'MASTER!A3:BA14000'), n);
-  PLAT_TABS_.forEach(function (t) { if (wrote[t] !== undefined) remember(t, readRange_(ss, "'" + t + "'!A3:BA14000"), wrote[t]); });
+  remember('MASTER', mWrote ? readRange_(ss, 'MASTER!A3:BA14000') : again, n);
+  PLAT_TABS_.forEach(function (t) { if (wrote[t] !== undefined) remember(t, shownNow[t] || readRange_(ss, "'" + t + "'!A3:BA14000"), wrote[t]); });
   writeSnap_(ss, snapRows, !compact);
   SpreadsheetApp.flush();
+  tick('record');
   props.setProperty('SNAP_V', SNAP_V_);
   props.setProperty('SYNC_STATE', 'ok');
   // from here on nothing can lose an entry: the rest is reporting
@@ -481,7 +490,7 @@ function syncPass_(props) {
   try {
     nClaims = claimsTab_(ss, a);
     var rm = ss.getSheetByName('READ ME');
-    if (rm) rm.getRange('A4').setValue('Every tab is two-way. Last sync: ' + stamp + ' IST (took ' + Math.round((Date.now() - began) / 1000) + ' seconds). This sheet is the only record: the website and the team both read and write it.');
+    if (rm) rm.getRange('A4').setValue('Every tab is two-way. Last sync: ' + stamp + ' IST (took ' + Math.round((Date.now() - began) / 1000) + ' seconds: ' + laps.join(', ') + '). This sheet is the only record: the website and the team both read and write it.');
   } catch (e) { console.error('after-sync: ' + e); }
   return { ok: true, claims: nClaims, pos: a.D.length, invoices: a.I.length, at: stamp, saved: applied, pending: nPending, seconds: Math.round((Date.now() - began) / 1000) };
 }

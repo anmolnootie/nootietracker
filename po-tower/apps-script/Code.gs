@@ -58,7 +58,7 @@ function readRange_(ss, a1) {
   if (!sh) throw new Error('tab not found: ' + name);
   var m = ref.match(/^([A-Z]+)(\d+):([A-Z]+)(\d+)$/);
   var col = function (s) { var n = 0; for (var k = 0; k < s.length; k++) n = n * 26 + s.charCodeAt(k) - 64; return n; };
-  var r1 = +m[2], c1 = col(m[1]), r2 = Math.min(+m[4], sh.getMaxRows()), c2 = Math.min(col(m[3]), sh.getMaxColumns());
+  var r1 = +m[2], c1 = col(m[1]), r2 = Math.min(+m[4], sh.getMaxRows(), sh.getLastRow()), c2 = Math.min(col(m[3]), sh.getMaxColumns());   // only as far down as there is data: reading empty rows was most of the time a sync took
   if (r2 < r1 || c2 < c1) return [];
   var v = sh.getRange(r1, c1, r2 - r1 + 1, c2 - c1 + 1).getDisplayValues();
   var last = v.length;
