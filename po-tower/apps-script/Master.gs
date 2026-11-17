@@ -52,7 +52,7 @@ function organiseTabs_(ss) {
     ss.setActiveSheet(sh); ss.moveActiveSheet(i + 1);
     if (TAB_COLORS_[name]) sh.setTabColor(TAB_COLORS_[name]);
   });
-  ['USERS', '_SYNC'].forEach(function (name) { var sh = ss.getSheetByName(name); if (sh && !sh.isSheetHidden()) { try { sh.hideSheet(); } catch (e) {} } });
+  ['USERS', '_SYNC', '_SYNC_NEXT'].forEach(function (name) { var sh = ss.getSheetByName(name); if (sh && !sh.isSheetHidden()) { try { sh.hideSheet(); } catch (e) {} } });
   if (first) ss.setActiveSheet(first);
 }
 
@@ -234,13 +234,16 @@ function sameShown_(t, v) {
   if (typeof v === 'number') { var r = Math.round(v); return t === String(v) || t === String(r) || t === String(r).replace(/\B(?=(\d{3})+(?!\d))/g, ',') || (/%$/.test(t) && Math.abs(parseFloat(t.replace(/,/g, '')) - v * 100) < 0.0501); }
   return t === String(v).trim();
 }
-var SNAP_RAW_ = null;
-function readSnap_(ss, compact) {
-  SNAP_RAW_ = null;
-  if (!ss.getSheetByName(SYNC_TAB_)) return null;
+var NEXT_TAB_ = '_SYNC_NEXT';   // what the pass in progress is about to put on each tab: lets an interrupted pass be picked up safely
+var SNAP_RAW_ = {};
+function enc_(v) { return typeof v === 'number' ? '¤' + v : (v === null || v === undefined ? '' : String(v)); }
+function dec_(v) { return typeof v === 'string' && v.charAt(0) === '¤' ? Number(v.slice(1)) : v; }
+function readSnap_(ss, sheetName, compact) {
+  SNAP_RAW_[sheetName] = null;
+  if (!ss.getSheetByName(sheetName)) return null;
   var snap = {}, colsOf = {};
-  SNAP_RAW_ = readRange_(ss, SYNC_TAB_ + '!A1:BB40000');
-  SNAP_RAW_.forEach(function (r) {
+  SNAP_RAW_[sheetName] = readRange_(ss, sheetName + '!A1:BB40000');
+  SNAP_RAW_[sheetName].forEach(function (r) {
     var t = r[0], po = normPo(r[1]); if (!t || !po) return;
     var m = snap[t] = snap[t] || {}; if (m[po]) return;
     if (!compact) { m[po] = pad_(r.slice(1), MASTER_COLS_); return; }          // the first layout kept the whole row
@@ -252,12 +255,12 @@ function readSnap_(ss, compact) {
 }
 // Only the chunks that changed are rewritten, so a quiet pass costs almost nothing.
 function sameRow_(a, b, w) { for (var j = 0; j < w; j++) if ((a[j] === undefined ? '' : a[j]) !== (b[j] === undefined ? '' : b[j])) return false; return true; }
-function writeSnap_(ss, rows, fresh) {
-  var sh = ss.getSheetByName(SYNC_TAB_) || ss.insertSheet(SYNC_TAB_), w = snapWidth_();
+function writeSnap_(ss, sheetName, rows, fresh) {
+  var sh = ss.getSheetByName(sheetName) || ss.insertSheet(sheetName), w = snapWidth_();
   ensureCols_(sh, w);
   if (sh.getMaxRows() < rows.length + 1) sh.insertRowsAfter(sh.getMaxRows(), rows.length + 1 - sh.getMaxRows());
   if (fresh) sh.getRange(1, 1, sh.getMaxRows(), sh.getMaxColumns()).clearContent().setNumberFormat('@');
-  var old = fresh ? [] : (SNAP_RAW_ || readRange_(ss, SYNC_TAB_ + '!A1:BB40000'));
+  var old = fresh ? [] : (SNAP_RAW_[sheetName] || readRange_(ss, sheetName + '!A1:BB40000'));
   rows = rows.map(function (r) { return pad_(r, w); });
   for (var i = 0; i < rows.length; i += 500) {
     var ch = rows.slice(i, i + 500), same = true;
@@ -268,15 +271,24 @@ function writeSnap_(ss, rows, fresh) {
   try { if (!sh.isSheetHidden()) sh.hideSheet(); } catch (e) {}
 }
 // Writes rows over what is shown, touching only the chunks where something differs. skip = 0-based column to ignore when comparing.
-function writeDiff_(sh, startRow, startCol, rows, shown, skip) {
+function writeDiff_(sh, startRow, startCol, rows, shown, skip, guard) {
   var w = rows.length ? rows[0].length : 0, wrote = 0;
-  for (var i = 0; i < rows.length; i += 200) {
-    var ch = rows.slice(i, i + 200), same = true;
+  for (var i = 0; i < rows.length; i += 100) {
+    var ch = rows.slice(i, i + 100), same = true;
     for (var k = 0; k < ch.length && same; k++) {
       var cur = shown[i + k] || [];
       for (var j = 0; j < w && same; j++) if (j !== skip && !sameShown_(cur[j] === undefined ? '' : cur[j], ch[k][j])) same = false;
     }
-    if (!same) { sh.getRange(startRow + i, startCol, ch.length, w).setValues(ch); wrote += ch.length; }
+    if (same) continue;
+    var rng = sh.getRange(startRow + i, startCol, ch.length, w);
+    if (guard) {                                                  // look once more: a cell typed in the last few seconds is kept, not overwritten
+      var now = rng.getDisplayValues();
+      for (var k2 = 0; k2 < ch.length; k2++) for (var j2 = 0; j2 < w; j2++) {
+        var before = (shown[i + k2] || [])[j2]; before = before === undefined ? '' : before;
+        if (guard[j2] && now[k2][j2] !== before) ch[k2][j2] = now[k2][j2];
+      }
+    }
+    rng.setValues(ch); wrote += ch.length;
   }
   return wrote;
 }
@@ -307,16 +319,16 @@ function layout_(ss) {
   try { setupDropdowns(); } catch (e) { console.error('dropdowns: ' + e); }
 }
 function setupLayout() { layout_(SpreadsheetApp.openById(MASTER_ID)); PropertiesService.getScriptProperties().setProperty('LAYOUT', LAYOUT_V_); return 'Layout, colours and dropdowns refreshed.'; }
-function writeRows_(sh, startRow, rows, ncols, shown, skip) {   // in place: the tab is never blanked while people are typing in it
+function writeRows_(sh, startRow, rows, ncols, shown, skip, guard) {   // in place: the tab is never blanked while people are typing in it
   var need = startRow + Math.max(rows.length, 1) - 1;
   if (need > sh.getMaxRows()) sh.insertRowsAfter(sh.getMaxRows(), need - sh.getMaxRows());
-  var wrote = writeDiff_(sh, startRow, 1, rows, shown, skip);
+  var wrote = writeDiff_(sh, startRow, 1, rows, shown, skip, guard);
   if (shown.length > rows.length) { sh.getRange(startRow + rows.length, 1, shown.length - rows.length, ncols).clearContent(); wrote++; }
   return wrote;
 }
 
 // Finds what people typed since the last pass and saves it. Returns how many cells were saved.
-function reconcile_(ss, snap, T0, byPo, mRow, heal) {
+function reconcile_(ss, snap, T0, byPo, mRow, next) {
   var master = ss.getSheetByName('MASTER'), inv = ss.getSheetByName('INVOICES');
   var iData = readRange_(ss, 'INVOICES!A2:AB14000').map(function (r) { return pad_(r, 28); }), iRows = {};
   iData.forEach(function (x, i) { var p = normPo(x[1]); if (p) (iRows[p] = iRows[p] || []).push(i + 2); });
@@ -325,7 +337,7 @@ function reconcile_(ss, snap, T0, byPo, mRow, heal) {
   var show = function (v) { return v === '' ? '(blank)' : String(v).slice(0, 60); };
   ['MASTER'].concat(PLAT_TABS_).forEach(function (name) {
     var b = snap[name]; if (!b || !T0[name]) return;
-    var cols = inputCols_(name), seen = {}, edits = [], clears = 0, tabSh = ss.getSheetByName(name);
+    var cols = inputCols_(name), seen = {}, edits = [], clears = 0, tabSh = ss.getSheetByName(name), nx = next && next[name];
     // what was really typed (the screen rounds amounts and reformats dates)
     var typed = function (r, tc, shown, numeric) { var raw = tabSh.getRange(r, tc + 1).getValue(); return raw instanceof Date ? cleanVal_(raw, false) : (numeric && typeof raw === 'number' ? raw : cleanVal_(shown, numeric)); };
     T0[name].forEach(function (row, ri) {
@@ -345,10 +357,11 @@ function reconcile_(ss, snap, T0, byPo, mRow, heal) {
         note(rawPo, name + ': new PO added to MASTER'); applied++;
         return;
       }
-      var was = first ? b[po] : null, calc = byPo[po];
+      var was = first ? b[po] : null, calc = byPo[po], due = first && nx ? nx[po] : null;
       cols.forEach(function (c) {
         var t = row[c.tc] || '', old = was ? (was[c.tc] || '') : '';
-        if (t === old && !(heal && String(t).trim() !== '')) return;   // heal: a typed value an earlier version left on the tab without saving it
+        if (t === old) return;
+        if (due && due[c.tc] !== PENDING_ && sameShown_(t, dec_(due[c.tc]))) return;   // put there by a pass that was cut short, not typed
         if (calc && sameShown_(t, calc[c.mc - 1])) return;         // already what the data says
         if (c.w) { if (String(t).trim() !== '') note(rawPo, name + ': ' + c.h + ' = ' + show(t) + ' NOT SAVED (' + c.h + ' is worked out from the Decision, dispatch, delivery and GRN entries: change those and it follows)'); return; }
         if (String(t).trim() === '') clears++;
@@ -394,9 +407,10 @@ function syncPass_(props) {
   if (props.getProperty('LAYOUT') !== LAYOUT_V_) { props.setProperty('LAYOUT', LAYOUT_V_); try { layout_(ss); } catch (e) { console.error('layout: ' + e); } }
   normDates_(m, 3, Math.max(m.getLastRow() - 2, 0), DATE_COLS_);
   normDates_(isx, 2, Math.max(isx.getLastRow() - 1, 0), INV_DATE_COLS_);
-  // the record of the last pass is trusted only if that pass finished
-  var compact = props.getProperty('SNAP_V') === SNAP_V_;
-  var snap = props.getProperty('SYNC_STATE') === 'ok' ? readSnap_(ss, compact) : null;
+  // what the last finished pass left on every tab, plus (if a pass was cut short) what that pass was in the middle of writing
+  var compact = props.getProperty('SNAP_V') === SNAP_V_, cutShort = props.getProperty('SYNC_STATE') === 'writing';
+  var snap = readSnap_(ss, SYNC_TAB_, compact);
+  var next = cutShort ? readSnap_(ss, NEXT_TAB_, true) : null;
   var stamp = Utilities.formatDate(new Date(), 'Asia/Kolkata', 'yyyy-MM-dd HH:mm');
   var a = loadAll_(ss), out = buildMaster_(a.D, a.I, STAGES, stamp, a.claims);
   var byPo = {}; out.master.forEach(function (r) { byPo[normPo(r[0])] = r; });
@@ -404,9 +418,7 @@ function syncPass_(props) {
   PLAT_TABS_.forEach(function (t) { if (ss.getSheetByName(t)) T0[t] = readRange_(ss, "'" + t + "'!A3:BA14000").map(function (r) { return pad_(r, MASTER_COLS_); }); });
   var mRow = {}; a.raw.forEach(function (r, i) { var p = normPo(r[0]); if (p && !mRow[p]) mRow[p] = i + 3; });
   tick('read');
-  var heal = props.getProperty('HEAL') !== '6';
-  var applied = snap ? reconcile_(ss, snap, T0, byPo, mRow, heal) : 0;
-  if (snap && heal) props.setProperty('HEAL', '6');
+  var applied = snap ? reconcile_(ss, snap, T0, byPo, mRow, next) : 0;
   if (applied) {                                                   // recalculate with what was just saved
     SpreadsheetApp.flush();
     a = loadAll_(ss); out = buildMaster_(a.D, a.I, STAGES, stamp, a.claims);
@@ -417,7 +429,6 @@ function syncPass_(props) {
   var again = readRange_(ss, 'MASTER!A3:BA14000').map(function (r) { return pad_(r, MASTER_COLS_); });
   if (again.length !== pos.length || again.map(function (r) { return normPo(r[0]); }).join('|') !== pos.join('|')) return { ok: false, skipped: 'the sheet changed during the refresh', applied: applied };
   tick('save');
-  props.setProperty('SYNC_STATE', 'writing');
   var pending = {}, nPending = 0;
   var mark = function (name, po, tc) { ((pending[name] = pending[name] || {})[po] = pending[name][po] || {})[tc] = 1; nPending++; };
   // a cell typed in MASTER while this pass was calculating is left exactly as typed; the next pass saves it
@@ -428,19 +439,10 @@ function syncPass_(props) {
     var o = m0[po];
     mIn.forEach(function (c) { var t1 = r[c.tc] || '', t0 = o ? (o[c.tc] || '') : ''; if (t1 !== t0) { byPo[po][c.tc] = t1; mark('MASTER', po, c.tc); } });
   });
-  var used = {}, mWrote = 0, shownNow = {};
+  var used = {};
   var aligned = pos.map(function (po) { if (po && byPo[po] && !used[po]) { used[po] = 1; return byPo[po]; } return null; });
-  if (n) {
-    CALC_BLOCKS_.forEach(function (b) {
-      var w = b[1] - b[0] + 1;
-      var block = aligned.map(function (r) { var x = []; for (var j = 0; j < w; j++) x.push(r ? r[b[0] - 1 + j] : ''); return x; });
-      var shown = again.map(function (r) { return r.slice(b[0] - 1, b[1]); });
-      mWrote += writeDiff_(m, 3, b[0], block, shown, 41 >= b[0] && 41 <= b[1] ? 41 - b[0] : -1);
-    });
-    m.getRange(3, 41, n, 1).setValues(aligned.map(function (r) { return [r ? stamp : '']; }));
-  }
-  // platform tabs: the same POs as MASTER, one tab per platform. Typing here is carried back by the next pass.
-  var byTab = {}, wrote = {}, meant = { MASTER: byPo }, stampCol = PLAT_ORDER_.indexOf(41);
+  // work out every tab first (nothing is written yet)
+  var byTab = {}, meant = { MASTER: byPo }, plan = {}, stampCol = PLAT_ORDER_.indexOf(41);
   PLAT_TABS_.forEach(function (t) { byTab[t] = []; });
   aligned.forEach(function (r) { if (r) byTab[platTab_(r[1])].push(permute_(r)); });
   PLAT_TABS_.forEach(function (t) {
@@ -463,11 +465,39 @@ function syncPass_(props) {
       }
       if (!sig0[r.join('\u0001')]) keep.push(r);                   // a row typed during this pass: keep it for the next one
     });
-    var title = t + '  |  ' + rows.length + ' POs  |  TWO-WAY: whatever you type here is saved to MASTER / INVOICES and shown on the website. Add a new PO in the first empty row. Calculated columns (Stage, Fill %, Age and the like) cannot be typed.';
-    if (sh.getRange(1, 1).getDisplayValue() !== title) sh.getRange(1, 1).setValue(title);
-    if (!writeRows_(sh, 3, rows.concat(keep), MASTER_COLS_, T1, stampCol)) shownNow[t] = T1;   // nothing changed: what was read is what is there
-    if (rows.length) sh.getRange(3, stampCol + 1, rows.length, 1).setValues(rows.map(function () { return [stamp]; }));
-    wrote[t] = rows.length;
+    var guard = []; cols.forEach(function (c) { guard[c.tc] = 1; });
+    plan[t] = { sh: sh, rows: rows, keep: keep, T1: T1, guard: guard };
+  });
+  // write down what is about to be written, so that if this pass is cut short the next one knows which cells were its doing
+  var nextRows = [];
+  ['MASTER'].concat(PLAT_TABS_).forEach(function (name) {
+    var cols = inputCols_(name), pend = pending[name] || {}, mm = meant[name]; if (!mm) return;
+    Object.keys(mm).forEach(function (p) {
+      var r = mm[p]; if (!r) return;
+      nextRows.push([name, r[0]].concat(cols.map(function (c) { return pend[p] && pend[p][c.tc] ? PENDING_ : enc_(r[c.tc]); })));
+    });
+  });
+  writeSnap_(ss, NEXT_TAB_, nextRows, false);
+  SpreadsheetApp.flush();
+  props.setProperty('SYNC_STATE', 'writing');
+  tick('plan');
+  var mWrote = 0, shownNow = {}, wrote = {};
+  if (n) {
+    var mGuard = {}; mIn.forEach(function (c) { mGuard[c.tc] = 1; });
+    CALC_BLOCKS_.forEach(function (b) {
+      var w = b[1] - b[0] + 1, g = [];
+      for (var j = 0; j < w; j++) if (mGuard[b[0] - 1 + j]) g[j] = 1;
+      var block = aligned.map(function (r) { var x = []; for (var j = 0; j < w; j++) x.push(r ? r[b[0] - 1 + j] : ''); return x; });
+      var shown = again.map(function (r) { return r.slice(b[0] - 1, b[1]); });
+      mWrote += writeDiff_(m, 3, b[0], block, shown, 41 >= b[0] && 41 <= b[1] ? 41 - b[0] : -1, g);
+    });
+  }
+  PLAT_TABS_.forEach(function (t) {
+    var p = plan[t]; if (!p) return;
+    var title = t + '  |  ' + p.rows.length + ' POs  |  TWO-WAY: whatever you type here is saved to MASTER / INVOICES and shown on the website. Add a new PO in the first empty row. Calculated columns (Stage, Fill %, Age and the like) cannot be typed.';
+    if (p.sh.getRange(1, 1).getDisplayValue() !== title) p.sh.getRange(1, 1).setValue(title);
+    if (!writeRows_(p.sh, 3, p.rows.concat(p.keep), MASTER_COLS_, p.T1, stampCol, p.guard)) shownNow[t] = p.T1;   // nothing changed: what was read is what is there
+    wrote[t] = p.rows.length;
   });
   // remember exactly what each tab shows now, so the next pass can tell what a person changed
   SpreadsheetApp.flush();
@@ -490,15 +520,15 @@ function syncPass_(props) {
   };
   remember('MASTER', mWrote ? readRange_(ss, 'MASTER!A3:BA14000') : again, n);
   PLAT_TABS_.forEach(function (t) { if (wrote[t] !== undefined) remember(t, shownNow[t] || readRange_(ss, "'" + t + "'!A3:BA14000"), wrote[t]); });
-  writeSnap_(ss, snapRows, !compact);
+  writeSnap_(ss, SYNC_TAB_, snapRows, !compact);
   SpreadsheetApp.flush();
   tick('record');
   props.setProperty('SNAP_V', SNAP_V_);
   props.setProperty('SYNC_STATE', 'ok');
   // from here on nothing can lose an entry: the rest is reporting
-  var nClaims = 0;
+  var nClaims = 0, changed = applied || mWrote || Object.keys(shownNow).length < Object.keys(wrote).length;
   try {
-    nClaims = claimsTab_(ss, a);
+    if (changed || props.getProperty('CLAIMS_DAY') !== stamp.slice(0, 10)) { nClaims = claimsTab_(ss, a); props.setProperty('CLAIMS_DAY', stamp.slice(0, 10)); }
     var rm = ss.getSheetByName('READ ME');
     if (rm) rm.getRange('A4').setValue('Every tab is two-way. Last sync: ' + stamp + ' IST (took ' + Math.round((Date.now() - began) / 1000) + ' seconds: ' + laps.join(', ') + '). This sheet is the only record: the website and the team both read and write it.');
   } catch (e) { console.error('after-sync: ' + e); }
@@ -507,14 +537,18 @@ function syncPass_(props) {
 
 // One pass at a time. wait = how long to queue behind a pass that is already running (0 = do not queue).
 function runSync_(wait, since) {
-  var props = PropertiesService.getScriptProperties(), lock = LockService.getScriptLock();
+  var t0 = Date.now(), props = PropertiesService.getScriptProperties(), lock = LockService.getScriptLock();
   if (!lock.tryLock(wait || 1000)) return { ok: false, skipped: 'a refresh is already running' };
   try {
     if (since && Number(props.getProperty('LAST_START') || 0) > since) return { ok: true, skipped: 'a later pass already covered this edit' };
-    var res = null;
-    for (var pass = 0; pass < 3; pass++) {
-      props.setProperty('LAST_START', String(Date.now()));
+    var res = null, longest = 0;
+    for (var pass = 0; pass < 4; pass++) {
+      // Google stops a run at 6 minutes: never start a pass that might not fit
+      if (pass && (Date.now() - t0) + longest * 1.4 > 320000) break;
+      var p0 = Date.now();
+      props.setProperty('LAST_START', String(p0));
       res = syncPass_(props);
+      longest = Math.max(longest, Date.now() - p0);
       if (res.skipped) { Utilities.sleep(1500); continue; }       // rows moved while it was calculating: go round again
       if (!res.pending) break;                                     // something was typed during the pass: save it now
     }
@@ -565,7 +599,7 @@ function onSheetEdit(e) {
   try {
     var name = e && e.range ? e.range.getSheet().getName() : '';
     if (!LIVE_TABS_[name]) return;
-    runSync_(150000, Date.now());
+    runSync_(100000, Date.now());
   } catch (err) { console.error('onSheetEdit: ' + err); }
 }
 function setupInstantRefresh() {
